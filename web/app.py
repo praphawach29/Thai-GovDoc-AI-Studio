@@ -1,6 +1,6 @@
 """
 app.py — หน้าจอใช้งานหลัก (Interactive Workspace) สำหรับ Thai GovDoc AI Studio
-พัฒนาตามโมเดล Modern GovDoc Studio (Split-Screen Workspace, Smart Placeholders, A4 Canvas & Inline Copilot)
+พัฒนาตามโมเดล Modern GovDoc Studio (Split-Screen Workspace, Compact Modern Typography, Smart Placeholders & A4 Canvas)
 รันด้วย Streamlit: streamlit run web/app.py
 """
 
@@ -41,98 +41,221 @@ st.set_page_config(
     page_title="Thai GovDoc AI Studio - ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ",
     page_icon="🏛️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Custom Styling ให้ดูพรีเมียมและเป็นทางการตามโมเดล Ekkasarn / Modern Legal Tech
+# Custom Styling ปรับขนาดตัวอักษรและระยะขอบให้กะทัดรัด สวยงาม ทันสมัย แบบ Modern SaaS / Ekkasarn.com
 st.markdown("""
 <style>
-    .main-title {
-        font-size: 2.1rem;
-        font-weight: 700;
-        color: #1a365d;
-        margin-bottom: 0.1rem;
+    /* 1. Reset & Global Layout */
+    .block-container {
+        padding-top: 0.9rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 1.8rem !important;
+        padding-right: 1.8rem !important;
+        max-width: 98% !important;
     }
-    .sub-title {
-        color: #4a5568;
-        font-size: 1.0rem;
-        margin-bottom: 1.2rem;
-    }
-    /* Status Pills */
-    .status-pill {
-        padding: 4px 12px;
-        border-radius: 9999px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        display: inline-block;
-        margin-right: 6px;
-    }
-    .status-pill-ready {
-        background-color: #d1fae5;
-        color: #065f46;
-        border: 1px solid #10b981;
-    }
-    .status-pill-warning {
-        background-color: #fef3c7;
-        color: #92400e;
-        border: 1px solid #f59e0b;
-    }
-    .status-pill-info {
-        background-color: #e0f2fe;
-        color: #0369a1;
-        border: 1px solid #38bdf8;
+    header[data-testid="stHeader"] {
+        display: none !important;
     }
     
-    /* Smart Placeholder Chip */
-    .placeholder-chip {
-        background-color: #fffbeb;
-        color: #b45309;
-        border: 1.5px dashed #f59e0b;
+    /* 2. Top Navigation Bar */
+    .top-navbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 16px;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    }
+    .brand-section {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .brand-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0;
+        letter-spacing: -0.01em;
+    }
+    .brand-badge {
+        font-size: 0.75rem;
+        color: #475569;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
         padding: 2px 7px;
         border-radius: 5px;
-        font-weight: 600;
-        font-size: 0.94em;
-        display: inline-block;
-        margin: 1px 3px;
-        box-shadow: 0 1px 2px rgba(245, 158, 11, 0.15);
+        font-weight: 500;
     }
 
-    /* A4 Paper Simulation */
+    /* 3. Typography Scaled Down to Fit Standard Screens */
+    h1, h2, h3, .stSubheader {
+        font-size: 0.96rem !important;
+        font-weight: 600 !important;
+        color: #1e293b !important;
+        margin-top: 0.2rem !important;
+        margin-bottom: 0.4rem !important;
+    }
+    h4, h5 {
+        font-size: 0.86rem !important;
+        font-weight: 600 !important;
+        color: #334155 !important;
+        margin-top: 0.25rem !important;
+        margin-bottom: 0.25rem !important;
+    }
+    p, span, label, div {
+        font-size: 0.83rem !important;
+    }
+    .stRadio label {
+        font-size: 0.82rem !important;
+        margin-bottom: 2px !important;
+    }
+    .stTextInput input, .stTextArea textarea, .stSelectbox select {
+        font-size: 0.82rem !important;
+        padding: 0.3rem 0.5rem !important;
+        border-radius: 5px !important;
+    }
+
+    /* 4. Tabs Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 12px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 0.83rem !important;
+        font-weight: 500 !important;
+        padding: 5px 8px !important;
+        color: #64748b;
+    }
+    .stTabs [aria-selected="true"] {
+        font-weight: 600 !important;
+        color: #0284c7 !important;
+        border-bottom-color: #0284c7 !important;
+    }
+
+    /* 5. Buttons Styling - Compact, Modern & Balanced */
+    .stButton button {
+        font-size: 0.78rem !important;
+        padding: 0.25rem 0.6rem !important;
+        height: 32px !important;
+        border-radius: 5px !important;
+        font-weight: 500 !important;
+        border: 1px solid #cbd5e1 !important;
+        background-color: #ffffff !important;
+        color: #334155 !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.02) !important;
+        transition: all 0.15s ease;
+    }
+    .stButton button:hover {
+        border-color: #94a3b8 !important;
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+    }
+    .stButton button[kind="primary"] {
+        background-color: #0f172a !important;
+        color: #ffffff !important;
+        border-color: #0f172a !important;
+    }
+    .stButton button[kind="primary"]:hover {
+        background-color: #1e293b !important;
+        color: #ffffff !important;
+    }
+    .stDownloadButton button {
+        font-size: 0.78rem !important;
+        padding: 0.25rem 0.6rem !important;
+        height: 32px !important;
+        border-radius: 5px !important;
+        font-weight: 500 !important;
+        border: 1px solid #059669 !important;
+        background-color: #10b981 !important;
+        color: #ffffff !important;
+    }
+    .stDownloadButton button:hover {
+        background-color: #059669 !important;
+        color: #ffffff !important;
+    }
+
+    /* 6. Status Pills */
+    .status-pill {
+        padding: 2px 9px;
+        border-radius: 9999px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        display: inline-block;
+        margin-right: 4px;
+    }
+    .status-pill-ready {
+        background-color: #ecfdf5;
+        color: #047857;
+        border: 1px solid #a7f3d0;
+    }
+    .status-pill-warning {
+        background-color: #fffbeb;
+        color: #b45309;
+        border: 1px solid #fde68a;
+    }
+    .status-pill-info {
+        background-color: #f0f9ff;
+        color: #0369a1;
+        border: 1px solid #bae6fd;
+    }
+    
+    /* 7. Smart Placeholder Chip */
+    .placeholder-chip {
+        background-color: #fef3c7;
+        color: #92400e;
+        border: 1px dashed #d97706;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.90em;
+        display: inline-block;
+        margin: 0 2px;
+    }
+
+    /* 8. A4 Paper Simulation - Calibrated to fit on screen cleanly like Ekkasarn */
     .a4-paper {
-        background: white;
+        background: #ffffff;
         width: 100%;
-        max-width: 820px;
-        min-height: 1050px;
-        padding: 48px 55px 40px 75px;
-        margin: 10px auto;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.10);
-        border: 1px solid #cbd5e1;
-        border-radius: 2px;
-        font-family: 'TH Sarabun New', 'Sarabun', 'Angsana New', sans-serif;
-        font-size: 16pt;
-        line-height: 1.35;
-        color: #000;
+        max-width: 660px;
+        min-height: 800px;
+        padding: 26px 36px 24px 42px !important;
+        margin: 4px auto 14px auto !important;
+        box-shadow: 0 2px 14px rgba(0,0,0,0.07) !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 3px !important;
+        font-family: 'TH Sarabun New', 'Sarabun', 'Angsana New', sans-serif !important;
+        font-size: 13.0px !important;  /* 13px web scale = equivalent to 16pt print */
+        line-height: 1.45 !important;
+        color: #000000 !important;
     }
     .a4-paper p {
-        margin-bottom: 7px;
-        text-align: justify;
+        font-size: 13.0px !important;
+        margin-bottom: 5px !important;
+        text-align: justify !important;
+        line-height: 1.45 !important;
     }
     .a4-indent {
-        text-indent: 2.5cm;
+        text-indent: 1.4cm !important;
     }
     .diff-ins {
-        background-color: #c6f6d5;
-        color: #22543d;
-        padding: 2px 4px;
-        border-radius: 3px;
+        background-color: #dcfce7;
+        color: #166534;
+        padding: 1px 3px;
+        border-radius: 2px;
         font-weight: 600;
     }
     .diff-del {
-        background-color: #fed7d7;
-        color: #742a2a;
+        background-color: #fee2e2;
+        color: #991b1b;
         text-decoration: line-through;
-        padding: 2px 4px;
-        border-radius: 3px;
+        padding: 1px 3px;
+        border-radius: 2px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -224,100 +347,111 @@ if "last_uploaded_file" not in st.session_state:
     st.session_state.last_uploaded_file = None
 
 
-# ส่วนหัวหน้าเว็บ
-st.markdown('<div class="main-title">🏛️ Thai GovDoc AI Studio</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ (อ้างอิงระเบียบงานสารบรรณ พ.ศ. ๒๕๒๖)</div>', unsafe_allow_html=True)
+# ส่วนหัวหน้าเว็บแบบ Compact Modern Top Bar
+st.markdown("""
+<div class="top-navbar">
+    <div class="brand-section">
+        <span style="font-size: 1.25rem;">🏛️</span>
+        <div>
+            <span class="brand-title">Thai GovDoc AI Studio</span>
+            <span class="brand-desc">ระเบียบงานสารบรรณ พ.ศ. ๒๕๒๖</span>
+        </div>
+    </div>
+    <div style="font-size: 0.78rem; color: #64748b;">
+        ระบบร่างและตรวจแก้หนังสือราชการอัจฉริยะ (Human-in-the-loop)
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # แถบเมนูหลัก
-tab_main, tab_registry = st.tabs(["📝 ห้องร่างและตรวจแก้หนังสือ (Studio & Review)", "📖 สมุดทะเบียนคุมสารบรรณ (e-Document Registry)"])
+tab_main, tab_registry = st.tabs(["📝 ห้องร่างและตรวจแก้หนังสือ", "📖 สมุดทะเบียนคุมสารบรรณ"])
 
 # =====================================================================
 # TAB 1: STUDIO & REVIEW
 # =====================================================================
 with tab_main:
-    col_left, col_right = st.columns([1, 1.35], gap="large")
+    col_left, col_right = st.columns([1, 1.3], gap="medium")
 
     # ----------------- คอลัมน์ซ้าย: แนบไฟล์ต้นเรื่อง & สั่งการ AI -----------------
     with col_left:
-        st.subheader("📂 1. แนบไฟล์ต้นเรื่อง (Source Document)")
+        st.subheader("📂 แนบไฟล์ต้นเรื่อง (Source Document)")
         uploaded_file = st.file_uploader(
-            "อัปโหลดหนังสือเดิม / บันทึกข้อความ / คำร้อง (PDF, DOCX, TXT, รูปภาพ)",
-            type=["pdf", "docx", "txt", "png", "jpg", "jpeg"]
+            "อัปโหลดหนังสือเดิม / คำร้อง (PDF, DOCX, TXT, รูปภาพ)",
+            type=["pdf", "docx", "txt", "png", "jpg", "jpeg"],
+            label_visibility="collapsed"
         )
 
         if uploaded_file is not None:
-            # บันทึกไฟล์ลง uploads
             saved_path = uploads_dir / uploaded_file.name
             with open(saved_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
 
             # สกัดข้อความอัตโนมัติเมื่อมีการอัปโหลดไฟล์ใหม่
             if st.session_state.last_uploaded_file != uploaded_file.name:
-                with st.spinner("กำลังอ่านและสกัดข้อความจากเอกสารต้นเรื่อง (OCR / Extraction)..."):
+                with st.spinner("กำลังอ่านและสกัดข้อความจากเอกสารต้นเรื่อง..."):
                     ctx = extract_source_document(str(saved_path))
                     st.session_state.source_context = ctx
                     st.session_state.last_uploaded_file = uploaded_file.name
                 st.success(f"แนบไฟล์สำเร็จ: {uploaded_file.name}")
 
             # เลือกเจตนาการร่างหนังสือ (Drafting Intent)
-            st.markdown("##### 🎯 เลือกวัตถุประสงค์ในการร่างหนังสือ:")
+            st.markdown("##### 🎯 วัตถุประสงค์ในการร่างหนังสือ:")
             intent_choice = st.radio(
                 "เจตนาการตอบ/ยกร่าง:",
                 options=[
-                    (DraftingIntent.MEMO_REVIEW, "📑 บันทึกข้อความรายงานการพิจารณา / เกษียนสั่งการรวมเรื่องเดิม (แนะนำ)"),
+                    (DraftingIntent.MEMO_REVIEW, "📑 บันทึกข้อความรายงานการพิจารณา / เกษียนเรื่องเดิม (แนะนำ)"),
                     (DraftingIntent.ACCEPT, "🤝 หนังสือตอบรับ / ยินดีให้ความอนุเคราะห์"),
                     (DraftingIntent.DECLINE, "❌ หนังสือแจ้งข้อขัดข้อง / ปฏิเสธอย่างสุภาพ"),
                     (DraftingIntent.FORWARD, "📨 หนังสือส่งต่อเรื่อง / แจ้งเวียน"),
-                    (DraftingIntent.PROPOSAL, "📝 บันทึกข้อความเสนอผู้บังคับบัญชาเพื่อโปรดพิจารณาอนุมัติ")
+                    (DraftingIntent.PROPOSAL, "📝 บันทึกข้อความเสนอผู้บังคับบัญชาเพื่อพิจารณาอนุมัติ")
                 ],
                 format_func=lambda x: x[1],
-                index=0
+                index=0,
+                label_visibility="collapsed"
             )
 
             is_internal_intent = intent_choice[0] in [DraftingIntent.PROPOSAL, DraftingIntent.MEMO_REVIEW]
             target_doc_type = DocType.INTERNAL if is_internal_intent else DocType.EXTERNAL
 
             if st.button("🚀 ให้ AI ยกร่างหนังสือตามต้นเรื่องนี้", type="primary", use_container_width=True):
-                with st.spinner("AI กำลังวิเคราะห์และยกร่างโครงสร้าง 3 ภาคตามระเบียบงานสารบรรณ..."):
+                with st.spinner("AI กำลังวิเคราะห์และยกร่างโครงสร้าง 3 ภาคตามระเบียบ..."):
                     ctx = st.session_state.source_context
                     draft = draft_from_context_rule_based(ctx, doc_type=target_doc_type, intent=intent_choice[0])
                     st.session_state.doc_data = draft
                     st.session_state.initial_ai_draft = draft.model_copy(deep=True)
-                    # บันทึกเวอร์ชันเริ่มต้นลง Audit
                     audit_mgr.save_version(
                         doc_id=draft.doc_number,
                         doc=draft,
                         author="AI Studio",
                         note=f"ร่างเริ่มต้นจากเอกสารต้นเรื่อง ({intent_choice[1]})"
                     )
-                    st.success("ยกร่างหนังสือราชการสำเร็จแล้ว! ตรวจสอบได้ที่หน้ากระดาษฝั่งขวา")
+                    st.success("ยกร่างหนังสือสำเร็จ! ตรวจสอบได้ที่หน้ากระดาษฝั่งขวา")
 
-        # แสดงผลเอกสารต้นเรื่องและภาพพรีวิว
+        # แสดงผลข้อมูลที่สกัดได้
         if st.session_state.source_context:
             ctx = st.session_state.source_context
             st.markdown("---")
-            st.markdown("#### 🔍 ข้อมูลที่สกัดได้จากเอกสารต้นเรื่อง")
+            st.markdown("##### 🔍 ข้อมูลสกัดจากเอกสารต้นเรื่อง")
             st.info(
-                f"**ไฟล์:** {ctx.source_filename} ({'เอกสารสแกน' if ctx.is_scanned else 'ดิจิทัล'})\n\n"
-                f"**หน่วยงานต้นเรื่อง:** {ctx.source_dept or 'ไม่ระบุ'}\n\n"
-                f"**เลขที่เดิม:** {ctx.source_doc_no or 'ไม่ระบุ'}\n\n"
-                f"**วันที่เดิม:** {ctx.source_date or 'ไม่ระบุ'}\n\n"
-                f"**เรื่องเดิม:** {ctx.source_subject or 'ไม่ระบุ'}"
+                f"• **ไฟล์:** {ctx.source_filename} ({'สแกน' if ctx.is_scanned else 'ดิจิทัล'})\n\n"
+                f"• **หน่วยงานเดิม:** {ctx.source_dept or 'ไม่ระบุ'}\n\n"
+                f"• **เลขที่เดิม:** {ctx.source_doc_no or 'ไม่ระบุ'} | **วันที่เดิม:** {ctx.source_date or 'ไม่ระบุ'}\n\n"
+                f"• **เรื่องเดิม:** {ctx.source_subject or 'ไม่ระบุ'}"
             )
 
             if ctx.preview_image_path and os.path.exists(ctx.preview_image_path):
-                st.image(ctx.preview_image_path, caption=f"ตัวอย่างหน้าเอกสารต้นเรื่อง: {ctx.source_filename}", use_container_width=True)
+                st.image(ctx.preview_image_path, caption=f"ตัวอย่างเอกสารต้นเรื่อง: {ctx.source_filename}", use_container_width=True)
 
-            with st.expander("📄 ดูข้อความที่สกัดได้ทั้งหมด (Raw Text)", expanded=False):
-                st.text_area("Extracted Text", ctx.raw_text, height=200, disabled=True)
+            with st.expander("📄 ดูข้อความที่สกัดได้ทั้งหมด", expanded=False):
+                st.text_area("Extracted Text", ctx.raw_text, height=160, disabled=True, label_visibility="collapsed")
         else:
             st.info("💡 สามารถทดลองใช้งานด้วยข้อมูลตัวอย่าง หรือแนบไฟล์จริง (.pdf, .docx, .txt, .png)")
 
-        # กล่อง Copilot ช่วยเหลือด่วน (Conversational Copilot Assistant)
+        # กล่อง Copilot สั่งการด้วยภาษาธรรมชาติ
         st.markdown("---")
-        st.markdown("##### 💬 AI Copilot สั่งปรับแต่งข้อความเพิ่มเติม")
-        c_prompt = st.text_input("พิมพ์คำสั่งให้ AI ช่วย เช่น 'ปรับให้เป็นทางการยิ่งขึ้น', 'ขอให้อ้างระเบียบพัสดุ'", "")
-        if st.button("✨ ส่งคำสั่งให้ AI", use_container_width=True) and c_prompt:
+        st.markdown("##### 💬 AI Copilot สั่งเกลาข้อความเพิ่มเติม")
+        c_prompt = st.text_input("พิมพ์คำสั่ง เช่น 'ปรับให้เป็นทางการยิ่งขึ้น', 'ขอให้อ้างระเบียบพัสดุ'", "", label_visibility="collapsed", placeholder="พิมพ์คำสั่งให้ AI ช่วย เช่น ปรับให้กระชับ, อ้างระเบียบ...")
+        if st.button("✨ ส่งคำสั่งให้ AI ดำเนินการ", use_container_width=True) and c_prompt:
             if "เป็นทางการ" in c_prompt or "สุภาพ" in c_prompt:
                 st.session_state.doc_data.paragraph_reason = make_formal_tone(st.session_state.doc_data.paragraph_reason)
                 st.session_state.doc_data.paragraph_purpose = make_formal_tone(st.session_state.doc_data.paragraph_purpose)
@@ -337,10 +471,10 @@ with tab_main:
 
     # ----------------- คอลัมน์ขวา: Interactive Canvas, Live Preview และ Editor -----------------
     with col_right:
-        # Header Status Bar แสดงสถานะความพร้อมของเอกสาร
         doc = st.session_state.doc_data
         placeholder_count = doc.count_placeholders()
 
+        # Header Status Bar แสดงสถานะ
         status_left, status_right = st.columns([1.5, 1])
         with status_left:
             doc_type_name = "หนังสือภายนอก" if doc.doc_type == DocType.EXTERNAL else "บันทึกข้อความ (หนังสือภายใน)"
@@ -352,27 +486,27 @@ with tab_main:
         with status_right:
             if placeholder_count > 0:
                 st.markdown(
-                    f'<div style="text-align: right;"><span class="status-pill status-pill-warning">⚠️ มี {placeholder_count} จุดที่ต้องระบุข้อมูล</span></div>',
+                    f'<div style="text-align: right;"><span class="status-pill status-pill-warning">⚠️ มี {placeholder_count} จุดที่ต้องระบุ</span></div>',
                     unsafe_allow_html=True
                 )
             else:
                 st.markdown(
-                    '<div style="text-align: right;"><span class="status-pill status-pill-ready">✅ เอกสารพร้อมตรวจและส่งออก</span></div>',
+                    '<div style="text-align: right;"><span class="status-pill status-pill-ready">✅ พร้อมตรวจและส่งออก</span></div>',
                     unsafe_allow_html=True
                 )
 
         tab_preview, tab_editor, tab_diff = st.tabs([
             "👁️ Live A4 Preview & ส่งออก", 
-            "✏️ ฟอร์มแก้ไขข้อความอย่างละเอียด", 
-            "📊 เปรียบเทียบการแก้ไข (Diff & Audit)"
+            "✏️ ฟอร์มแก้ไขข้อความ", 
+            "📊 ประวัติและการแก้ไข (Diff)"
         ])
 
         # ----------------- TAB PREVIEW & QUICK ACTIONS -----------------
         with tab_preview:
-            # 1-Click Action Toolbar วางบนหน้ากระดาษ A4 เสมือนจริง
-            t1, t2, t3, t4 = st.columns([1.2, 1.2, 1.2, 1.2])
+            # 1-Click Action Toolbar ปรับปุ่มให้กะทัดรัด สวยงาม สไตล์โมเดิร์น
+            t1, t2, t3, t4 = st.columns([1.1, 1.3, 1.2, 1.1])
             with t1:
-                if st.button("🔢 สลับเลขไทย ↔ อารบิก", use_container_width=True):
+                if st.button("🔢 สลับเลขไทย/อารบิก", use_container_width=True):
                     new_val = not st.session_state.doc_data.use_thai_numerals
                     st.session_state.doc_data = toggle_doc_numerals(st.session_state.doc_data, use_thai=new_val)
                     st.rerun()
@@ -383,8 +517,7 @@ with tab_main:
                     data=docx_bytes,
                     file_name=f"{st.session_state.doc_data.subject[:30].replace('/', '_')}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True,
-                    type="primary"
+                    use_container_width=True
                 )
             with t3:
                 typst_bytes = get_typst_bytes(st.session_state.doc_data)
@@ -396,7 +529,7 @@ with tab_main:
                     use_container_width=True
                 )
             with t4:
-                if st.button("📚 บันทึกลงทะเบียนส่ง", use_container_width=True):
+                if st.button("📚 บันทึกทะเบียนส่ง", use_container_width=True):
                     rec = OutgoingRecord(
                         doc_number=st.session_state.doc_data.doc_number,
                         doc_type=st.session_state.doc_data.doc_type.value,
@@ -408,7 +541,7 @@ with tab_main:
                     try:
                         new_id = registry.register_outgoing(rec)
                         audit_mgr.log_action(st.session_state.doc_data.doc_number, "register_outgoing", "ผู้ใช้", {"registry_id": new_id})
-                        st.success(f"บันทึกลงทะเบียนส่งเรียบร้อยแล้ว (รหัสทะเบียน: {new_id})")
+                        st.success(f"บันทึกสำเร็จ (รหัสทะเบียน: {new_id})")
                     except Exception as e:
                         st.error(f"ไม่สามารถลงทะเบียนได้: {str(e)}")
 
@@ -417,8 +550,17 @@ with tab_main:
             disp_date = highlight_placeholders_html(to_thai_numerals(doc.doc_date) if doc.use_thai_numerals else doc.doc_date)
             disp_no = highlight_placeholders_html(to_thai_numerals(doc.doc_number) if doc.use_thai_numerals else doc.doc_number)
             disp_dept = highlight_placeholders_html(doc.dept_name)
-            disp_subject = highlight_placeholders_html(doc.subject)
-            disp_salutation = highlight_placeholders_html(doc.salutation)
+
+            # จัดการชื่อเรื่องและคำขึ้นต้น ไม่ให้มีคำซ้ำ เช่น "เรียน เรียน" หรือ "เรื่อง เรื่อง"
+            clean_sub = re.sub(r'^เรื่อง\s*', '', doc.subject).strip()
+            disp_subject = highlight_placeholders_html(clean_sub)
+
+            raw_sal = doc.salutation.strip()
+            clean_sal = re.sub(r'^(?:กราบเรียน|เรียน)\s*', '', raw_sal).strip()
+            is_high_off = raw_sal.startswith("กราบเรียน")
+            sal_label = "กราบเรียน" if is_high_off else "เรียน"
+            disp_sal_body = highlight_placeholders_html(clean_sal)
+
             disp_reason = highlight_placeholders_html(to_thai_numerals(doc.paragraph_reason) if doc.use_thai_numerals else doc.paragraph_reason)
             disp_details = highlight_placeholders_html(to_thai_numerals(doc.paragraph_details) if (doc.paragraph_details and doc.use_thai_numerals) else (doc.paragraph_details or ""))
             disp_purpose = highlight_placeholders_html(to_thai_numerals(doc.paragraph_purpose) if doc.use_thai_numerals else doc.paragraph_purpose)
@@ -435,7 +577,7 @@ with tab_main:
                     if idx == 0:
                         ref_items.append(f"<p><strong>อ้างถึง</strong>  {h_val}</p>")
                     else:
-                        ref_items.append(f'<p style="margin-left: 2.5cm;">{h_val}</p>')
+                        ref_items.append(f'<p style="margin-left: 1.4cm;">{h_val}</p>')
                 refs_html = "".join(ref_items)
 
             atts_html = ""
@@ -446,83 +588,83 @@ with tab_main:
                     if idx == 0:
                         att_items.append(f"<p><strong>สิ่งที่ส่งมาด้วย</strong>  {h_val}</p>")
                     else:
-                        att_items.append(f'<p style="margin-left: 2.5cm;">{h_val}</p>')
+                        att_items.append(f'<p style="margin-left: 1.4cm;">{h_val}</p>')
                 atts_html = "".join(att_items)
 
-            # HTML A4 Preview Template
+            # HTML A4 Preview Template (Scaled for clean on-screen reading)
             if doc.doc_type == DocType.EXTERNAL:
                 st.markdown(f"""
                 <div class="a4-paper">
-                    <div style="text-align: center; margin-bottom: 15px;">
-                        <img src="data:image/png;base64,{garuda_b64}" style="height: 3.0cm; width: auto;" alt="ตราครุฑ 3 ซม." />
+                    <div style="text-align: center; margin-bottom: 8px;">
+                        <img src="data:image/png;base64,{garuda_b64}" style="height: 64px; width: auto;" alt="ตราครุฑ 3 ซม." />
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                         <div style="width: 48%;">ที่  {disp_no}</div>
                         <div style="width: 48%;">{disp_dept}</div>
                     </div>
-                    <div style="text-align: center; margin-left: 20%; margin-bottom: 15px;">
+                    <div style="text-align: center; margin-left: 20%; margin-bottom: 10px;">
                         {disp_date}
                     </div>
-                    <div style="margin-bottom: 12px;">
+                    <div style="margin-bottom: 10px;">
                         <p><strong>เรื่อง</strong>  {disp_subject}</p>
-                        <p><strong>เรียน</strong>  {disp_salutation}</p>
+                        <p><strong>{sal_label}</strong>  {disp_sal_body}</p>
                         {refs_html}
                         {atts_html}
                     </div>
                     <p class="a4-indent">{disp_reason}</p>
                     {f'<p class="a4-indent">{disp_details}</p>' if disp_details else ''}
                     <p class="a4-indent">{disp_purpose}</p>
-                    <div style="text-align: center; margin-left: 45%; margin-top: 35px; margin-bottom: 35px;">
+                    <div style="text-align: center; margin-left: 45%; margin-top: 24px; margin-bottom: 24px;">
                         <p>{disp_closing}</p>
-                        <div style="height: 45px;"></div>
+                        <div style="height: 35px;"></div>
                         <p>{disp_sig_name}</p>
                         <p>{disp_sig_pos}</p>
                     </div>
-                    <div style="font-size: 14pt; margin-top: 25px; color: #444;">
-                        <p style="margin: 0;">{highlight_placeholders_html(doc.contact_dept or '')}</p>
-                        <p style="margin: 0;">โทรศัพท์  {highlight_placeholders_html(doc.contact_tel or '')}</p>
-                        <p style="margin: 0;">ไปรษณีย์อิเล็กทรอนิกส์  {highlight_placeholders_html(doc.contact_email or '')}</p>
+                    <div style="font-size: 11px !important; margin-top: 18px; color: #475569; line-height: 1.35;">
+                        <p style="margin: 0; font-size: 11px !important;">{highlight_placeholders_html(doc.contact_dept or '')}</p>
+                        <p style="margin: 0; font-size: 11px !important;">โทรศัพท์  {highlight_placeholders_html(doc.contact_tel or '')}</p>
+                        <p style="margin: 0; font-size: 11px !important;">ไปรษณีย์อิเล็กทรอนิกส์  {highlight_placeholders_html(doc.contact_email or '')}</p>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                 <div class="a4-paper">
-                    <div style="display: flex; align-items: flex-start; margin-bottom: 15px;">
-                        <img src="data:image/png;base64,{garuda_b64}" style="height: 1.5cm; width: auto; margin-right: 25px;" alt="ตราครุฑ 1.5 ซม." />
-                        <div style="font-size: 29pt; font-weight: bold; text-align: center; width: 80%;">บันทึกข้อความ</div>
+                    <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
+                        <img src="data:image/png;base64,{garuda_b64}" style="height: 34px; width: auto; margin-right: 18px;" alt="ตราครุฑ 1.5 ซม." />
+                        <div style="font-size: 20px; font-weight: bold; text-align: center; width: 85%;">บันทึกข้อความ</div>
                     </div>
-                    <div style="margin-bottom: 10px;">
+                    <div style="margin-bottom: 8px;">
                         <p><strong>ส่วนราชการ</strong>  {disp_dept}</p>
                         <div style="display: flex; justify-content: space-between;">
                             <div style="width: 48%;"><strong>ที่</strong>  {disp_no}</div>
                             <div style="width: 48%;"><strong>วันที่</strong>  {disp_date}</div>
                         </div>
                         <p><strong>เรื่อง</strong>  {disp_subject}</p>
-                        <p><strong>เรียน</strong>  {disp_salutation}</p>
+                        <p><strong>{sal_label}</strong>  {disp_sal_body}</p>
                         {refs_html}
                         {atts_html}
                     </div>
-                    <hr style="border-top: 1px solid #ccc; margin-bottom: 15px;" />
+                    <hr style="border-top: 1px solid #cbd5e1; margin-bottom: 10px;" />
                     <p class="a4-indent">{disp_reason}</p>
                     {f'<p class="a4-indent">{disp_details}</p>' if disp_details else ''}
                     <p class="a4-indent">{disp_purpose}</p>
-                    <div style="text-align: center; margin-left: 45%; margin-top: 45px;">
-                        <div style="height: 40px;"></div>
+                    <div style="text-align: center; margin-left: 45%; margin-top: 30px;">
+                        <div style="height: 30px;"></div>
                         <p>{disp_sig_name}</p>
                         <p>{disp_sig_pos}</p>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Inline Paragraph Actions (เกลาภาษาระดับย่อหน้า)
-            st.markdown("##### ⚡ เครื่องมือลัดเกลาภาษาระดับย่อหน้า (Inline Paragraph Actions)")
+            # Inline Paragraph Actions (ปุ่มลัดตรวจแก้ระดับย่อหน้า)
+            st.markdown("##### ⚡ เครื่องมือลัดเกลาภาษาระดับย่อหน้า")
             ip1, ip2, ip3 = st.columns(3)
             with ip1:
-                st.caption("🔹 จัดการภาคเหตุ:")
+                st.caption("🔹 ภาคเหตุ:")
                 col_i1, col_i2 = st.columns(2)
                 with col_i1:
-                    if st.button("✍️ ทางการขึ้น", key="btn_p1_formal", use_container_width=True):
+                    if st.button("✍️ ทางการ", key="btn_p1_formal", use_container_width=True):
                         st.session_state.doc_data.paragraph_reason = copilot_refine_paragraph("reason", st.session_state.doc_data.paragraph_reason, "formal")
                         st.rerun()
                 with col_i2:
@@ -531,10 +673,10 @@ with tab_main:
                         st.rerun()
 
             with ip2:
-                st.caption("🔹 จัดการภาคข้อเท็จจริง:")
+                st.caption("🔹 ภาคข้อเท็จจริง:")
                 col_j1, col_j2 = st.columns(2)
                 with col_j1:
-                    if st.button("✍️ ทางการขึ้น", key="btn_p2_formal", use_container_width=True):
+                    if st.button("✍️ ทางการ", key="btn_p2_formal", use_container_width=True):
                         if st.session_state.doc_data.paragraph_details:
                             st.session_state.doc_data.paragraph_details = copilot_refine_paragraph("details", st.session_state.doc_data.paragraph_details, "formal")
                             st.rerun()
@@ -545,20 +687,19 @@ with tab_main:
                             st.rerun()
 
             with ip3:
-                st.caption("🔹 จัดการภาคสรุป/เสนอ:")
+                st.caption("🔹 ภาคสรุป/เสนอ:")
                 col_k1, col_k2 = st.columns(2)
                 with col_k1:
-                    if st.button("✍️ ทางการขึ้น", key="btn_p3_formal", use_container_width=True):
+                    if st.button("✍️ ทางการ", key="btn_p3_formal", use_container_width=True):
                         st.session_state.doc_data.paragraph_purpose = copilot_refine_paragraph("purpose", st.session_state.doc_data.paragraph_purpose, "formal")
                         st.rerun()
                 with col_k2:
-                    if st.button("📌 ใส่ข้อพิจารณา", key="btn_p3_propose", use_container_width=True):
+                    if st.button("📌 ใส่ข้อเสนอ", key="btn_p3_propose", use_container_width=True):
                         st.session_state.doc_data.paragraph_purpose = copilot_refine_paragraph("purpose", st.session_state.doc_data.paragraph_purpose, "propose")
                         st.rerun()
 
         # ----------------- TAB DETAILED EDITOR -----------------
         with tab_editor:
-            # การควบคุมประเภทและชั้นความเร็ว/ความลับ
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 new_type = st.selectbox(
@@ -589,7 +730,6 @@ with tab_main:
                     value=st.session_state.doc_data.use_thai_numerals
                 )
 
-            # ข้อมูลหัวกระดาษ
             st.markdown("##### 📌 ข้อมูลส่วนหัวหนังสือ")
             h1, h2 = st.columns([1.5, 1])
             with h1:
@@ -608,37 +748,34 @@ with tab_main:
             st.session_state.doc_data.subject = st.text_input("เรื่อง", st.session_state.doc_data.subject)
             st.session_state.doc_data.salutation = st.text_input("คำขึ้นต้น (เช่น เรียน / กราบเรียน)", st.session_state.doc_data.salutation)
 
-            # อ้างถึง และ สิ่งที่ส่งมาด้วย (รองรับหลายบรรทัด)
             st.markdown("##### 📎 เอกสารอ้างอิงและสิ่งที่ส่งมาด้วย")
             ref_col, att_col = st.columns(2)
             with ref_col:
                 current_refs = "\n".join(st.session_state.doc_data.references) if st.session_state.doc_data.references else ""
-                new_refs_text = st.text_area("อ้างถึง (แยก ๑ บรรทัดต่อ ๑ ฉบับ)", value=current_refs, height=75)
+                new_refs_text = st.text_area("อ้างถึง (แยก ๑ บรรทัดต่อ ๑ ฉบับ)", value=current_refs, height=65)
                 st.session_state.doc_data.references = [line.strip() for line in new_refs_text.splitlines() if line.strip()] or None
             with att_col:
                 current_atts = "\n".join(st.session_state.doc_data.attachments) if st.session_state.doc_data.attachments else ""
-                new_atts_text = st.text_area("สิ่งที่ส่งมาด้วย (แยก ๑ บรรทัดต่อ ๑ ฉบับ)", value=current_atts, height=75)
+                new_atts_text = st.text_area("สิ่งที่ส่งมาด้วย (แยก ๑ บรรทัดต่อ ๑ ฉบับ)", value=current_atts, height=65)
                 st.session_state.doc_data.attachments = [line.strip() for line in new_atts_text.splitlines() if line.strip()] or None
 
-            # เนื้อความ 3 ภาค
             st.markdown("##### 📝 เนื้อความ (โครงสร้าง 3 ภาคมาตรฐาน)")
             st.session_state.doc_data.paragraph_reason = st.text_area(
                 "ภาคเหตุ (เกริ่นนำ)", 
                 st.session_state.doc_data.paragraph_reason, 
-                height=90
+                height=80
             )
             st.session_state.doc_data.paragraph_details = st.text_area(
                 "ภาคข้อเท็จจริงและข้อพิจารณา", 
                 st.session_state.doc_data.paragraph_details or "", 
-                height=90
+                height=80
             )
             st.session_state.doc_data.paragraph_purpose = st.text_area(
                 "ภาคความประสงค์หรือภาคสรุป", 
                 st.session_state.doc_data.paragraph_purpose, 
-                height=70
+                height=65
             )
 
-            # ผู้ลงนาม และคำลงท้าย
             st.markdown("##### ✍️ ลายมือชื่อและผู้ลงนาม")
             if st.session_state.doc_data.doc_type == DocType.EXTERNAL:
                 s1, s2, s3 = st.columns(3)
@@ -655,7 +792,6 @@ with tab_main:
                 with s2:
                     st.session_state.doc_data.signatory_position = st.text_input("ตำแหน่งผู้ลงนาม", st.session_state.doc_data.signatory_position)
 
-            # ข้อมูลผู้ติดต่อ (สำหรับหนังสือภายนอก)
             if st.session_state.doc_data.doc_type == DocType.EXTERNAL:
                 st.markdown("##### 🏢 ส่วนราชการเจ้าของเรื่องและข้อมูลติดต่อ")
                 c_c1, c_c2, c_c3 = st.columns(3)
@@ -688,16 +824,16 @@ with tab_main:
                                 diff_html.append(f'<span class="diff-ins">{b.modified_text}</span>')
                             elif b.op == "replace":
                                 diff_html.append(f'<span class="diff-del">{b.original_text}</span> <span class="diff-ins">{b.modified_text}</span>')
-                        st.markdown(f"<div style='background:#f8fafc; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;'>{' '.join(diff_html)}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background:#f8fafc; padding:6px 10px; border-radius:5px; border:1px solid #e2e8f0; font-size:0.82rem;'>{' '.join(diff_html)}</div>", unsafe_allow_html=True)
                         st.write("")
 
             st.markdown("---")
             st.markdown("##### 💾 บันทึกประวัติเวอร์ชัน (Snapshot Version)")
-            v_col1, v_col2 = st.columns([2, 1])
+            v_col1, v_col2 = st.columns([2.5, 1])
             with v_col1:
                 v_note = st.text_input("บันทึกหมายเหตุเวอร์ชัน", value="ผ่านการตรวจทานและปรับข้อความเรียบร้อย")
             with v_col2:
-                if st.button("📌 บันทึกเป็นเวอร์ชันใหม่", use_container_width=True):
+                if st.button("📌 บันทึกเวอร์ชันใหม่", use_container_width=True):
                     new_v = audit_mgr.save_version(
                         doc_id=st.session_state.doc_data.doc_number,
                         doc=st.session_state.doc_data,
@@ -713,7 +849,7 @@ with tab_main:
                 for sv in saved_versions:
                     st.markdown(f"- **เวอร์ชัน {sv.version_num}:** {sv.note} (โดย {sv.author} เมื่อ {sv.created_at})")
 
-        # Linter Validation Summary ด้านล่าง
+        # Linter Validation Summary
         lint_res = lint_gov_document(st.session_state.doc_data)
         st.markdown("---")
         st.markdown("##### 🛡️ ผลการตรวจสอบความถูกต้องตามระเบียบงานสารบรรณ")

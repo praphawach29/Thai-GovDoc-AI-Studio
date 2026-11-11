@@ -4,6 +4,7 @@ ai_drafter.py — สมองกลยกร่างหนังสือร�
 """
 
 import os
+import re
 from enum import Enum
 from typing import Optional, List
 
@@ -34,22 +35,25 @@ def draft_from_context_rule_based(ctx: SourceDocumentContext,
     doc_date = "๑๕ มีนาคม ๒๕๖๙"
     
     # 1. การกำหนดเรื่อง (Subject)
-    orig_subject = ctx.source_subject or ctx.source_filename.replace('.pdf', '').replace('.docx', '')
+    raw_subject = ctx.source_subject or ctx.source_filename.replace('.pdf', '').replace('.docx', '')
+    orig_subject = raw_subject.strip()
+    sep = " " if re.match(r'^[A-Za-z0-9_]', orig_subject) else ""
+
     if doc_type == DocType.INTERNAL:
         if intent == DraftingIntent.MEMO_REVIEW:
-            subject = f"รายงานการพิจารณาหนังสือ{orig_subject}"
+            subject = f"รายงานการพิจารณาหนังสือ{sep}{orig_subject}"
         else:
-            subject = f"ขออนุมัติดำเนินการเกี่ยวกับ{orig_subject}"
+            subject = f"ขออนุมัติดำเนินการเกี่ยวกับ{sep}{orig_subject}"
         salutation = "เรียน  [✏️ ระบุตำแหน่งผู้บังคับบัญชา]"
     else:
         if intent == DraftingIntent.ACCEPT:
             subject = f"การให้ความอนุเคราะห์{orig_subject.replace('ขอความอนุเคราะห์', '').replace('การขอ', '')}"
         elif intent == DraftingIntent.DECLINE:
-            subject = f"แจ้งข้อขัดข้องเกี่ยวกับ{orig_subject}"
+            subject = f"แจ้งข้อขัดข้องเกี่ยวกับ{sep}{orig_subject}"
         elif intent == DraftingIntent.FORWARD:
-            subject = f"ส่งเรื่อง{orig_subject} เพื่อโปรดพิจารณา"
+            subject = f"ส่งเรื่อง{sep}{orig_subject} เพื่อโปรดพิจารณา"
         elif intent == DraftingIntent.MEMO_REVIEW:
-            subject = f"รายงานผลการพิจารณาเรื่อง{orig_subject}"
+            subject = f"รายงานผลการพิจารณาเรื่อง{sep}{orig_subject}"
         else:
             subject = orig_subject
 
