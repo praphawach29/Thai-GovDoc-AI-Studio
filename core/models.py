@@ -103,3 +103,46 @@ class GovDocumentSchema(BaseModel):
     contact_fax: Optional[str] = Field(None, description="หมายเลขโทรสาร")
     contact_email: Optional[str] = Field(None, description="อีเมลส่วนราชการ")
 
+    def find_placeholders(self) -> List[str]:
+        """
+        ค้นหาจุดที่ยังมี Smart Placeholder เช่น [ระบุ...], [✏️ ระบุ...] หรือ {{...}} ตกค้างอยู่
+        คืนค่าเป็นรายการ (ชื่อฟิลด์: ข้อความ Placeholder)
+        """
+        import re
+        pattern = re.compile(r'\[(?:✏️\s*)?ระบุ[^\]]*\]|\{\{[^\}]+\}\}')
+        results = []
+        text_fields = [
+            ("เลขที่หนังสือ", self.doc_number),
+            ("ส่วนราชการ", self.dept_name),
+            ("วันที่", self.doc_date),
+            ("เรื่อง", self.subject),
+            ("คำขึ้นต้น", self.salutation),
+            ("ภาคเหตุ", self.paragraph_reason),
+            ("ภาคข้อเท็จจริง", self.paragraph_details or ""),
+            ("ภาคความประสงค์", self.paragraph_purpose),
+            ("คำลงท้าย", self.closing),
+            ("ชื่อผู้ลงนาม", self.signatory_name),
+            ("ตำแหน่งผู้ลงนาม", self.signatory_position),
+            ("กลุ่มงานเจ้าของเรื่อง", self.contact_dept or ""),
+            ("โทรศัพท์", self.contact_tel or "")
+        ]
+        if self.references:
+            for idx, ref in enumerate(self.references, 1):
+                text_fields.append((f"อ้างถึง ({idx})", ref))
+        if self.attachments:
+            for idx, att in enumerate(self.attachments, 1):
+                text_fields.append((f"สิ่งที่ส่งมาด้วย ({idx})", att))
+                
+        for label, val in text_fields:
+            if not val:
+                continue
+            matches = pattern.findall(val)
+            for m in matches:
+                results.append(f"{label}: {m}")
+        return results
+
+    def count_placeholders(self) -> int:
+        """นับจำนวนจุดที่ยังมี Smart Placeholder ค้างอยู่"""
+        return len(self.find_placeholders())
+
+

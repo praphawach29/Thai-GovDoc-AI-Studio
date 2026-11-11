@@ -380,6 +380,32 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     r_salv = p_sal.add_run(insert_zwsp(clean_sal))
     _set_run_thai_font(r_salv, size_pt=DEFAULT_FONT_SIZE)
 
+    # อ้างถึง (ถ้ามี)
+    if data.references:
+        for idx, ref in enumerate(data.references):
+            p_ref = doc.add_paragraph()
+            p_ref.paragraph_format.space_after = Pt(4)
+            if idx == 0:
+                r_ref_h = p_ref.add_run("อ้างถึง  ")
+                _set_run_thai_font(r_ref_h, size_pt=DEFAULT_FONT_SIZE, bold=True)
+            else:
+                p_ref.paragraph_format.left_indent = Cm(2.5)
+            r_ref_v = p_ref.add_run(insert_zwsp(ref))
+            _set_run_thai_font(r_ref_v, size_pt=DEFAULT_FONT_SIZE)
+
+    # สิ่งที่ส่งมาด้วย / เอกสารแนบ (ถ้ามี)
+    if data.attachments:
+        for idx, att in enumerate(data.attachments):
+            p_att = doc.add_paragraph()
+            p_att.paragraph_format.space_after = Pt(4)
+            if idx == 0:
+                r_att_h = p_att.add_run("สิ่งที่ส่งมาด้วย  ")
+                _set_run_thai_font(r_att_h, size_pt=DEFAULT_FONT_SIZE, bold=True)
+            else:
+                p_att.paragraph_format.left_indent = Cm(2.5)
+            r_att_v = p_att.add_run(insert_zwsp(att))
+            _set_run_thai_font(r_att_v, size_pt=DEFAULT_FONT_SIZE)
+
     # 3. เนื้อหา 3 ภาค
     _add_paragraph_with_zwsp(doc, fmt_reason, indent_cm=2.5, space_after_pt=6)
 

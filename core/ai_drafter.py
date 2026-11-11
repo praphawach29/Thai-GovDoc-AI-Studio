@@ -16,6 +16,7 @@ class DraftingIntent(str, Enum):
     DECLINE = "decline"        # หนังสือแจ้งข้อขัดข้อง / ปฏิเสธอย่างสุภาพ
     FORWARD = "forward"        # หนังสือส่งต่อเรื่อง / แจ้งเวียน
     PROPOSAL = "proposal"      # บันทึกข้อความเสนอผู้บังคับบัญชาเพื่อโปรดพิจารณาอนุมัติ
+    MEMO_REVIEW = "memo_review"# บันทึกข้อความรายงานการพิจารณา / เกษียนสั่งการรวมกับเรื่องเดิม (ตามโมเดล Ekkasarn)
 
 
 def draft_from_context_rule_based(ctx: SourceDocumentContext, 
@@ -35,8 +36,11 @@ def draft_from_context_rule_based(ctx: SourceDocumentContext,
     # 1. การกำหนดเรื่อง (Subject)
     orig_subject = ctx.source_subject or ctx.source_filename.replace('.pdf', '').replace('.docx', '')
     if doc_type == DocType.INTERNAL:
-        subject = f"ขออนุมัติดำเนินการเกี่ยวกับ{orig_subject}"
-        salutation = "เรียน  ผู้อำนวยการสำนักงานพัฒนารัฐบาลดิจิทัล"
+        if intent == DraftingIntent.MEMO_REVIEW:
+            subject = f"รายงานการพิจารณาหนังสือ{orig_subject}"
+        else:
+            subject = f"ขออนุมัติดำเนินการเกี่ยวกับ{orig_subject}"
+        salutation = "เรียน  [✏️ ระบุตำแหน่งผู้บังคับบัญชา]"
     else:
         if intent == DraftingIntent.ACCEPT:
             subject = f"การให้ความอนุเคราะห์{orig_subject.replace('ขอความอนุเคราะห์', '').replace('การขอ', '')}"
@@ -44,13 +48,15 @@ def draft_from_context_rule_based(ctx: SourceDocumentContext,
             subject = f"แจ้งข้อขัดข้องเกี่ยวกับ{orig_subject}"
         elif intent == DraftingIntent.FORWARD:
             subject = f"ส่งเรื่อง{orig_subject} เพื่อโปรดพิจารณา"
+        elif intent == DraftingIntent.MEMO_REVIEW:
+            subject = f"รายงานผลการพิจารณาเรื่อง{orig_subject}"
         else:
             subject = orig_subject
 
         if ctx.source_dept and ctx.source_dept != "หน่วยงานต้นเรื่อง":
             salutation = f"เรียน  {ctx.source_dept}"
         else:
-            salutation = "เรียน  อธิบดีกรมสรรพากร"
+            salutation = "เรียน  [✏️ ระบุตำแหน่งผู้รับ]"
 
     # 2. การสร้างข้ออ้างถึง (References)
     references = []
@@ -102,6 +108,15 @@ def draft_from_context_rule_based(ctx: SourceDocumentContext,
         )
         paragraph_purpose = "จึงเรียนมาเพื่อโปรดพิจารณาดำเนินการ และแจ้งผลให้ทราบต่อไปด้วย จะขอบคุณยิ่ง"
 
+    elif intent == DraftingIntent.MEMO_REVIEW:
+        paragraph_details = (
+            f"ในการนี้ จากการตรวจสอบข้อเท็จจริงพบว่า คำขอหรือประเด็นตามหนังสือข้างต้นมีรายละเอียดที่เป็นประโยชน์ต่อทางราชการ "
+            f"จึงเห็นควรดำเนินการตามแนวทางของเรื่องเดิม เพื่อให้การปฏิบัติงานเป็นไปด้วยความเรียบร้อย ถูกต้องตามระเบียบ"
+        )
+        paragraph_purpose = (
+            "ข้อพิจารณาและข้อเสนอ เห็นควรดำเนินการเรื่องดังกล่าวเข้ากับเรื่องเดิม และแจ้งผลการพิจารณาให้ทราบต่อไป จึงเรียนมาเพื่อโปรดพิจารณา"
+        )
+
     else:  # PROPOSAL (บันทึกข้อความ)
         paragraph_details = (
             f"ฝ่ายพัฒนาศักยภาพภาครัฐ ได้พิจารณาแล้วเห็นว่า โครงการดังกล่าวมีความจำเป็นและเป็นประโยชน์อย่างยิ่ง "
@@ -120,12 +135,12 @@ def draft_from_context_rule_based(ctx: SourceDocumentContext,
         doc_date=doc_date,
         subject=subject,
         salutation=salutation,
-        references=references if doc_type == DocType.EXTERNAL else None,
-        attachments=["สรุปผลการพิจารณา จำนวน ๑ ฉบับ"] if doc_type == DocType.EXTERNAL else None,
+        references=references if references else None,
+        attachments=["สรุปผลการพิจารณา จำนวน ๑ ฉบับ"] if (doc_type == DocType.EXTERNAL or intent == DraftingIntent.MEMO_REVIEW) else None,
         paragraph_reason=paragraph_reason,
         paragraph_details=paragraph_details,
         paragraph_purpose=paragraph_purpose,
-        closing="ขอแสดงความนับถือ",
+        closing="ขอแสดงความนับถือ" if doc_type == DocType.EXTERNAL else "",
         signatory_name=my_signatory,
         signatory_position=my_position,
         contact_dept=contact_dept,

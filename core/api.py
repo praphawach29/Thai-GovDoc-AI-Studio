@@ -136,6 +136,19 @@ def validate_document(doc: GovDocumentSchema):
     return lint_gov_document(doc)
 
 
+@app.post("/api/v1/placeholders")
+def check_placeholders(doc: GovDocumentSchema):
+    """
+    ตรวจสอบ Smart Placeholders ที่ยังค้างอยู่ในเอกสาร
+    """
+    placeholders = doc.find_placeholders()
+    return {
+        "count": len(placeholders),
+        "has_placeholders": len(placeholders) > 0,
+        "placeholders": placeholders
+    }
+
+
 # ---------------------------------------------------------------------
 # 5. Export: ผลิตเอกสารจริง (DOCX และ Typst)
 # ---------------------------------------------------------------------
@@ -223,3 +236,4 @@ def create_incoming(record: IncomingRecord):
     """
     row_id = registry.register_incoming(record)
     return {"status": "registered", "registry_id": row_id, "receive_number": record.receive_number}
+

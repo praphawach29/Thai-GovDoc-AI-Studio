@@ -77,6 +77,8 @@ def generate_typst_content(data: GovDocumentSchema, garuda_rel_path: str = "asse
   doc_date: {_escape_typst_string(fmt_date)},
   subject: {_escape_typst_string(data.subject)},
   salutation: {_escape_typst_string(data.salutation)},
+  references: {_format_typst_list(data.references)},
+  attachments: {_format_typst_list(data.attachments)},
   paragraph_reason: {_escape_typst_string(fmt_reason)},
   paragraph_details: {details_val},
   paragraph_purpose: {_escape_typst_string(fmt_purpose)},

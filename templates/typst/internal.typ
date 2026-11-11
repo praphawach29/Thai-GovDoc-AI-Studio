@@ -7,6 +7,8 @@
   doc_date: "",
   subject: "",
   salutation: "",
+  references: (),
+  attachments: (),
   paragraph_reason: "",
   paragraph_details: none,
   paragraph_purpose: "",
@@ -69,6 +71,28 @@
   // เรียน
   block[
     #text(weight: "bold")[เรียน] #h(0.4cm) #salutation
+  ]
+
+  if references.len() > 0 [
+    #v(0.2cm)
+    #for (i, ref) in references.enumerate() [
+      #if i == 0 [
+        #text(weight: "bold")[อ้างถึง] #h(0.3cm) #ref \
+      ] else [
+        #h(1.5cm) #ref \
+      ]
+    ]
+  ]
+
+  if attachments.len() > 0 [
+    #v(0.2cm)
+    #for (i, att) in attachments.enumerate() [
+      #if i == 0 [
+        #text(weight: "bold")[สิ่งที่ส่งมาด้วย] #h(0.3cm) #att \
+      ] else [
+        #h(2.8cm) #att \
+      ]
+    ]
   ]
 
   #v(0.4cm)

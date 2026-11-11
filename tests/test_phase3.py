@@ -157,3 +157,4 @@ def test_copilot_toggle_numerals(sample_doc):
     arab_doc = toggle_doc_numerals(thai_doc, use_thai=False)
     assert "1234/2569" in arab_doc.doc_number
     assert "15 มีนาคม 2569" in arab_doc.doc_date
+

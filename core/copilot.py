@@ -112,3 +112,30 @@ def toggle_doc_numerals(doc: GovDocumentSchema, use_thai: bool) -> GovDocumentSc
         doc_copy.contact_tel = converter(doc_copy.contact_tel)
 
     return doc_copy
+
+
+def copilot_refine_paragraph(paragraph_type: str, text: str, action: str) -> str:
+    """
+    ผู้ช่วย AI ขัดเกลาข้อความเฉพาะระดับย่อหน้า (Inline Paragraph Copilot)
+    actions:
+      - 'formal': ปรับให้เป็นภาษาราชการชั้นสูง
+      - 'concise': สรุปย่อให้กระชับ
+      - 'law': อ้างอิงระเบียบงานสารบรรณ
+      - 'propose': ขึ้นต้นด้วยข้อพิจารณาและข้อเสนอ (สำหรับย่อหน้าสรุป)
+    """
+    if not text:
+        return ""
+    if action == "formal":
+        return make_formal_tone(text)
+    elif action == "concise":
+        return make_concise(text)
+    elif action == "law":
+        citation = " ทั้งนี้ ให้เป็นไปตามระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม"
+        if "ระเบียบสำนักนายกรัฐมนตรี" not in text:
+            return text.strip() + citation
+        return text
+    elif action == "propose":
+        if not text.startswith("ข้อพิจารณาและข้อเสนอ"):
+            return "ข้อพิจารณาและข้อเสนอ เห็นควรดำเนินการตามแนวทางดังกล่าว จึงเรียนมาเพื่อโปรดพิจารณา"
+        return text
+    return text

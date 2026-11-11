@@ -234,3 +234,4 @@ class AuditManager:
                     timestamp=r["timestamp"]
                 ))
             return logs
+
