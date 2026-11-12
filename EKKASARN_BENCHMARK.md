@@ -73,7 +73,7 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 | Organization/security | Profile and local workflow exist; enterprise account controls are not evidenced in this codebase review. | Before multi-user deployment, define access roles, retention/deletion, secret handling, and audit boundaries; do not infer Ekkasarn's controls beyond its public statements. |
 | Document model | Structured fields (`memo_intro`, `memo_facts`, ...) with validation. | Add a full-text projection and parser for Word round-trip while retaining the structured model for linting and rules. |
 
-## Applied from this benchmark (Sprint 1–8)
+## Applied from this benchmark (Sprint 1–9)
 
 - `core/models.py`: `ExportOptions` (layout profile, font: New/PSK/IT9, letterhead, divider, letter spacing, embed flag, private flag).
 - `core/layout_profile.py`: `LayoutProfile` + `standard_memo`, `standard_external`, `form_it9_2026` (margins/fonts/spacing/indent/header style/page numbers from the real memo).
@@ -81,7 +81,8 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 - `core/classifier.py`: six official document kinds / forms 1–11 with keywords, confidence, reasons, and a confirmation card before drafting.
 - `core/special_drafter.py`: rule-based generators for stamp letters, directives, public-relations documents, and evidence/meeting minutes, exported with a dedicated Word layout.
 - `core/sections.py`: editable document-section list (12 section types, add/delete/reorder/visibility) synced back to legacy fields, with a Word renderer and A4 preview that follow the user's order.
-- `core/word_exporter.py`: automatic character compression (`w:w`) for long department headers, and blank document-number format `......../พ.ศ.` for manual numbering.
+- `core/word_exporter.py`: automatic character compression (`w:w`) for long department headers, blank document-number format `......../พ.ศ.`, and edit-status metadata in DOCX properties.
+- `web/app.py`: section manager at the top of the editor tab, status badge (draft/editing/saved), save-all button, and audit logging on every save.
 - `core/docx_fonts.py`: OOXML font embedding (`fontTable` + `odttf` + relationships + content types + settings).
 - `core/word_exporter.py`: profile-driven margins, style-level character spacing, segmented/dotted header, Thai/Arabic page numbers, optional garuda/divider, font selection.
 - `web/app.py`: export-options panel (layout profile, font, garuda, divider, spacing, embedding) wired to the Word download; recipient dropdown and hierarchy chain UI; cloud-AI opt-out for sensitive documents.
@@ -90,7 +91,7 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 - `tests/test_phase11_p0_safety.py`: eight tests covering placeholder document numbers, today's Thai date, cloud-AI blocking, and new linter rules.
 - `tests/test_phase12_classifier.py`: six tests covering all six document kinds, form inference, forced selection, and low-confidence defaults.
 
-Test suite after Sprint 1–8: **135 tests collected — 130 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
+Test suite after Sprint 1–9: **136 tests collected — 131 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
 
 ## Recommended application sequence
 

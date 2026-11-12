@@ -323,6 +323,10 @@ def export_govdoc_to_docx(
     token = _ACTIVE_FONT.set(_font_for_option(font_key))
     try:
         doc = Document()
+        doc.core_properties.comments = (
+            f"สถานะเอกสาร: {data.edit_status} | แก้ไขล่าสุด: {data.last_edited_at or '-'}"
+        )
+        doc.core_properties.keywords = f"govdoc,{data.edit_status}"
         _setup_page_margins(doc, profile)
         _apply_letter_spacing(doc, letter_spacing)
 

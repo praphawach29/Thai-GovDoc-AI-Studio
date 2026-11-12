@@ -351,6 +351,10 @@ class GovDocumentSchema(BaseModel):
     sections: Optional[List[DocumentSection]] = Field(
         None, description="ลำดับหัวข้อเอกสารแบบอิสระ (None = ใช้ฟิลด์มาตรฐานเดิม)"
     )
+    edit_status: Literal["draft", "editing", "saved"] = Field(
+        default="draft", description="สถานะการแก้ไข: ฉบับร่าง/กำลังแก้ไข/บันทึกแล้ว"
+    )
+    last_edited_at: Optional[str] = Field(None, description="เวลาที่แก้ไขล่าสุด")
     urgency: UrgencyLevel = Field(default=UrgencyLevel.NORMAL, description="ชั้นความเร็ว")
     secret: SecretLevel = Field(default=SecretLevel.NORMAL, description="ชั้นความลับ")
     use_thai_numerals: bool = Field(default=False, description="แปลงตัวเลขเป็นเลขไทยหรือไม่")

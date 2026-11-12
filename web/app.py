@@ -10,6 +10,7 @@ import sys
 import base64
 import tempfile
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 # เพิ่ม Root directory เข้า sys.path
@@ -1596,111 +1597,6 @@ with tab_main:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # ----------------- ตัวจัดการหัวข้ออิสระ (เพิ่ม/ลบ/สลับ/แก้ไข) -----------------
-            if doc.kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
-                if doc.sections is None:
-                    if st.button("🧩 เปิดโหมดแก้ไขหัวข้ออิสระ (เพิ่ม/ลบ/สลับหัวข้อ)"):
-                        st.session_state.doc_data = ensure_sections(doc)
-                        st.rerun()
-                else:
-                    st.markdown("### 🧩 หัวข้อเอกสาร (โหมดอิสระ)")
-                    st.caption("แก้ไขชื่อ/เนื้อหา เพิ่ม ลบ หรือสลับลำดับหัวข้อได้ตามต้องการ")
-                    for idx, sec in enumerate(list(doc.sections)):
-                        _label = sec.label or sec.kind.default_label()
-                        if not sec.enabled:
-                            _label += " (ซ่อนอยู่)"
-                        with st.expander(f"{idx + 1}. {_label}", expanded=False):
-                            new_label = st.text_input(
-                                "ชื่อหัวข้อ", value=sec.label, key=f"sec_label_{sec.id}"
-                            )
-                            new_content = st.text_area(
-                                "เนื้อหา",
-                                value=sec.content,
-                                height=90,
-                                key=f"sec_content_{sec.id}",
-                            )
-                            new_secondary = ""
-                            if sec.kind in (SectionKind.NUMBER_DATE, SectionKind.SIGNATURE):
-                                new_secondary = st.text_input(
-                                    "วันที่ / ตำแหน่ง",
-                                    value=sec.secondary,
-                                    key=f"sec_secondary_{sec.id}",
-                                )
-                            new_enabled = st.checkbox(
-                                "แสดงหัวข้อนี้ในเอกสาร",
-                                value=bool(sec.enabled),
-                                key=f"sec_enabled_{sec.id}",
-                                help="ยกเลิกเพื่อซ่อนหัวข้อนี้ออกจากเอกสาร โดยไม่ต้องลบเนื้อหา",
-                            )
-                            if new_enabled != sec.enabled:
-                                sec.enabled = new_enabled
-                                sync_fields_from_sections(doc)
-                                st.session_state.doc_data = doc
-                                st.rerun()
-                            c_save, c_up, c_down, c_del = st.columns([1.2, 0.5, 0.5, 0.6])
-                            with c_save:
-                                if st.button("💾 บันทึก", key=f"sec_save_{sec.id}", type="primary"):
-                                    sec.label = new_label.strip() or sec.kind.default_label()
-                                    sec.content = new_content.strip()
-                                    sec.secondary = new_secondary.strip()
-                                    sec.enabled = new_enabled
-                                    doc.sections[idx] = sec
-                                    sync_fields_from_sections(doc)
-                                    st.session_state.doc_data = doc
-                                    st.rerun()
-                            with c_up:
-                                if idx > 0 and st.button("↑", key=f"sec_up_{sec.id}"):
-                                    doc.sections[idx - 1], doc.sections[idx] = doc.sections[idx], doc.sections[idx - 1]
-                                    sync_fields_from_sections(doc)
-                                    st.session_state.doc_data = doc
-                                    st.rerun()
-                            with c_down:
-                                if idx < len(doc.sections) - 1 and st.button("↓", key=f"sec_down_{sec.id}"):
-                                    doc.sections[idx + 1], doc.sections[idx] = doc.sections[idx], doc.sections[idx + 1]
-                                    sync_fields_from_sections(doc)
-                                    st.session_state.doc_data = doc
-                                    st.rerun()
-                            with c_del:
-                                if st.button("🗑 ลบ", key=f"sec_del_{sec.id}"):
-                                    doc.sections.pop(idx)
-                                    sync_fields_from_sections(doc)
-                                    st.session_state.doc_data = doc
-                                    st.rerun()
-
-                    ac1, ac2, ac3 = st.columns([1.3, 1.3, 1])
-                    with ac1:
-                        _new_kind = st.selectbox(
-                            "เพิ่มหัวข้อ",
-                            options=list(SectionKind),
-                            format_func=lambda k: k.default_label(),
-                            key="new_section_kind",
-                        )
-                    with ac2:
-                        _new_label = st.text_input(
-                            "ชื่อหัวข้อใหม่ (เว้นว่าง = ค่าเริ่มต้น)",
-                            value="",
-                            key="new_section_label",
-                        )
-                    with ac3:
-                        st.write("")
-                        st.write("")
-                        if st.button("➕ เพิ่มหัวข้อ"):
-                            doc.sections.append(
-                                DocumentSection(
-                                    kind=_new_kind,
-                                    label=_new_label.strip() or _new_kind.default_label(),
-                                )
-                            )
-                            sync_fields_from_sections(doc)
-                            st.session_state.doc_data = doc
-                            st.rerun()
-
-                    if st.button("ปิดโหมดอิสระ (กลับไปใช้ฟิลด์มาตรฐาน)"):
-                        doc.sections = None
-                        st.session_state.doc_data = doc
-                        st.rerun()
-                    st.info("โหมดอิสระเปิดอยู่: กล่องแก้ไขแบบเดิมด้านล่างจะไม่ซิงก์กับหัวข้อด้านบน")
-
             # ----------------- กล่องแก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง -----------------
             st.markdown("##### ✏️ แก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง")
             if doc.sections is not None:
@@ -1919,206 +1815,363 @@ with tab_main:
 
         # ----------------- TAB DETAILED EDITOR -----------------
         with tab_editor:
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                new_type = st.selectbox(
-                    "ประเภทหนังสือ",
-                    options=[DocType.EXTERNAL, DocType.INTERNAL],
-                    format_func=lambda x: "หนังสือภายนอก" if x == DocType.EXTERNAL else "หนังสือภายใน (บันทึกข้อความ)",
-                    index=0 if st.session_state.doc_data.doc_type == DocType.EXTERNAL else 1
-                )
-                if new_type != st.session_state.doc_data.doc_type:
-                    st.session_state.doc_data = convert_doc_type(st.session_state.doc_data, new_type)
-                    st.rerun()
+            doc = st.session_state.doc_data
 
-            with c2:
-                st.session_state.doc_data.urgency = st.selectbox(
-                    "ชั้นความเร็ว",
-                    options=[UrgencyLevel.NORMAL, UrgencyLevel.URGENT, UrgencyLevel.VERY_URGENT, UrgencyLevel.MOST_URGENT],
-                    format_func=lambda x: x.to_thai()
-                )
-            with c3:
-                st.session_state.doc_data.secret = st.selectbox(
-                    "ชั้นความลับ",
-                    options=[SecretLevel.NORMAL, SecretLevel.SECRET, SecretLevel.VERY_SECRET, SecretLevel.TOP_SECRET],
-                    format_func=lambda x: x.to_thai()
-                )
-            with c4:
-                st.session_state.doc_data.use_thai_numerals = st.checkbox(
-                    "แปลงเป็นเลขไทย (๐-๙)", 
-                    value=st.session_state.doc_data.use_thai_numerals
+            def _mark_section_editing():
+                _d = st.session_state.doc_data
+                _d.edit_status = "editing"
+                st.session_state.doc_data = _d
+
+            def _save_sections(note: str = "บันทึกหัวข้ออิสระ"):
+                _d = st.session_state.doc_data
+                for _s in _d.sections or []:
+                    if f"sec_label_{_s.id}" in st.session_state:
+                        _s.label = st.session_state[f"sec_label_{_s.id}"].strip() or _s.kind.default_label()
+                    if f"sec_content_{_s.id}" in st.session_state:
+                        _s.content = st.session_state[f"sec_content_{_s.id}"].strip()
+                    if f"sec_secondary_{_s.id}" in st.session_state:
+                        _s.secondary = st.session_state[f"sec_secondary_{_s.id}"].strip()
+                    if f"sec_enabled_{_s.id}" in st.session_state:
+                        _s.enabled = bool(st.session_state[f"sec_enabled_{_s.id}"])
+                sync_fields_from_sections(_d)
+                _d.edit_status = "saved"
+                _d.last_edited_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+                st.session_state.doc_data = _d
+                audit_mgr.save_version(
+                    doc_id=audit_doc_id(_d),
+                    doc=_d,
+                    author="ผู้ใช้แก้ไข",
+                    note=note,
                 )
 
-            if st.session_state.doc_data.doc_type == DocType.INTERNAL:
-                col_hl1, col_hl2 = st.columns([2.5, 1.5])
-                with col_hl1:
-                    hl_opts = [
-                        MemoHierarchyLevel.DEPT_TO_PERM_SEC,
-                        MemoHierarchyLevel.DIV_TO_DEPT,
-                        MemoHierarchyLevel.SECTION_TO_DIV,
-                        MemoHierarchyLevel.FINAL_APPROVAL,
-                        MemoHierarchyLevel.CUSTOM,
-                    ]
-                    curr_hl = getattr(st.session_state.doc_data, 'memo_hierarchy_level', MemoHierarchyLevel.DEPT_TO_PERM_SEC)
-                    hl_idx = hl_opts.index(curr_hl) if curr_hl in hl_opts else 0
-                    selected_hl = st.selectbox(
-                        "🏢 ระดับชั้นการเสนอหนังสือ (ประโยคลงท้าย)",
-                        options=hl_opts,
-                        index=hl_idx,
-                        format_func=lambda x: x.to_thai() if hasattr(x, 'to_thai') else str(x),
-                        key="sb_memo_hierarchy_top"
+            if doc.edit_status == "saved":
+                st.success(
+                    "สถานะเอกสาร: ✅ แก้ไขและบันทึกแล้ว"
+                    + (f" (ล่าสุด {doc.last_edited_at})" if doc.last_edited_at else "")
+                )
+            elif doc.edit_status == "editing":
+                st.warning("สถานะเอกสาร: ✏️ กำลังแก้ไข — ยังไม่บันทึก")
+            else:
+                st.info("สถานะเอกสาร: 📄 ฉบับร่าง")
+
+            # ----------------- ตัวจัดการหัวข้ออิสระ (เพิ่ม/ลบ/สลับ/แก้ไข) -----------------
+            if doc.kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+                if doc.sections is None:
+                    st.info(
+                        "ต้องการเพิ่ม/ลบ/สลับหัวข้อเอง หรือเลือกว่าจะมีหัวข้อใดบ้าง "
+                        "ให้เปิดโหมดแก้ไขหัวข้ออิสระด้านล่าง"
                     )
-                    if selected_hl != st.session_state.doc_data.memo_hierarchy_level:
-                        st.session_state.doc_data.memo_hierarchy_level = selected_hl
-                        if selected_hl != MemoHierarchyLevel.CUSTOM:
-                            st.session_state.doc_data.memo_request = selected_hl.default_closing()
+                    if st.button("🧩 เปิดโหมดแก้ไขหัวข้ออิสระ (เพิ่ม/ลบ/สลับหัวข้อ)", type="primary"):
+                        new_doc = ensure_sections(doc)
+                        new_doc.edit_status = "editing"
+                        st.session_state.doc_data = new_doc
                         st.rerun()
-                with col_hl2:
-                    st.caption("ℹ️ ระบบจะช่วยตั้งประโยคลงท้าย 'จึงเรียนมาเพื่อ...' ให้สอดคล้องกับระดับชั้นการเสนอโดยอัตโนมัติ")
-
-            st.markdown("##### 📌 ข้อมูลส่วนหัวหนังสือ")
-            h1, h2 = st.columns([1.5, 1])
-            with h1:
-                col_n1, col_n2 = st.columns([2.5, 1])
-                with col_n1:
-                    st.session_state.doc_data.doc_number = st.text_input("ที่ (เลขที่หนังสือ)", st.session_state.doc_data.doc_number)
-                with col_n2:
-                    if st.button("🔢 รันเลขถัดไป", use_container_width=True, help="ดึงเลขที่หนังสือลำดับถัดไปจากระบบทะเบียนส่ง"):
-                        new_no = registry.get_next_doc_number()
-                        st.session_state.doc_data.doc_number = new_no
+                else:
+                    st.markdown("### 🧩 หัวข้อเอกสาร (โหมดอิสระ)")
+                    st.caption(
+                        "แก้ไขชื่อ/เนื้อหา เพิ่ม ลบ สลับลำดับ หรือเอาติ๊กออกเพื่อซ่อนหัวข้อ "
+                        "แล้วกดบันทึก ระบบจะบันทึกเวอร์ชันลง Audit Trail และสถานะลงproperties ของ Word"
+                    )
+                    if st.button("💾 บันทึกการแก้ไขทั้งหมด", type="primary", use_container_width=True):
+                        _save_sections("บันทึกการแก้ไขหัวข้ออิสระทั้งหมด")
                         st.rerun()
-            with h2:
-                st.session_state.doc_data.doc_date = st.text_input("วันที่ (ห้ามมีคำว่าวันที่)", st.session_state.doc_data.doc_date)
 
-            st.session_state.doc_data.dept_name = st.text_input("ส่วนราชการเจ้าของหนังสือ", st.session_state.doc_data.dept_name)
-            st.session_state.doc_data.subject = st.text_input("เรื่อง", st.session_state.doc_data.subject)
-            st.session_state.doc_data.salutation = st.text_input("คำขึ้นต้น (เช่น เรียน / กราบเรียน)", st.session_state.doc_data.salutation)
+                    for idx, sec in enumerate(list(doc.sections)):
+                        _label = sec.label or sec.kind.default_label()
+                        if not sec.enabled:
+                            _label += " (ซ่อนอยู่)"
+                        with st.expander(f"{idx + 1}. {_label}", expanded=False):
+                            new_label = st.text_input(
+                                "ชื่อหัวข้อ",
+                                value=sec.label,
+                                key=f"sec_label_{sec.id}",
+                                on_change=_mark_section_editing,
+                            )
+                            new_content = st.text_area(
+                                "เนื้อหา",
+                                value=sec.content,
+                                height=90,
+                                key=f"sec_content_{sec.id}",
+                                on_change=_mark_section_editing,
+                            )
+                            new_secondary = ""
+                            if sec.kind in (SectionKind.NUMBER_DATE, SectionKind.SIGNATURE):
+                                new_secondary = st.text_input(
+                                    "วันที่ / ตำแหน่ง",
+                                    value=sec.secondary,
+                                    key=f"sec_secondary_{sec.id}",
+                                    on_change=_mark_section_editing,
+                                )
+                            new_enabled = st.checkbox(
+                                "แสดงหัวข้อนี้ในเอกสาร",
+                                value=bool(sec.enabled),
+                                key=f"sec_enabled_{sec.id}",
+                                help="ยกเลิกเพื่อซ่อนหัวข้อนี้ออกจากเอกสาร โดยไม่ต้องลบเนื้อหา",
+                            )
+                            if new_enabled != sec.enabled:
+                                sec.enabled = new_enabled
+                                doc.sections[idx] = sec
+                                sync_fields_from_sections(doc)
+                                doc.edit_status = "saved"
+                                doc.last_edited_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+                                st.session_state.doc_data = doc
+                                st.rerun()
+                            c_save, c_up, c_down, c_del = st.columns([1.2, 0.5, 0.5, 0.6])
+                            with c_save:
+                                if st.button("💾 บันทึก", key=f"sec_save_{sec.id}", type="primary"):
+                                    _save_sections(f"บันทึกหัวข้อ: {_label}")
+                                    st.rerun()
+                            with c_up:
+                                if idx > 0 and st.button("↑", key=f"sec_up_{sec.id}"):
+                                    doc.sections[idx - 1], doc.sections[idx] = doc.sections[idx], doc.sections[idx - 1]
+                                    _save_sections("สลับลำดับหัวข้อขึ้น")
+                                    st.rerun()
+                            with c_down:
+                                if idx < len(doc.sections) - 1 and st.button("↓", key=f"sec_down_{sec.id}"):
+                                    doc.sections[idx + 1], doc.sections[idx] = doc.sections[idx], doc.sections[idx + 1]
+                                    _save_sections("สลับลำดับหัวข้อลง")
+                                    st.rerun()
+                            with c_del:
+                                if st.button("🗑 ลบ", key=f"sec_del_{sec.id}"):
+                                    removed = doc.sections.pop(idx)
+                                    _save_sections(f"ลบหัวข้อ: {removed.label}")
+                                    st.rerun()
 
-            st.markdown("##### 📎 เอกสารอ้างอิงและสิ่งที่ส่งมาด้วย")
-            ref_col, att_col = st.columns(2)
-            with ref_col:
-                current_refs = "\n".join(st.session_state.doc_data.references) if st.session_state.doc_data.references else ""
-                new_refs_text = st.text_area("อ้างถึง (แยก ๑ บรรทัดต่อ ๑ ฉบับ)", value=current_refs, height=65)
-                st.session_state.doc_data.references = [line.strip() for line in new_refs_text.splitlines() if line.strip()] or None
-            with att_col:
-                current_atts = "\n".join(st.session_state.doc_data.attachments) if st.session_state.doc_data.attachments else ""
-                new_atts_text = st.text_area("สิ่งที่ส่งมาด้วย (แยก ๑ บรรทัดต่อ ๑ ฉบับ)", value=current_atts, height=65)
-                st.session_state.doc_data.attachments = [line.strip() for line in new_atts_text.splitlines() if line.strip()] or None
+                    ac1, ac2, ac3 = st.columns([1.3, 1.3, 1])
+                    with ac1:
+                        _new_kind = st.selectbox(
+                            "เพิ่มหัวข้อ",
+                            options=list(SectionKind),
+                            format_func=lambda k: k.default_label(),
+                            key="new_section_kind",
+                        )
+                    with ac2:
+                        _new_label = st.text_input(
+                            "ชื่อหัวข้อใหม่ (เว้นว่าง = ค่าเริ่มต้น)",
+                            value="",
+                            key="new_section_label",
+                        )
+                    with ac3:
+                        st.write("")
+                        st.write("")
+                        if st.button("➕ เพิ่มหัวข้อ"):
+                            doc.sections.append(
+                                DocumentSection(
+                                    kind=_new_kind,
+                                    label=_new_label.strip() or _new_kind.default_label(),
+                                )
+                            )
+                            _save_sections(f"เพิ่มหัวข้อ: {_new_kind.default_label()}")
+                            st.rerun()
 
-            if st.session_state.doc_data.doc_type == DocType.INTERNAL:
-                st.markdown("##### 📝 เนื้อความบันทึกข้อความ (แบบบันทึกเสนอพิจารณา)")
-                d = st.session_state.doc_data
-
-                # ค่าเริ่มต้นสำหรับ memo_* (ข้อมูลเดิมที่มีเฉพาะ paragraph_*)
-                if not d.memo_intro:
-                    d.memo_intro = d.paragraph_reason
-                if not d.memo_facts:
-                    d.memo_facts = d.paragraph_details or ""
-                if not d.memo_consideration and not d.memo_request:
-                    d.memo_consideration, d.memo_request = split_consideration_and_request(d.paragraph_purpose, None)
-
-                style_labels = {
-                    "bma": "หัวข้อขีดเส้นใต้ (แบบ กทม.): ต้นเรื่อง → ข้อกฎหมาย → ข้อเท็จจริง → ข้อพิจารณาและเสนอแนะ",
-                    "numbered": "หัวข้อมีเลขกำกับ: ๑. ต้นเรื่อง ๒. ข้อเท็จจริง ๓. ข้อกฎหมาย ๔. ข้อพิจารณาและเสนอแนะ",
-                }
-                d.memo_heading_style = st.radio(
-                    "รูปแบบหัวข้อ",
-                    options=list(style_labels.keys()),
-                    index=list(style_labels.keys()).index(d.memo_heading_style),
-                    format_func=lambda k: style_labels[k],
-                )
-                st.caption("แยกข้อด้วยการขึ้นบรรทัดใหม่ — บรรทัดที่ขึ้นต้นด้วย ๑. / ๑.๑ / มาตรา / ข้อ จะจัดย่อหน้าอัตโนมัติ")
-
-                field_specs = {
-                    "intro": ("memo_intro", "ต้นเรื่อง", 110,
-                              "หนังสือ/คำร้องที่ได้รับ (ที่ ลงวันที่ เรียน เรื่อง) และการสั่งการที่ผ่านมา แยกฉบับเป็น ๑. ๒."),
-                    "law": ("memo_law", "ข้อกฎหมาย (ถ้ามี — เว้นว่างได้)", 110,
-                            "กฎหมาย ระเบียบ หนังสือสั่งการ บรรทัดละรายการ ตามด้วย 'มาตรา ...' หรือ 'ข้อ ...' — อ้างเฉพาะที่มีอยู่จริง"),
-                    "facts": ("memo_facts", "ข้อเท็จจริง", 120,
-                              "ผลการประสาน/ตรวจสอบ และรายการคำขอแยกข้อ ๑. ๒. ๓."),
-                    "consideration": ("memo_consideration", "ข้อพิจารณาและเสนอแนะ", 120,
-                                      "ความเห็นของหน่วยงาน ตามด้วยข้อเสนอ ๑. และข้อย่อย ๑.๑ ๑.๒"),
-                }
-                for n, key in enumerate(SECTION_ORDER[d.memo_heading_style], start=1):
-                    attr, label, height, help_txt = field_specs[key]
-                    shown = f"{to_thai_numerals(str(n))}. {label}" if d.memo_heading_style == "numbered" else label
-                    setattr(d, attr, st.text_area(shown, getattr(d, attr) or "", height=height, help=help_txt))
-
-                d.memo_request = st.text_area(
-                    "ภาคความประสงค์ (ย่อหน้าปิดท้าย)",
-                    d.memo_request or "",
-                    height=70,
-                    help="เช่น 'จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดลงนามในหนังสือที่แนบ'",
-                )
-
-                # อัปเดตฟิลด์ paragraph_* ให้ตรงกันเสมอ (ใช้โดย linter / copilot)
-                d.paragraph_reason = d.memo_intro
-                d.paragraph_details = d.memo_facts
-                d.paragraph_purpose = "\n\n".join(x for x in (d.memo_consideration, d.memo_request) if x)
-            else:
-                st.markdown("##### 📝 เนื้อความ (โครงสร้าง 3 ภาคมาตรฐาน)")
-                st.session_state.doc_data.paragraph_reason = st.text_area(
-                    "ภาคเหตุ (เกริ่นนำ)", 
-                    st.session_state.doc_data.paragraph_reason, 
-                    height=80
-                )
-                st.session_state.doc_data.paragraph_details = st.text_area(
-                    "ภาคข้อเท็จจริงและข้อพิจารณา", 
-                    st.session_state.doc_data.paragraph_details or "", 
-                    height=80
-                )
-                st.session_state.doc_data.paragraph_purpose = st.text_area(
-                    "ภาคความประสงค์หรือภาคสรุป", 
-                    st.session_state.doc_data.paragraph_purpose, 
-                    height=65
-                )
-
-            st.markdown("##### ✍️ ลายมือชื่อดิจิทัลและผู้ลงนาม")
-            sig_col1, sig_col2 = st.columns([1.3, 1])
-            with sig_col1:
-                uploaded_sig = st.file_uploader(
-                    "อัปโหลดไฟล์ลายมือชื่อ (PNG โปร่งใส แนะนำ / JPG)",
-                    type=["png", "jpg", "jpeg"],
-                    key="sig_img_uploader"
-                )
-                if uploaded_sig is not None:
-                    sig_target_path = uploads_dir / f"signature_{uploaded_sig.name}"
-                    with open(sig_target_path, "wb") as f_sig:
-                        f_sig.write(uploaded_sig.getbuffer())
-                    st.session_state.doc_data.signature_image_path = str(sig_target_path)
-                    st.success("บันทึกและฝังลายมือชื่อลงในเอกสารเรียบร้อยแล้ว")
-                elif getattr(st.session_state.doc_data, "signature_image_path", None):
-                    if st.button("🗑️ ลบลายมือชื่อออกจากเอกสาร"):
-                        st.session_state.doc_data.signature_image_path = None
+                    if st.button("ปิดโหมดอิสระ (กลับไปใช้ฟิลด์มาตรฐาน)"):
+                        doc.sections = None
+                        doc.edit_status = "draft"
+                        st.session_state.doc_data = doc
                         st.rerun()
-            with sig_col2:
-                if getattr(st.session_state.doc_data, "signature_image_path", None) and os.path.exists(st.session_state.doc_data.signature_image_path):
-                    st.image(st.session_state.doc_data.signature_image_path, caption="ตัวอย่างลายมือชื่อดิจิทัลที่ใช้งาน", width=120)
 
-            if st.session_state.doc_data.doc_type == DocType.EXTERNAL:
-                s1, s2, s3 = st.columns(3)
-                with s1:
-                    st.session_state.doc_data.closing = st.text_input("คำลงท้าย", st.session_state.doc_data.closing)
-                with s2:
-                    st.session_state.doc_data.signatory_name = st.text_input("ชื่อเต็มผู้ลงนาม", st.session_state.doc_data.signatory_name)
-                with s3:
-                    st.session_state.doc_data.signatory_position = st.text_input("ตำแหน่งผู้ลงนาม", st.session_state.doc_data.signatory_position)
-            else:
-                s1, s2 = st.columns(2)
-                with s1:
-                    st.session_state.doc_data.signatory_name = st.text_input("ชื่อเต็มผู้ลงนาม", st.session_state.doc_data.signatory_name)
-                with s2:
-                    st.session_state.doc_data.signatory_position = st.text_input("ตำแหน่งผู้ลงนาม", st.session_state.doc_data.signatory_position)
+            if doc.sections is None:
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    new_type = st.selectbox(
+                        "ประเภทหนังสือ",
+                        options=[DocType.EXTERNAL, DocType.INTERNAL],
+                        format_func=lambda x: "หนังสือภายนอก" if x == DocType.EXTERNAL else "หนังสือภายใน (บันทึกข้อความ)",
+                        index=0 if st.session_state.doc_data.doc_type == DocType.EXTERNAL else 1
+                    )
+                    if new_type != st.session_state.doc_data.doc_type:
+                        st.session_state.doc_data = convert_doc_type(st.session_state.doc_data, new_type)
+                        st.rerun()
 
-            if st.session_state.doc_data.doc_type == DocType.EXTERNAL:
-                st.markdown("##### 🏢 ส่วนราชการเจ้าของเรื่องและข้อมูลติดต่อ")
-                c_c1, c_c2, c_c3 = st.columns(3)
-                with c_c1:
-                    st.session_state.doc_data.contact_dept = st.text_input("กลุ่มงาน/กองเจ้าของเรื่อง", st.session_state.doc_data.contact_dept)
-                with c_c2:
-                    st.session_state.doc_data.contact_tel = st.text_input("โทรศัพท์", st.session_state.doc_data.contact_tel or "")
-                with c_c3:
-                    st.session_state.doc_data.contact_email = st.text_input("อีเมล", st.session_state.doc_data.contact_email or "")
+                with c2:
+                    st.session_state.doc_data.urgency = st.selectbox(
+                        "ชั้นความเร็ว",
+                        options=[UrgencyLevel.NORMAL, UrgencyLevel.URGENT, UrgencyLevel.VERY_URGENT, UrgencyLevel.MOST_URGENT],
+                        format_func=lambda x: x.to_thai()
+                    )
+                with c3:
+                    st.session_state.doc_data.secret = st.selectbox(
+                        "ชั้นความลับ",
+                        options=[SecretLevel.NORMAL, SecretLevel.SECRET, SecretLevel.VERY_SECRET, SecretLevel.TOP_SECRET],
+                        format_func=lambda x: x.to_thai()
+                    )
+                with c4:
+                    st.session_state.doc_data.use_thai_numerals = st.checkbox(
+                        "แปลงเป็นเลขไทย (๐-๙)", 
+                        value=st.session_state.doc_data.use_thai_numerals
+                    )
+
+                if st.session_state.doc_data.doc_type == DocType.INTERNAL:
+                    col_hl1, col_hl2 = st.columns([2.5, 1.5])
+                    with col_hl1:
+                        hl_opts = [
+                            MemoHierarchyLevel.DEPT_TO_PERM_SEC,
+                            MemoHierarchyLevel.DIV_TO_DEPT,
+                            MemoHierarchyLevel.SECTION_TO_DIV,
+                            MemoHierarchyLevel.FINAL_APPROVAL,
+                            MemoHierarchyLevel.CUSTOM,
+                        ]
+                        curr_hl = getattr(st.session_state.doc_data, 'memo_hierarchy_level', MemoHierarchyLevel.DEPT_TO_PERM_SEC)
+                        hl_idx = hl_opts.index(curr_hl) if curr_hl in hl_opts else 0
+                        selected_hl = st.selectbox(
+                            "🏢 ระดับชั้นการเสนอหนังสือ (ประโยคลงท้าย)",
+                            options=hl_opts,
+                            index=hl_idx,
+                            format_func=lambda x: x.to_thai() if hasattr(x, 'to_thai') else str(x),
+                            key="sb_memo_hierarchy_top"
+                        )
+                        if selected_hl != st.session_state.doc_data.memo_hierarchy_level:
+                            st.session_state.doc_data.memo_hierarchy_level = selected_hl
+                            if selected_hl != MemoHierarchyLevel.CUSTOM:
+                                st.session_state.doc_data.memo_request = selected_hl.default_closing()
+                            st.rerun()
+                    with col_hl2:
+                        st.caption("ℹ️ ระบบจะช่วยตั้งประโยคลงท้าย 'จึงเรียนมาเพื่อ...' ให้สอดคล้องกับระดับชั้นการเสนอโดยอัตโนมัติ")
+
+                st.markdown("##### 📌 ข้อมูลส่วนหัวหนังสือ")
+                h1, h2 = st.columns([1.5, 1])
+                with h1:
+                    col_n1, col_n2 = st.columns([2.5, 1])
+                    with col_n1:
+                        st.session_state.doc_data.doc_number = st.text_input("ที่ (เลขที่หนังสือ)", st.session_state.doc_data.doc_number)
+                    with col_n2:
+                        if st.button("🔢 รันเลขถัดไป", use_container_width=True, help="ดึงเลขที่หนังสือลำดับถัดไปจากระบบทะเบียนส่ง"):
+                            new_no = registry.get_next_doc_number()
+                            st.session_state.doc_data.doc_number = new_no
+                            st.rerun()
+                with h2:
+                    st.session_state.doc_data.doc_date = st.text_input("วันที่ (ห้ามมีคำว่าวันที่)", st.session_state.doc_data.doc_date)
+
+                st.session_state.doc_data.dept_name = st.text_input("ส่วนราชการเจ้าของหนังสือ", st.session_state.doc_data.dept_name)
+                st.session_state.doc_data.subject = st.text_input("เรื่อง", st.session_state.doc_data.subject)
+                st.session_state.doc_data.salutation = st.text_input("คำขึ้นต้น (เช่น เรียน / กราบเรียน)", st.session_state.doc_data.salutation)
+
+                st.markdown("##### 📎 เอกสารอ้างอิงและสิ่งที่ส่งมาด้วย")
+                ref_col, att_col = st.columns(2)
+                with ref_col:
+                    current_refs = "\n".join(st.session_state.doc_data.references) if st.session_state.doc_data.references else ""
+                    new_refs_text = st.text_area("อ้างถึง (แยก ๑ บรรทัดต่อ ๑ ฉบับ)", value=current_refs, height=65)
+                    st.session_state.doc_data.references = [line.strip() for line in new_refs_text.splitlines() if line.strip()] or None
+                with att_col:
+                    current_atts = "\n".join(st.session_state.doc_data.attachments) if st.session_state.doc_data.attachments else ""
+                    new_atts_text = st.text_area("สิ่งที่ส่งมาด้วย (แยก ๑ บรรทัดต่อ ๑ ฉบับ)", value=current_atts, height=65)
+                    st.session_state.doc_data.attachments = [line.strip() for line in new_atts_text.splitlines() if line.strip()] or None
+
+                if st.session_state.doc_data.doc_type == DocType.INTERNAL:
+                    st.markdown("##### 📝 เนื้อความบันทึกข้อความ (แบบบันทึกเสนอพิจารณา)")
+                    d = st.session_state.doc_data
+
+                    # ค่าเริ่มต้นสำหรับ memo_* (ข้อมูลเดิมที่มีเฉพาะ paragraph_*)
+                    if not d.memo_intro:
+                        d.memo_intro = d.paragraph_reason
+                    if not d.memo_facts:
+                        d.memo_facts = d.paragraph_details or ""
+                    if not d.memo_consideration and not d.memo_request:
+                        d.memo_consideration, d.memo_request = split_consideration_and_request(d.paragraph_purpose, None)
+
+                    style_labels = {
+                        "bma": "หัวข้อขีดเส้นใต้ (แบบ กทม.): ต้นเรื่อง → ข้อกฎหมาย → ข้อเท็จจริง → ข้อพิจารณาและเสนอแนะ",
+                        "numbered": "หัวข้อมีเลขกำกับ: ๑. ต้นเรื่อง ๒. ข้อเท็จจริง ๓. ข้อกฎหมาย ๔. ข้อพิจารณาและเสนอแนะ",
+                    }
+                    d.memo_heading_style = st.radio(
+                        "รูปแบบหัวข้อ",
+                        options=list(style_labels.keys()),
+                        index=list(style_labels.keys()).index(d.memo_heading_style),
+                        format_func=lambda k: style_labels[k],
+                    )
+                    st.caption("แยกข้อด้วยการขึ้นบรรทัดใหม่ — บรรทัดที่ขึ้นต้นด้วย ๑. / ๑.๑ / มาตรา / ข้อ จะจัดย่อหน้าอัตโนมัติ")
+
+                    field_specs = {
+                        "intro": ("memo_intro", "ต้นเรื่อง", 110,
+                                  "หนังสือ/คำร้องที่ได้รับ (ที่ ลงวันที่ เรียน เรื่อง) และการสั่งการที่ผ่านมา แยกฉบับเป็น ๑. ๒."),
+                        "law": ("memo_law", "ข้อกฎหมาย (ถ้ามี — เว้นว่างได้)", 110,
+                                "กฎหมาย ระเบียบ หนังสือสั่งการ บรรทัดละรายการ ตามด้วย 'มาตรา ...' หรือ 'ข้อ ...' — อ้างเฉพาะที่มีอยู่จริง"),
+                        "facts": ("memo_facts", "ข้อเท็จจริง", 120,
+                                  "ผลการประสาน/ตรวจสอบ และรายการคำขอแยกข้อ ๑. ๒. ๓."),
+                        "consideration": ("memo_consideration", "ข้อพิจารณาและเสนอแนะ", 120,
+                                          "ความเห็นของหน่วยงาน ตามด้วยข้อเสนอ ๑. และข้อย่อย ๑.๑ ๑.๒"),
+                    }
+                    for n, key in enumerate(SECTION_ORDER[d.memo_heading_style], start=1):
+                        attr, label, height, help_txt = field_specs[key]
+                        shown = f"{to_thai_numerals(str(n))}. {label}" if d.memo_heading_style == "numbered" else label
+                        setattr(d, attr, st.text_area(shown, getattr(d, attr) or "", height=height, help=help_txt))
+
+                    d.memo_request = st.text_area(
+                        "ภาคความประสงค์ (ย่อหน้าปิดท้าย)",
+                        d.memo_request or "",
+                        height=70,
+                        help="เช่น 'จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดลงนามในหนังสือที่แนบ'",
+                    )
+
+                    # อัปเดตฟิลด์ paragraph_* ให้ตรงกันเสมอ (ใช้โดย linter / copilot)
+                    d.paragraph_reason = d.memo_intro
+                    d.paragraph_details = d.memo_facts
+                    d.paragraph_purpose = "\n\n".join(x for x in (d.memo_consideration, d.memo_request) if x)
+                else:
+                    st.markdown("##### 📝 เนื้อความ (โครงสร้าง 3 ภาคมาตรฐาน)")
+                    st.session_state.doc_data.paragraph_reason = st.text_area(
+                        "ภาคเหตุ (เกริ่นนำ)", 
+                        st.session_state.doc_data.paragraph_reason, 
+                        height=80
+                    )
+                    st.session_state.doc_data.paragraph_details = st.text_area(
+                        "ภาคข้อเท็จจริงและข้อพิจารณา", 
+                        st.session_state.doc_data.paragraph_details or "", 
+                        height=80
+                    )
+                    st.session_state.doc_data.paragraph_purpose = st.text_area(
+                        "ภาคความประสงค์หรือภาคสรุป", 
+                        st.session_state.doc_data.paragraph_purpose, 
+                        height=65
+                    )
+
+                st.markdown("##### ✍️ ลายมือชื่อดิจิทัลและผู้ลงนาม")
+                sig_col1, sig_col2 = st.columns([1.3, 1])
+                with sig_col1:
+                    uploaded_sig = st.file_uploader(
+                        "อัปโหลดไฟล์ลายมือชื่อ (PNG โปร่งใส แนะนำ / JPG)",
+                        type=["png", "jpg", "jpeg"],
+                        key="sig_img_uploader"
+                    )
+                    if uploaded_sig is not None:
+                        sig_target_path = uploads_dir / f"signature_{uploaded_sig.name}"
+                        with open(sig_target_path, "wb") as f_sig:
+                            f_sig.write(uploaded_sig.getbuffer())
+                        st.session_state.doc_data.signature_image_path = str(sig_target_path)
+                        st.success("บันทึกและฝังลายมือชื่อลงในเอกสารเรียบร้อยแล้ว")
+                    elif getattr(st.session_state.doc_data, "signature_image_path", None):
+                        if st.button("🗑️ ลบลายมือชื่อออกจากเอกสาร"):
+                            st.session_state.doc_data.signature_image_path = None
+                            st.rerun()
+                with sig_col2:
+                    if getattr(st.session_state.doc_data, "signature_image_path", None) and os.path.exists(st.session_state.doc_data.signature_image_path):
+                        st.image(st.session_state.doc_data.signature_image_path, caption="ตัวอย่างลายมือชื่อดิจิทัลที่ใช้งาน", width=120)
+
+                if st.session_state.doc_data.doc_type == DocType.EXTERNAL:
+                    s1, s2, s3 = st.columns(3)
+                    with s1:
+                        st.session_state.doc_data.closing = st.text_input("คำลงท้าย", st.session_state.doc_data.closing)
+                    with s2:
+                        st.session_state.doc_data.signatory_name = st.text_input("ชื่อเต็มผู้ลงนาม", st.session_state.doc_data.signatory_name)
+                    with s3:
+                        st.session_state.doc_data.signatory_position = st.text_input("ตำแหน่งผู้ลงนาม", st.session_state.doc_data.signatory_position)
+                else:
+                    s1, s2 = st.columns(2)
+                    with s1:
+                        st.session_state.doc_data.signatory_name = st.text_input("ชื่อเต็มผู้ลงนาม", st.session_state.doc_data.signatory_name)
+                    with s2:
+                        st.session_state.doc_data.signatory_position = st.text_input("ตำแหน่งผู้ลงนาม", st.session_state.doc_data.signatory_position)
+
+                if st.session_state.doc_data.doc_type == DocType.EXTERNAL:
+                    st.markdown("##### 🏢 ส่วนราชการเจ้าของเรื่องและข้อมูลติดต่อ")
+                    c_c1, c_c2, c_c3 = st.columns(3)
+                    with c_c1:
+                        st.session_state.doc_data.contact_dept = st.text_input("กลุ่มงาน/กองเจ้าของเรื่อง", st.session_state.doc_data.contact_dept)
+                    with c_c2:
+                        st.session_state.doc_data.contact_tel = st.text_input("โทรศัพท์", st.session_state.doc_data.contact_tel or "")
+                    with c_c3:
+                        st.session_state.doc_data.contact_email = st.text_input("อีเมล", st.session_state.doc_data.contact_email or "")
+
 
         # ----------------- TAB DIFF & VERSIONS -----------------
         with tab_diff:

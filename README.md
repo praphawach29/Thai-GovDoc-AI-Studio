@@ -41,6 +41,7 @@
 เพื่อความเข้าใจเชิงลึก โปรดศึกษาเอกสารข้อกำหนดแต่ละฉบับ:
 
 - 📑 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) — **แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบฉบับสมบูรณ์ (Roadmap Phase 1–10 & Spec)**
+- 🚀 [ONLINE_PRODUCTION_PLAN.md](ONLINE_PRODUCTION_PLAN.md) — **แผนนำระบบขึ้นใช้งานจริงออนไลน์ (Pilot → Production, Security, e-Saraban, Cost)**
 - 📖 [AGENTS.md](AGENTS.md) — กฎเหล็กและข้อแนะนำการทำงานสำหรับ AI Coding Agents
 - 🏗️ [DESIGN.md](DESIGN.md) — รายละเอียดสถาปัตยกรรมระบบ โครงสร้างโมดูล และ Data Schema (Pydantic)
 - ⚖️ [SARABAN_RULES.md](SARABAN_RULES.md) — สรุประเบียบงานสารบรรณ ตารางเทียบคำขึ้นต้น-ลงท้าย และขนาดตราครุฑ
@@ -54,6 +55,7 @@
 ```text
 หนังสือราชการ/
 ├── DEVELOPMENT_PLAN.md     # แผนงานและสเปกระบบฉบับเต็ม (Roadmap & Architecture)
+├── ONLINE_PRODUCTION_PLAN.md # แผนขึ้นใช้งานออนไลน์ (Pilot/Production/Security)
 ├── README.md               # เอกสารภาพรวม (ไฟล์นี้)
 ├── DESIGN.md               # สถาปัตยกรรมระบบและ Data Schemas
 ├── SARABAN_RULES.md        # ระเบียบงานสารบรรณฉบับสรุป
@@ -100,7 +102,7 @@
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
 │   └── fonts/              # TH Sarabun New / IT9 / PSK (ครบ 4 น้ำหนัก)
 │
-├── tests/                  # ชุดทดสอบ 135 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
+├── tests/                  # ชุดทดสอบ 136 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
 └── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
     └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
 ```
@@ -125,7 +127,7 @@
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
 
-- **สถานะชุดทดสอบ:** **135 tests — ผ่าน 130 / ข้าม 5 / ล้มเหลว 0**
+- **สถานะชุดทดสอบ:** **136 tests — ผ่าน 131 / ข้าม 5 / ล้มเหลว 0**
   - เทส PDF (headless browser) และ OCR จะ **ข้ามอัตโนมัติ** เมื่อเครื่องไม่มี browser/API key/Docker โดยใช้ marker กลางใน `tests/conftest.py` (ไม่ถูกนับเป็น fail)
 - **ระยะการพัฒนาที่แล้วเสร็จ:**
   - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
@@ -144,6 +146,7 @@
 - ✅ **Phase 8.6:** Special document generators — ประทับตรา/สั่งการ/ประชาสัมพันธ์/หลักฐาน พร้อม Word layout และ UI แก้ไข
 - ✅ **Phase 8.7:** Flexible Sections — เพิ่ม/ลบ/แก้ไข/สลับหัวข้อเอกสาร 12 ส่วนได้อิสระ
 - ✅ **Phase 8.8:** บีบหัวข้อส่วนราชการให้อยู่ในบรรทัดเดียว, เลขที่หนังสือแบบ ......../พ.ศ., และ checkbox แสดง/ซ่อนหัวข้อ
+- ✅ **Phase 8.9:** สถานะการแก้ไข (ร่าง/กำลังแก้ไข/บันทึกแล้ว), ปุ่มบันทึกทั้งหมด, Audit Trail และสถานะใน Word properties
 - **แผนงานระยะถัดไป (Roadmap):**
   - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
   - 🚩 **Phase 10:** Multi-Document Review, Hierarchical Approval & E-Office Integration

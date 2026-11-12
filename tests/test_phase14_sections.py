@@ -113,3 +113,15 @@ def test_long_department_header_is_compressed(tmp_path):
     with zipfile.ZipFile(out) as archive:
         xml = archive.read("word/document.xml").decode("utf-8")
     assert "w:w w:val=" in xml
+
+
+def test_edit_status_written_to_docx_properties(tmp_path):
+    doc = _memo()
+    doc.edit_status = "saved"
+    doc.last_edited_at = "2026-11-13 00:30"
+    out = tmp_path / "status.docx"
+    export_govdoc_to_docx(doc, str(out))
+    with zipfile.ZipFile(out) as archive:
+        properties = archive.read("docProps/core.xml").decode("utf-8")
+    assert "สถานะเอกสาร" in properties
+    assert "saved" in properties
