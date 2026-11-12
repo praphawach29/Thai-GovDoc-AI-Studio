@@ -207,6 +207,31 @@ def setup_govdoc_margins(doc: Document):
 
 ---
 
+### 2.3 ตัวเลือกการส่งออก Word และการฝังฟอนต์ (Sprint 1)
+
+`export_govdoc_to_docx(data, path, options=ExportOptions(...))` รองรับตัวเลือกต่อไปนี้:
+
+| ตัวเลือก | ค่าเริ่มต้น | ผลในไฟล์ DOCX |
+|---|---|---|
+| `export_font` | `"psk"` | ใช้ TH SarabunPSK (หรือ `"sarabun_new"` สำหรับ TH Sarabun New) |
+| `letter_spacing_pt` | `0.4` | `<w:spacing w:val="8"/>` ใน style Normal (8 twips = 0.4 pt) |
+| `letterhead` | `"garuda"` | แสดง/ซ่อนตราครุฑ (บันทึกข้อความ 1.5 ซม., ภายนอก 3 ซม.) |
+| `divider` | `"none"` | `"line"` เพิ่มเส้นคั่นใต้ส่วนหัว (`w:pBdr`) |
+| `embed_fonts` | `True` | ฝังฟอนต์ TrueType เป็น `word/fonts/*.odttf` |
+| `is_private` | `False` | ทำเครื่องหมายเอกสารส่วนตัวสำหรับ flow ภายนอก |
+
+การฝังฟอนต์ทำใน `core/docx_fonts.py` หลัง `doc.save()`:
+
+1. เพิ่ม `<w:embedRegular>` / `<w:embedBold>` ใน `word/fontTable.xml` พร้อม `fontKey` (GUID)
+2. Obfuscate ไฟล์ฟอนต์ 32 ไบต์แรกด้วย GUID ตามสเปก OOXML แล้วเก็บเป็น `font1.odttf`, `font2.odttf`
+3. เพิ่ม relationship ใน `word/_rels/fontTable.xml.rels`
+4. ประกาศ `Default Extension="odttf"` ใน `[Content_Types].xml`
+5. เปิด `<w:embedTrueTypeFonts/>` และ `<w:saveSubsetFonts/>` ใน `word/settings.xml`
+
+ผลลัพธ์: เปิดไฟล์บนเครื่องที่ไม่มีฟอนต์ TH Sarabun ก็ยังเห็นหน้าตาเดิม และขอบบนของบันทึกข้อความใช้ 1.5 ซม. พร้อมเลขหน้าไทย (`w:pgNumType w:fmt="thaiNumbers"`)
+
+---
+
 ## 3. สรุปเปรียบเทียบการเลือกใช้ (When to use which?)
 
 | ปัจจัย | Typst Engine (PDF) | Word Engine (DOCX) |

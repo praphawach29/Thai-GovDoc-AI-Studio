@@ -47,6 +47,29 @@ class SecretLevel(str, Enum):
         return mapping[self]
 
 
+class ExportOptions(BaseModel):
+    """ตัวเลือกการส่งออก Word/PDF (แยกจากข้อมูลเอกสาร เพราะเป็นค่าเฉพาะการเรนเดอร์)"""
+
+    letterhead: Literal["garuda", "none"] = Field(
+        default="garuda", description="แสดงตราครุฑหรือไม่"
+    )
+    divider: Literal["none", "line"] = Field(
+        default="none", description="เส้นคั่นใต้ส่วนหัว (none/line)"
+    )
+    letter_spacing_pt: float = Field(
+        default=0.4, ge=-2.0, le=20.0, description="ระยะห่างตัวอักษร (pt) เช่น 0.4"
+    )
+    export_font: Literal["psk", "sarabun_new"] = Field(
+        default="psk", description="ฟอนต์ที่ใช้ส่งออก: TH Sarabun PSK หรือ TH Sarabun New"
+    )
+    embed_fonts: bool = Field(
+        default=True, description="ฝังฟอนต์ลงในไฟล์ .docx (odttf)"
+    )
+    is_private: bool = Field(
+        default=False, description="ทำเครื่องหมายเอกสารส่วนตัว (ไม่บันทึก/ไม่เผยแพร่)"
+    )
+
+
 class MemoHierarchyLevel(str, Enum):
     """ระดับชั้นการเสนอหนังสือบันทึกข้อความตามลำดับบังคับบัญชา"""
     SECTION_TO_DIV = "section_to_div"          # ระดับกลุ่มงาน/ฝ่าย -> เสนอ ผอ.กอง

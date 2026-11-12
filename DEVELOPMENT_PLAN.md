@@ -1,7 +1,7 @@
 # 📑 แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบ (Development Plan & Architecture Specification)
 ## Thai GovDoc AI Studio — ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ
 **เวอร์ชันเอกสาร:** 2.2 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
-**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8 (93 tests: ผ่าน 88 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
+**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.1 (100 tests: ผ่าน 95 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
 **อ้างอิงกฎหมายและระเบียบ:** ระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม, ระเบียบกรุงเทพมหานครว่าด้วยงานสารบรรณ
 
 ---
@@ -71,9 +71,9 @@ flowchart TD
 
 ---
 
-## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8)
+## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.1)
 
-ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **93 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
+ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **100 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
 
 | ระยะการพัฒนา (Phase) | ขอบเขตงานสำคัญ | ไฟล์และโมดูลที่เกี่ยวข้อง | สถานะ |
 | :--- | :--- | :--- | :---: |
@@ -85,6 +85,7 @@ flowchart TD
 | **Phase 6: BMA Memo Template & Hierarchy** | • โครงสร้าง 4 ส่วนตามแบบ กทม.: ต้นเรื่อง, ข้อเท็จจริง, ข้อกฎหมาย (ถ้ามี), ข้อพิจารณาและเสนอแนะ, ประโยคลงท้าย<br/>• ระบบย่อหน้าตามระดับชั้น (2.5 ซม., 3.5 ซม., 4.5 ซม.)<br/>• ระดับชั้นการเสนอเรื่อง (`MemoHierarchyLevel`): กลุ่มงาน $\rightarrow$ กอง $\rightarrow$ สำนัก $\rightarrow$ ปลัด $\rightarrow$ ผู้ว่าฯ | `core/memo_layout.py`<br/>`core/templates_library.py` | ✅ สำเร็จ |
 | **Phase 7: Multi-Engine OCR & Profile** | • Local Docker Tesseract Container (`tha-tesseract:latest`) แบบออฟไลน์<br/>• Gemini Vision API ถอดลายมือเกษียนและตรายาง<br/>• ยุบช่องว่างพยัญชนะไทย และรวมสระอำจากการ OCR<br/>• Fail-Safe Halt: ป้องกันการนำชื่อไฟล์มาเป็นเรื่องหรืออ้างถึง<br/>• Linter Rule `RULE_FILENAME_IN_METADATA`<br/>• ระบบโปรไฟล์หน่วยงานของผู้ใช้ (`UserProfileSchema` $\rightarrow$ `data/user_profile.json`) พร้อมแท็บ UI ตั้งค่า | `core/extractor.py`<br/>`core/profile_manager.py`<br/>`core/ai_drafter.py`<br/>`core/linter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8: Multi-Document Case Dossier** | • สถาปัตยกรรมสำนวนแฟ้มเรื่อง `SourceCase`, `SourceItem`, `RoutingNote`<br/>• ตัวสกัดเอกสารหลายฉบับในแฟ้ม และตรวจจับฉบับที่ส่งมาแทนหนังสือเดิม<br/>• ตัวสกัดสายบันทึกเกษียนสั่งการ (Chain of Command)<br/>• กลไกสังเคราะห์ย่อหน้า "ต้นเรื่อง" บันทึกข้อความ กทม. อัตโนมัติ | `core/case_dossier.py`<br/>`core/models.py`<br/>`core/extractor.py`<br/>`core/ai_drafter.py` | ✅ สำเร็จ |
+| **Phase 8.1: Export Fidelity (Sprint 1)** | • `ExportOptions` (ฟอนต์/ครุฑ/เส้นคั่น/ระยะตัวอักษร/ฝังฟอนต์)<br/>• ฝังฟอนต์ TH Sarabun PSK เป็น `odttf` ตาม OOXML<br/>• ระยะตัวอักษร 0.4 pt ระดับ style, ขอบบนบันทึกข้อความ 1.5 ซม.<br/>• เลขหน้าไทย + หน้าแรกไม่แสดงเลข | `core/models.py`<br/>`core/docx_fonts.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 
 ---
 
@@ -229,11 +230,16 @@ class SourceCase(BaseModel):
 
 ### 🚩 Phase 9: Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
 - ขยายฐานข้อมูลระเบียบราชการและหนังสือสั่งการของกรุงเทพมหานครให้ครอบคลุมทุกสายงาน (การศึกษา, โยธา, สิ่งแวดล้อม, สาธารณสุข)
-- เชื่อมต่อตัวตรวจค้นแบบ Semantic Search ค้นหากฎหมายเฉพาะทางประกอบการยกร่าง
+- เชื่อมต่อตัวตรวจค้นแบบ Semantic Search ค้นหากฎหมายเฉพาะทางประกอบการยกร่าง โดยยึดตัวบทปฐมภูมิและฉบับที่มีผลใช้บังคับ
+- แสดงชื่อแหล่งออกกฎหมาย มาตรา/ข้อ วันที่มีผล URL และข้อความต้นทางทุกผลลัพธ์ พร้อมบันทึกการอ้างอิงกลับไปยังย่อหน้าร่าง
+- ปิดกั้นการสร้างข้อกฎหมายที่ไม่พบในคลัง และให้เจ้าหน้าที่ตรวจยืนยันก่อนนำไปใช้
 
-### 🚩 Phase 10: Hierarchical Approval Workflow & E-Office Integration (การเสนอตามลำดับชั้น)
+### 🚩 Phase 10: Multi-Document Review, Hierarchical Approval & E-Office Integration
+- เปรียบเทียบหนังสือหลายฉบับหรือฉบับแก้ไขในแฟ้มเดียว แสดงข้อความที่เปลี่ยนพร้อมเลขหน้า/ส่วนต้นทาง และให้ผู้ใช้ยืนยันข้อเท็จจริงก่อนสร้างบันทึกรายงานการพิจารณา
 - เพิ่มปุ่ม "ส่งต่อขึ้นระดับถัดไป (Forward to Next Tier)" สำหรับสร้างบันทึกข้อความฉบับระดับกองและระดับสำนักอัตโนมัติ
 - พัฒนา Connector เชื่อมโยงกับระบบ e-Saraban กทม. ผ่าน FastAPI Gateway เพื่อดึงเลขที่หนังสือและลงรับ-ส่งจริง
+
+> แนวทางจัดลำดับนี้เทียบกับความสามารถที่ Ekkasarn เปิดเผยบนหน้าเว็บสาธารณะ โดยคงการอ้างอิงหลักฐานและการตรวจทานโดยเจ้าหน้าที่เป็นเงื่อนไข ดู [EKKASARN_BENCHMARK.md](EKKASARN_BENCHMARK.md)
 
 ---
 
@@ -275,7 +281,7 @@ class SourceCase(BaseModel):
 │
 ├── uploads/                    # โฟลเดอร์จัดเก็บไฟล์ต้นเรื่องที่แนบเข้ามา
 ├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun PSK 4 น้ำหนัก
-├── tests/                      # ชุดทดสอบ 93 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
+├── tests/                      # ชุดทดสอบ 100 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
 └── web/                        # ระบบหน้าบ้าน (Web UI)
     └── app.py                  # แอปพลิเคชัน Streamlit หน้าจอ 3 แท็บ (ร่าง, ทะเบียน, ตั้งค่า)
 ```
@@ -295,7 +301,7 @@ class SourceCase(BaseModel):
 | **เครื่องมือ OCR ท้องถิ่น** | Docker Engine + Image `tha-tesseract:latest` (Alpine + Tesseract 5.5.2 ภาษา `tha+eng`) |
 | **เครื่องมือ Cloud AI** | Google Gemini API (`gemini-2.5-flash`) ผ่านไลบรารี `google-genai` |
 | **ฐานข้อมูล (Database)** | SQLite 3 (ไฟล์ `audit.db` และ `edocument.db`) |
-| **สถานะชุดทดสอบ** | 93 tests: 88 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
+| **สถานะชุดทดสอบ** | 100 tests: 95 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
 
 ### ข้อจำกัดที่ทราบ (Known Limitations)
 

@@ -5,6 +5,7 @@ word_exporter.py — ตัวสร้างไฟล์ Microsoft Word (.docx)
 
 import os
 import re
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional
 
@@ -15,12 +16,18 @@ from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn, nsdecls
 
-from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel
+from core.docx_fonts import embed_fonts
+from core.models import ExportOptions, GovDocumentSchema, DocType, UrgencyLevel, SecretLevel
 from core.thai_segmenter import insert_zwsp, to_thai_numerals
 
 
-FONT_NAME = "TH Sarabun New"
+FONT_NAME = "TH SarabunPSK"
 DEFAULT_FONT_SIZE = 16
+_ACTIVE_FONT: ContextVar[str] = ContextVar("govdoc_font", default=FONT_NAME)
+
+
+def _font_for_option(font_key: str) -> str:
+    return "TH Sarabun New" if font_key == "sarabun_new" else "TH SarabunPSK"
 
 
 def _apply_thai_distributed(paragraph):
@@ -35,11 +42,12 @@ def _apply_thai_distributed(paragraph):
     pPr.append(jc)
 
 
-def _set_run_thai_font(run, font_name=FONT_NAME, size_pt=DEFAULT_FONT_SIZE, bold=False, color=None):
+def _set_run_thai_font(run, font_name=None, size_pt=DEFAULT_FONT_SIZE, bold=False, color=None):
     """
     ตั้งค่าฟอนต์ในระดับ Run ให้ครอบคลุมทั้ง ASCII, High-ANSI และ Complex Script (cs)
     ป้องกันปัญหาฟอนต์เด้งเป็น Angsana หรือ Calibri
     """
+    font_name = font_name or _ACTIVE_FONT.get()
     run.font.name = font_name
     run.font.size = Pt(size_pt)
     run.bold = bold
@@ -64,7 +72,7 @@ def _setup_page_margins(doc: Document, doc_type: DocType):
     """
     กำหนดขนาดขอบกระดาษตามระเบียบงานสารบรรณ:
     - หนังสือภายนอก: ซ้าย 3.0 ซม., ขวา 2.0 ซม., บน 2.5 ซม., ล่าง 2.0 ซม.
-    - หนังสือภายใน: ซ้าย 3.0 ซม., ขวา 2.0 ซม., บน 2.0 ซม., ล่าง 2.0 ซม.
+    - หนังสือภายใน: ซ้าย 3.0 ซม., ขวา 2.0 ซม., บน 1.5 ซม., ล่าง 2.0 ซม.
     """
     for section in doc.sections:
         section.page_width = Cm(21.0)
@@ -73,9 +81,43 @@ def _setup_page_margins(doc: Document, doc_type: DocType):
         section.right_margin = Cm(2.0)
         section.bottom_margin = Cm(2.0)
         if doc_type == DocType.INTERNAL:
-            section.top_margin = Cm(2.0)
+            section.top_margin = Cm(1.5)
         else:
             section.top_margin = Cm(2.5)
+
+
+def _apply_letter_spacing(doc: Document, points: float):
+    """
+    กำหนดระยะห่างตัวอักษร (character spacing) ที่ style Normal
+    ค่า 0.4 pt = 8 twips (w:spacing w:val) ตามที่ Word ใช้
+    """
+    if not points:
+        return
+    style = doc.styles["Normal"]
+    rPr = style.element.get_or_add_rPr()
+    for child in list(rPr):
+        if child.tag.endswith("spacing"):
+            rPr.remove(child)
+    spacing = OxmlElement("w:spacing")
+    spacing.set(qn("w:val"), str(int(round(points * 20))))
+    rPr.append(spacing)
+
+
+def _add_divider(doc: Document):
+    """เส้นคั่นแนวนอนใต้ส่วนหัว (สำหรับตัวเลือก divider='line')"""
+    p = doc.add_paragraph()
+    pPr = p._p.get_or_add_pPr()
+    pBdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), "000000")
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+    # ตั้งระยะหลังสร้าง pBdr เพื่อให้ลำดับ pPr ถูกต้อง (pBdr มาก่อน spacing)
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(6)
 
 
 # ความกว้างพื้นที่พิมพ์ของ A4 (21 - ซ้าย 3 - ขวา 2)
@@ -96,6 +138,18 @@ def _add_page_number_header(doc: Document, thai_numerals: bool):
     for section in doc.sections:
         section.different_first_page_header_footer = True
         section.header_distance = Cm(1.2)
+        if thai_numerals:
+            sectPr = section._sectPr
+            for child in list(sectPr):
+                if child.tag.endswith("pgNumType"):
+                    sectPr.remove(child)
+            pg_num = OxmlElement("w:pgNumType")
+            pg_num.set(qn("w:fmt"), "thaiNumbers")
+            cols = sectPr.find(qn("w:cols"))
+            if cols is not None:
+                cols.addprevious(pg_num)
+            else:
+                sectPr.append(pg_num)
         p = section.header.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r1 = p.add_run("-")
@@ -175,42 +229,62 @@ def _add_paragraph_with_zwsp(doc: Document, text: str, indent_cm: float = 0.0,
     return p
 
 
-def export_govdoc_to_docx(data: GovDocumentSchema, output_path: str, garuda_path: Optional[str] = None) -> str:
+def export_govdoc_to_docx(
+    data: GovDocumentSchema,
+    output_path: str,
+    garuda_path: Optional[str] = None,
+    options: Optional[ExportOptions] = None,
+) -> str:
     """
     สร้างและส่งออกหนังสือราชการเป็นไฟล์ .docx ตามมาตรฐานงานสารบรรณ
+
+    options: ตัวเลือกฟอนต์/ระยะตัวอักษร/ครุฑ/การฝังฟอนต์ (ค่าเริ่มต้น = TH SarabunPSK 0.4 pt)
     """
-    doc = Document()
-    _setup_page_margins(doc, data.doc_type)
+    options = options or ExportOptions()
+    token = _ACTIVE_FONT.set(_font_for_option(options.export_font))
+    try:
+        doc = Document()
+        _setup_page_margins(doc, data.doc_type)
+        _apply_letter_spacing(doc, options.letter_spacing_pt)
 
-    # ตรวจสอบตำแหน่งตราครุฑ
-    if not garuda_path:
-        default_garuda = Path(__file__).resolve().parent.parent / "assets" / "garuda.png"
-        if default_garuda.exists():
-            garuda_path = str(default_garuda)
+        # ตราครุฑ: ปิดได้ผ่าน letterhead="none"
+        if options.letterhead == "none":
+            garuda_path = None
+        elif not garuda_path:
+            default_garuda = Path(__file__).resolve().parent.parent / "assets" / "garuda.png"
+            if default_garuda.exists():
+                garuda_path = str(default_garuda)
 
-    # จัดการแปลงตัวเลขไทย ถ้าเปิดตัวเลือก use_thai_numerals
-    fmt_date = to_thai_numerals(data.doc_date) if data.use_thai_numerals else data.doc_date
-    fmt_number = to_thai_numerals(data.doc_number) if data.use_thai_numerals else data.doc_number
-    fmt_reason = to_thai_numerals(data.paragraph_reason) if data.use_thai_numerals else data.paragraph_reason
-    fmt_details = to_thai_numerals(data.paragraph_details) if (data.paragraph_details and data.use_thai_numerals) else data.paragraph_details
-    fmt_purpose = to_thai_numerals(data.paragraph_purpose) if data.use_thai_numerals else data.paragraph_purpose
+        # จัดการแปลงตัวเลขไทย ถ้าเปิดตัวเลือก use_thai_numerals
+        fmt_date = to_thai_numerals(data.doc_date) if data.use_thai_numerals else data.doc_date
+        fmt_number = to_thai_numerals(data.doc_number) if data.use_thai_numerals else data.doc_number
+        fmt_reason = to_thai_numerals(data.paragraph_reason) if data.use_thai_numerals else data.paragraph_reason
+        fmt_details = to_thai_numerals(data.paragraph_details) if (data.paragraph_details and data.use_thai_numerals) else data.paragraph_details
+        fmt_purpose = to_thai_numerals(data.paragraph_purpose) if data.use_thai_numerals else data.paragraph_purpose
 
-    if data.doc_type == DocType.EXTERNAL:
-        _build_external_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path)
-    else:
-        _build_internal_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path)
+        if data.doc_type == DocType.EXTERNAL:
+            _build_external_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options)
+        else:
+            _build_internal_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options)
 
-    # บันทึกไฟล์
-    out_file = Path(output_path)
-    out_file.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(out_file))
-    return str(out_file)
+        # บันทึกไฟล์
+        out_file = Path(output_path)
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(out_file))
+
+        # ฝังฟอนต์ TrueType (odttf) เพื่อให้เปิดบนเครื่องอื่นแล้วหน้าตาไม่เพี้ยน
+        if options.embed_fonts:
+            embed_fonts(out_file, options.export_font)
+
+        return str(out_file)
+    finally:
+        _ACTIVE_FONT.reset(token)
 
 
 def _build_external_doc(doc: Document, data: GovDocumentSchema, 
                         fmt_date: str, fmt_number: str, 
                         fmt_reason: str, fmt_details: Optional[str], fmt_purpose: str, 
-                        garuda_path: Optional[str]):
+                        garuda_path: Optional[str], options: ExportOptions):
     """สร้างโครงสร้างหนังสือภายนอก (ครุฑ 3 ซม. กึ่งกลาง)"""
     
     # 1. ชั้นความลับ / ชั้นความเร็ว (ถ้ามี)
@@ -323,6 +397,8 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
             _set_run_thai_font(r_att_v, size_pt=DEFAULT_FONT_SIZE)
 
     # 6. เนื้อหา 3 ย่อหน้า (ย่อหน้า 2.5 ซม. + Thai Distributed)
+    if options.divider == "line":
+        _add_divider(doc)
     _add_paragraph_with_zwsp(doc, fmt_reason, indent_cm=2.5, space_after_pt=6)
 
     if fmt_details:
@@ -382,7 +458,7 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
 def _build_internal_doc(doc: Document, data: GovDocumentSchema, 
                         fmt_date: str, fmt_number: str, 
                         fmt_reason: str, fmt_details: Optional[str], fmt_purpose: str, 
-                        garuda_path: Optional[str]):
+                        garuda_path: Optional[str], options: ExportOptions):
     """สร้างโครงสร้างหนังสือภายใน / บันทึกข้อความ (ครุฑ 1.5 ซม. ด้านซ้าย)"""
 
     # 1. แถวหัวกระดาษ: ครุฑ 1.5 ซม. ชิดซ้าย + ข้อความ "บันทึกข้อความ" 29 pt หนา กึ่งกลาง
@@ -488,6 +564,8 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
             _set_run_thai_font(r_att_v, size_pt=DEFAULT_FONT_SIZE)
 
     # 3. เนื้อความบันทึกข้อความ (ต้นเรื่อง / ข้อกฎหมาย / ข้อเท็จจริง / ข้อพิจารณาและเสนอแนะ / ภาคความประสงค์)
+    if options.divider == "line":
+        _add_divider(doc)
     _add_memo_blocks(doc, data)
 
     # เลขหน้า -๒- ด้านบนกึ่งกลาง ตั้งแต่หน้าที่ ๒

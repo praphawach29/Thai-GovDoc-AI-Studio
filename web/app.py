@@ -27,7 +27,7 @@ for mod in ["core.models", "core.profile_manager", "core.extractor", "core.templ
 
 import streamlit as st
 
-from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema
+from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
 from core.profile_manager import get_user_profile, save_user_profile, reset_to_default_profile
 from core.extractor import extract_source_document, extract_from_raw_text
 from core.ai_drafter import draft_from_context_rule_based, draft_from_context_llm, DraftingIntent
@@ -360,12 +360,12 @@ def highlight_placeholders_html(text: str) -> str:
     return re.sub(r'\[(?:✏️\s*)?ระบุ[^\]]*\]|\{\{[^\}]+\}\}', repl, text)
 
 
-def get_docx_bytes(doc_schema: GovDocumentSchema) -> bytes:
+def get_docx_bytes(doc_schema: GovDocumentSchema, options: ExportOptions | None = None) -> bytes:
     """สร้างไฟล์ Word .docx ในหน่วยความจำและส่งออกเป็น bytes สำหรับดาวน์โหลดใน 1 คลิก"""
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
         tmp_path = tmp.name
     try:
-        export_govdoc_to_docx(doc_schema, tmp_path)
+        export_govdoc_to_docx(doc_schema, tmp_path, options=options)
         with open(tmp_path, "rb") as f:
             data = f.read()
     finally:
@@ -1013,6 +1013,61 @@ with tab_main:
 
         # ----------------- TAB PREVIEW & QUICK ACTIONS -----------------
         with tab_preview:
+            # ตัวเลือกการส่งออก Word (ฟอนต์ / ระยะตัวอักษร / ตราครุฑ / การฝังฟอนต์)
+            if "export_options" not in st.session_state:
+                st.session_state.export_options = ExportOptions()
+            _eo = st.session_state.export_options
+            with st.expander("⚙️ ตัวเลือกการส่งออก Word (ฟอนต์ / ระยะตัวอักษร / ตราครุฑ)", expanded=False):
+                oc1, oc2, oc3 = st.columns(3)
+                with oc1:
+                    _font = st.selectbox(
+                        "ฟอนต์",
+                        options=["psk", "sarabun_new"],
+                        index=0 if _eo.export_font == "psk" else 1,
+                        format_func=lambda v: "TH Sarabun PSK (แนะนำ)" if v == "psk" else "TH Sarabun New",
+                        key="exp_font",
+                    )
+                with oc2:
+                    _letterhead = st.selectbox(
+                        "ตราครุฑ",
+                        options=["garuda", "none"],
+                        index=0 if _eo.letterhead == "garuda" else 1,
+                        format_func=lambda v: "แสดงตราครุฑ" if v == "garuda" else "ไม่แสดงตราครุฑ",
+                        key="exp_letterhead",
+                    )
+                with oc3:
+                    _divider = st.selectbox(
+                        "เส้นคั่นใต้ส่วนหัว",
+                        options=["none", "line"],
+                        index=0 if _eo.divider == "none" else 1,
+                        format_func=lambda v: "ไม่มี" if v == "none" else "มีเส้นคั่น",
+                        key="exp_divider",
+                    )
+                oc4, oc5 = st.columns([1, 2])
+                with oc4:
+                    _spacing = st.number_input(
+                        "ระยะห่างตัวอักษร (pt)",
+                        min_value=0.0,
+                        max_value=2.0,
+                        value=float(_eo.letter_spacing_pt),
+                        step=0.1,
+                        key="exp_spacing",
+                    )
+                with oc5:
+                    _embed = st.checkbox(
+                        "ฝังฟอนต์ในไฟล์ Word (เปิดบนเครื่องอื่นแล้วหน้าตาไม่เพี้ยน)",
+                        value=bool(_eo.embed_fonts),
+                        key="exp_embed",
+                    )
+                st.session_state.export_options = ExportOptions(
+                    export_font=_font,
+                    letterhead=_letterhead,
+                    divider=_divider,
+                    letter_spacing_pt=float(_spacing),
+                    embed_fonts=_embed,
+                )
+                st.caption("ค่าเริ่มต้น: TH Sarabun PSK, ระยะตัวอักษร 0.4 pt, ฝังฟอนต์ — ปรับได้ตามนโยบายหน่วยงาน")
+
             # 1-Click Action Toolbar ปรับปุ่มให้กะทัดรัด สวยงาม สไตล์โมเดิร์น
             t1, t2, t3, t4, t5 = st.columns([1.05, 1.15, 1.15, 1.1, 1.15], gap="small")
             with t1:
@@ -1033,7 +1088,7 @@ with tab_main:
                 except Exception as _pdf_err:
                     st.button(f"⚠️ PDF ({str(_pdf_err)[:10]})", disabled=True, use_container_width=True)
             with t3:
-                docx_bytes = get_docx_bytes(st.session_state.doc_data)
+                docx_bytes = get_docx_bytes(st.session_state.doc_data, st.session_state.export_options)
                 st.download_button(
                     label="📥 ดาวน์โหลด Word",
                     data=docx_bytes,

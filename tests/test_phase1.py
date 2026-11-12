@@ -126,8 +126,8 @@ def test_word_export_internal(sample_internal_doc, tmp_path):
     doc = Document(result_path)
     section = doc.sections[0]
     
-    # ตรวจสอบขอบกระดาษหนังสือภายใน (บน 2.0 ซม.)
-    assert round(section.top_margin.cm, 1) == 2.0
+    # ตรวจสอบขอบกระดาษหนังสือภายใน (บน 1.5 ซม. ตามแบบ กทม./ช่วง 1.5–2.0 ซม.)
+    assert round(section.top_margin.cm, 1) == 1.5
 
     full_text = "\n".join([p.text for p in doc.paragraphs])
     assert "\u200b" in full_text
