@@ -18,7 +18,7 @@ from docx.oxml.ns import qn, nsdecls
 
 from core.docx_fonts import embed_fonts
 from core.layout_profile import LayoutProfile, get_layout_profile
-from core.models import ExportOptions, GovDocumentSchema, DocType, DocumentKind, UrgencyLevel, SecretLevel
+from core.models import ExportOptions, GovDocumentSchema, DocType, DocumentKind, SectionKind, UrgencyLevel, SecretLevel
 from core.thai_segmenter import insert_zwsp, to_thai_numerals
 
 
@@ -319,6 +319,8 @@ def export_govdoc_to_docx(
 
         if data.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
             _build_special_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
+        elif data.sections is not None:
+            _build_sections_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
         elif data.doc_type == DocType.EXTERNAL:
             _build_external_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options, profile)
         else:
@@ -337,6 +339,132 @@ def export_govdoc_to_docx(
         return str(out_file)
     finally:
         _ACTIVE_FONT.reset(token)
+
+
+def _build_sections_doc(
+    doc: Document,
+    data: GovDocumentSchema,
+    fmt_date: str,
+    fmt_number: str,
+    garuda_path: Optional[str],
+    options: ExportOptions,
+    profile: LayoutProfile,
+):
+    """เรนเดอร์เอกสารตามลำดับหัวข้ออิสระ (data.sections)"""
+    internal = data.kind == DocumentKind.INTERNAL_MEMO or data.doc_type == DocType.INTERNAL
+
+    if internal:
+        tbl_top = doc.add_table(rows=1, cols=2)
+        tbl_top.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tbl_top.autofit = False
+        for cell, width in zip(tbl_top.rows[0].cells, [Cm(2.5), Cm(13.5)]):
+            cell.width = width
+            tcPr = cell._tc.get_or_add_tcPr()
+            borders = parse_xml(r'<w:tcBorders %s><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/></w:tcBorders>' % nsdecls('w'))
+            tcPr.append(borders)
+        if garuda_path and os.path.exists(garuda_path):
+            r_g = tbl_top.cell(0, 0).paragraphs[0].add_run()
+            r_g.add_picture(garuda_path, height=Cm(1.5))
+        p_title = tbl_top.cell(0, 1).paragraphs[0]
+        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_title = p_title.add_run("บันทึกข้อความ")
+        _set_run_thai_font(r_title, size_pt=29, bold=True)
+    elif garuda_path and os.path.exists(garuda_path):
+        p_g = doc.add_paragraph()
+        p_g.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_g.paragraph_format.space_after = Pt(8)
+        p_g.add_run().add_picture(garuda_path, height=Cm(3.0))
+
+    field_kinds = {
+        SectionKind.DEPT,
+        SectionKind.SUBJECT,
+        SectionKind.SALUTATION,
+        SectionKind.REFERENCES,
+        SectionKind.ATTACHMENTS,
+    }
+    body_indent = 0 if profile.body_indent_cm is None else profile.body_indent_cm
+
+    def add_field(label: str, value: str, size_label: int = 20, size_value: int = 16):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(2)
+        if label:
+            r_label = p.add_run(f"{label}  ")
+            _set_run_thai_font(r_label, size_pt=size_label, bold=True)
+        r_value = p.add_run(insert_zwsp(value))
+        _set_run_thai_font(r_value, size_pt=size_value)
+
+    def add_body(section, label: str, content: str):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(4)
+        p.paragraph_format.first_line_indent = Cm(body_indent)
+        _apply_thai_distributed(p)
+        if label:
+            r_label = p.add_run(f"{label}  ")
+            _set_run_thai_font(r_label, size_pt=16)
+            r_label.underline = True
+        r_text = p.add_run(insert_zwsp(content.replace("\n", " ")))
+        _set_run_thai_font(r_text, size_pt=16)
+
+    for section in data.sections or []:
+        kind = section.kind
+        label = (section.label or kind.default_label()).strip()
+        content = (section.content or "").strip()
+
+        if kind == SectionKind.NUMBER_DATE:
+            number = to_thai_numerals(section.content) if data.use_thai_numerals else section.content
+            date_value = to_thai_numerals(section.secondary) if data.use_thai_numerals else section.secondary
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(2)
+            _add_header_tab(p, 7.5, profile.header_style)
+            _add_header_tab(p, TEXT_WIDTH_CM, profile.header_style)
+            r = p.add_run("ที่  ")
+            _set_run_thai_font(r, size_pt=20, bold=True)
+            r = p.add_run(insert_zwsp(number))
+            _set_run_thai_font(r, size_pt=16)
+            p.add_run("\t")
+            r = p.add_run("วันที่  ")
+            _set_run_thai_font(r, size_pt=20, bold=True)
+            r = p.add_run(insert_zwsp(date_value))
+            _set_run_thai_font(r, size_pt=16)
+            p.add_run("\t")
+            continue
+
+        if kind == SectionKind.SIGNATURE:
+            if content:
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(8.0)
+                p.paragraph_format.space_after = Pt(2)
+                r = p.add_run(content)
+                _set_run_thai_font(r, size_pt=16)
+            if section.secondary.strip():
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(8.0)
+                p.paragraph_format.space_after = Pt(8)
+                r = p.add_run(section.secondary)
+                _set_run_thai_font(r, size_pt=16)
+            continue
+
+        if kind == SectionKind.CLOSING:
+            if content:
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(8.0)
+                p.paragraph_format.space_after = Pt(8)
+                r = p.add_run(content)
+                _set_run_thai_font(r, size_pt=16)
+            continue
+
+        if kind in field_kinds:
+            if kind == SectionKind.SALUTATION:
+                content = re.sub(r'^(กราบเรียน|เรียน)\s*', '', content)
+            elif kind == SectionKind.SUBJECT:
+                content = re.sub(r'^เรื่อง\s*', '', content)
+            add_field(label, content)
+            continue
+
+        if content:
+            add_body(section, label, content)
+
+    _add_page_number_header(doc, profile.page_number_style)
 
 
 def _build_special_doc(

@@ -5,6 +5,8 @@ models.py — Data Schemas for Thai Official Government Documents
 
 from enum import Enum
 from typing import List, Literal, Optional
+from uuid import uuid4
+
 from pydantic import BaseModel, Field, model_validator
 
 from core.thai_segmenter import to_thai_numerals
@@ -279,6 +281,53 @@ class SourceDocumentContext(BaseModel):
     source_case: Optional[SourceCase] = Field(None, description="ข้อมูลสำนวนเรื่องแบบหลายฉบับ/สายเกษียนสั่งการ (Case Dossier)")
 
 
+class SectionKind(str, Enum):
+    DEPT = "dept"
+    NUMBER_DATE = "number_date"
+    SUBJECT = "subject"
+    SALUTATION = "salutation"
+    REFERENCES = "references"
+    ATTACHMENTS = "attachments"
+    INTRO = "intro"
+    LAW = "law"
+    FACTS = "facts"
+    CONSIDERATION = "consideration"
+    CLOSING = "closing"
+    SIGNATURE = "signature"
+    DETAILS = "details"
+    PURPOSE = "purpose"
+    CUSTOM = "custom"
+
+    def default_label(self) -> str:
+        return {
+            SectionKind.DEPT: "ส่วนราชการ",
+            SectionKind.NUMBER_DATE: "ที่ / วันที่",
+            SectionKind.SUBJECT: "เรื่อง",
+            SectionKind.SALUTATION: "เรียน",
+            SectionKind.REFERENCES: "อ้างถึง",
+            SectionKind.ATTACHMENTS: "สิ่งที่ส่งมาด้วย",
+            SectionKind.INTRO: "ต้นเรื่อง",
+            SectionKind.LAW: "ข้อกฎหมาย",
+            SectionKind.FACTS: "ข้อเท็จจริง",
+            SectionKind.CONSIDERATION: "ข้อพิจารณาและเสนอแนะ",
+            SectionKind.CLOSING: "คำลงท้าย",
+            SectionKind.SIGNATURE: "ลงชื่อ",
+            SectionKind.DETAILS: "รายละเอียด",
+            SectionKind.PURPOSE: "ความประสงค์",
+            SectionKind.CUSTOM: "หัวข้อเพิ่มเติม",
+        }[self]
+
+
+class DocumentSection(BaseModel):
+    """หัวข้อเอกสารที่ผู้ใช้เพิ่ม/ลบ/แก้ไข/สลับลำดับได้อย่างอิสระ"""
+
+    id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    kind: SectionKind = SectionKind.CUSTOM
+    label: str = ""
+    content: str = ""
+    secondary: str = ""  # วันที่ (NUMBER_DATE) หรือตำแหน่ง (SIGNATURE)
+
+
 class GovDocumentSchema(BaseModel):
     """โมเดลข้อมูลหนังสือราชการฉบับร่าง/ส่งออกสมบูรณ์"""
     doc_type: DocType = Field(default=DocType.EXTERNAL, description="ประเภทหนังสือ (ภายนอก / ภายใน)")
@@ -287,6 +336,9 @@ class GovDocumentSchema(BaseModel):
     special_preamble: Optional[str] = Field(None, description="ความนำ/อาศัยอำนาจของเอกสารชนิดพิเศษ")
     special_items: List[str] = Field(default_factory=list, description="ข้อความแยกข้อของเอกสารชนิดพิเศษ")
     special_note: Optional[str] = Field(None, description="หมายเหตุ/บทบังคับใช้ท้ายเอกสารชนิดพิเศษ")
+    sections: Optional[List[DocumentSection]] = Field(
+        None, description="ลำดับหัวข้อเอกสารแบบอิสระ (None = ใช้ฟิลด์มาตรฐานเดิม)"
+    )
     urgency: UrgencyLevel = Field(default=UrgencyLevel.NORMAL, description="ชั้นความเร็ว")
     secret: SecretLevel = Field(default=SecretLevel.NORMAL, description="ชั้นความลับ")
     use_thai_numerals: bool = Field(default=False, description="แปลงตัวเลขเป็นเลขไทยหรือไม่")

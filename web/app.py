@@ -31,8 +31,9 @@ import streamlit as st
 from core.classifier import DocumentKind, classify_source_document
 from core.special_drafter import draft_special_from_context
 from core.hierarchy import apply_hierarchy_role, build_hierarchy_chain, roles_from_profile
+from core.sections import ensure_sections, sync_fields_from_sections
 from core.layout_profile import get_layout_profile
-from core.models import DOC_NUMBER_PLACEHOLDER, GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
+from core.models import DOC_NUMBER_PLACEHOLDER, DocumentSection, GovDocumentSchema, DocType, SectionKind, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
 from core.profile_manager import get_user_profile, save_user_profile, reset_to_default_profile
 from core.extractor import extract_source_document, extract_from_raw_text
 from core.ai_drafter import draft_from_context_rule_based, draft_from_context_llm, DraftingIntent
@@ -982,6 +983,8 @@ with tab_main:
                                 draft_author = "Rule-based (local)"
                                 if not allow_cloud_now:
                                     st.info("โหมดข้อมูลอ่อนไหว: ระบบใช้ Rule-based ภายในเครื่อง โดยไม่ส่งข้อมูลไป AI ภายนอก")
+                            if draft.kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+                                draft = ensure_sections(draft)
                             st.session_state.draft_uid = f"draft-{uuid.uuid4().hex[:8]}"
                             st.session_state.doc_data = draft
                             st.session_state.initial_ai_draft = draft.model_copy(deep=True)
@@ -1444,7 +1447,59 @@ with tab_main:
                 atts_html = "".join(att_items)
 
             # HTML A4 Preview Template (Scaled for clean on-screen reading)
-            if doc.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+            if doc.sections is not None and doc.kind in (
+                DocumentKind.EXTERNAL_LETTER,
+                DocumentKind.INTERNAL_MEMO,
+            ):
+                _sec_html = []
+                for _section in doc.sections:
+                    _label = _section.label or _section.kind.default_label()
+                    _content = _section.content or ""
+                    _secondary = _section.secondary or ""
+                    if doc.use_thai_numerals:
+                        _content = to_thai_numerals(_content)
+                        _secondary = to_thai_numerals(_secondary)
+                    _safe = highlight_placeholders_html(_content).replace("\n", "<br/>")
+                    _safe_secondary = highlight_placeholders_html(_secondary).replace("\n", "<br/>")
+                    if _section.kind == SectionKind.NUMBER_DATE:
+                        _sec_html.append(
+                            f'<div style="display:flex;justify-content:space-between;margin:2px 0;"><span><strong>ที่</strong> {_safe}</span><span><strong>วันที่</strong> {_safe_secondary}</span></div>'
+                        )
+                    elif _section.kind == SectionKind.SIGNATURE:
+                        _sec_html.append(
+                            f'<div style="text-align:center;margin-left:45%;margin-top:24px;"><p>{_safe}</p><p>{_safe_secondary}</p></div>'
+                        )
+                    elif _section.kind == SectionKind.CLOSING:
+                        _sec_html.append(
+                            f'<div style="text-align:center;margin-left:45%;margin-top:18px;"><p>{_safe}</p></div>'
+                        )
+                    elif _section.kind in (SectionKind.REFERENCES, SectionKind.ATTACHMENTS):
+                        _sec_html.append(f'<p><strong>{_label}</strong>  {_safe}</p>')
+                    elif _section.kind in (
+                        SectionKind.INTRO,
+                        SectionKind.LAW,
+                        SectionKind.FACTS,
+                        SectionKind.CONSIDERATION,
+                        SectionKind.DETAILS,
+                        SectionKind.PURPOSE,
+                        SectionKind.CUSTOM,
+                    ):
+                        _sec_html.append(f'<p class="a4-indent"><u>{_label}</u>  {_safe}</p>')
+                    else:
+                        _sec_html.append(f'<p><strong>{_label}</strong>  {_safe}</p>')
+                _is_internal_preview = doc.kind == DocumentKind.INTERNAL_MEMO
+                _header_html = (
+                    f'<div style="display:flex;align-items:flex-start;margin-bottom:12px;"><img src="data:{garuda_mime};base64,{garuda_b64}" style="height:1.5cm;margin-right:18px;" /><div style="font-size:26px;font-weight:bold;text-align:center;width:85%;">บันทึกข้อความ</div></div>'
+                    if _is_internal_preview
+                    else f'<div style="text-align:center;margin-bottom:12px;"><img src="data:{garuda_mime};base64,{garuda_b64}" style="height:3.0cm;" /></div>'
+                )
+                st.markdown(f"""
+                <div class="a4-paper">
+                    {_header_html}
+                    {''.join(_sec_html)}
+                </div>
+                """, unsafe_allow_html=True)
+            elif doc.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
                 _special_items = "".join(
                     f'<p class="a4-indent">{highlight_placeholders_html((to_thai_numerals(str(i)) if doc.use_thai_numerals else str(i)) + ".  " + item)}</p>'
                     for i, item in enumerate(doc.special_items or [], 1)
@@ -1536,6 +1591,97 @@ with tab_main:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
+            # ----------------- ตัวจัดการหัวข้ออิสระ (เพิ่ม/ลบ/สลับ/แก้ไข) -----------------
+            if doc.kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+                if doc.sections is None:
+                    if st.button("🧩 เปิดโหมดแก้ไขหัวข้ออิสระ (เพิ่ม/ลบ/สลับหัวข้อ)"):
+                        st.session_state.doc_data = ensure_sections(doc)
+                        st.rerun()
+                else:
+                    st.markdown("### 🧩 หัวข้อเอกสาร (โหมดอิสระ)")
+                    st.caption("แก้ไขชื่อ/เนื้อหา เพิ่ม ลบ หรือสลับลำดับหัวข้อได้ตามต้องการ")
+                    for idx, sec in enumerate(list(doc.sections)):
+                        _label = sec.label or sec.kind.default_label()
+                        with st.expander(f"{idx + 1}. {_label}", expanded=False):
+                            new_label = st.text_input(
+                                "ชื่อหัวข้อ", value=sec.label, key=f"sec_label_{sec.id}"
+                            )
+                            new_content = st.text_area(
+                                "เนื้อหา",
+                                value=sec.content,
+                                height=90,
+                                key=f"sec_content_{sec.id}",
+                            )
+                            new_secondary = ""
+                            if sec.kind in (SectionKind.NUMBER_DATE, SectionKind.SIGNATURE):
+                                new_secondary = st.text_input(
+                                    "วันที่ / ตำแหน่ง",
+                                    value=sec.secondary,
+                                    key=f"sec_secondary_{sec.id}",
+                                )
+                            c_save, c_up, c_down, c_del = st.columns([1.2, 0.5, 0.5, 0.6])
+                            with c_save:
+                                if st.button("💾 บันทึก", key=f"sec_save_{sec.id}", type="primary"):
+                                    sec.label = new_label.strip() or sec.kind.default_label()
+                                    sec.content = new_content.strip()
+                                    sec.secondary = new_secondary.strip()
+                                    doc.sections[idx] = sec
+                                    sync_fields_from_sections(doc)
+                                    st.session_state.doc_data = doc
+                                    st.rerun()
+                            with c_up:
+                                if idx > 0 and st.button("↑", key=f"sec_up_{sec.id}"):
+                                    doc.sections[idx - 1], doc.sections[idx] = doc.sections[idx], doc.sections[idx - 1]
+                                    sync_fields_from_sections(doc)
+                                    st.session_state.doc_data = doc
+                                    st.rerun()
+                            with c_down:
+                                if idx < len(doc.sections) - 1 and st.button("↓", key=f"sec_down_{sec.id}"):
+                                    doc.sections[idx + 1], doc.sections[idx] = doc.sections[idx], doc.sections[idx + 1]
+                                    sync_fields_from_sections(doc)
+                                    st.session_state.doc_data = doc
+                                    st.rerun()
+                            with c_del:
+                                if st.button("🗑 ลบ", key=f"sec_del_{sec.id}"):
+                                    doc.sections.pop(idx)
+                                    sync_fields_from_sections(doc)
+                                    st.session_state.doc_data = doc
+                                    st.rerun()
+
+                    ac1, ac2, ac3 = st.columns([1.3, 1.3, 1])
+                    with ac1:
+                        _new_kind = st.selectbox(
+                            "เพิ่มหัวข้อ",
+                            options=list(SectionKind),
+                            format_func=lambda k: k.default_label(),
+                            key="new_section_kind",
+                        )
+                    with ac2:
+                        _new_label = st.text_input(
+                            "ชื่อหัวข้อใหม่ (เว้นว่าง = ค่าเริ่มต้น)",
+                            value="",
+                            key="new_section_label",
+                        )
+                    with ac3:
+                        st.write("")
+                        st.write("")
+                        if st.button("➕ เพิ่มหัวข้อ"):
+                            doc.sections.append(
+                                DocumentSection(
+                                    kind=_new_kind,
+                                    label=_new_label.strip() or _new_kind.default_label(),
+                                )
+                            )
+                            sync_fields_from_sections(doc)
+                            st.session_state.doc_data = doc
+                            st.rerun()
+
+                    if st.button("ปิดโหมดอิสระ (กลับไปใช้ฟิลด์มาตรฐาน)"):
+                        doc.sections = None
+                        st.session_state.doc_data = doc
+                        st.rerun()
+                    st.info("โหมดอิสระเปิดอยู่: กล่องแก้ไขแบบเดิมด้านล่างจะไม่ซิงก์กับหัวข้อด้านบน")
 
             # ----------------- กล่องแก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง -----------------
             st.markdown("##### ✏️ แก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง")
