@@ -268,14 +268,14 @@ st.markdown("""
         box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.06) !important;
         border: 1px solid #cbd5e1 !important;
         border-radius: 2px !important;
-        font-family: 'TH Sarabun New', 'TH Sarabun PSK', 'Sarabun', sans-serif !important;
+        font-family: 'TH Sarabun New', 'TH SarabunIT๙', 'TH Sarabun PSK', 'Sarabun', sans-serif !important;
         font-size: 14.5px !important;  /* เทียบเท่าขนาด 16pt ของจริง */
         line-height: 1.55 !important;
         color: #000000 !important;
         box-sizing: border-box !important;
     }
     .a4-paper p, .a4-paper div, .a4-paper span, .a4-paper td, .a4-paper strong {
-        font-family: 'TH Sarabun New', 'TH Sarabun PSK', 'Sarabun', sans-serif !important;
+        font-family: 'TH Sarabun New', 'TH SarabunIT๙', 'TH Sarabun PSK', 'Sarabun', sans-serif !important;
     }
     .a4-paper p {
         font-size: 14.5px !important;
@@ -1022,9 +1022,13 @@ with tab_main:
                 with oc1:
                     _font = st.selectbox(
                         "ฟอนต์",
-                        options=["psk", "sarabun_new"],
-                        index=0 if _eo.export_font == "psk" else 1,
-                        format_func=lambda v: "TH Sarabun PSK (แนะนำ)" if v == "psk" else "TH Sarabun New",
+                        options=["sarabun_new", "psk", "it9"],
+                        index=["sarabun_new", "psk", "it9"].index(_eo.export_font),
+                        format_func=lambda v: {
+                            "sarabun_new": "TH Sarabun New (มาตรฐาน)",
+                            "psk": "TH Sarabun PSK",
+                            "it9": "TH Sarabun IT9",
+                        }.get(v, v),
                         key="exp_font",
                     )
                 with oc2:
@@ -1066,7 +1070,7 @@ with tab_main:
                     letter_spacing_pt=float(_spacing),
                     embed_fonts=_embed,
                 )
-                st.caption("ค่าเริ่มต้น: TH Sarabun PSK, ระยะตัวอักษร 0.4 pt, ฝังฟอนต์ — ปรับได้ตามนโยบายหน่วยงาน")
+                st.caption("ค่าเริ่มต้น: TH Sarabun New, ระยะตัวอักษร 0.4 pt, ฝังฟอนต์ — เลือก PSK/IT9 ได้ตามนโยบายหน่วยงาน")
 
             # 1-Click Action Toolbar ปรับปุ่มให้กะทัดรัด สวยงาม สไตล์โมเดิร์น
             t1, t2, t3, t4, t5 = st.columns([1.05, 1.15, 1.15, 1.1, 1.15], gap="small")
@@ -1286,7 +1290,7 @@ with tab_main:
                 <div class="a4-paper">
                     <div style="display: flex; align-items: flex-start; margin-bottom: 12px;">
                         <img src="data:{garuda_mime};base64,{garuda_b64}" style="height: 1.5cm; width: auto; margin-right: 18px;" alt="ตราครุฑ 1.5 ซม." />
-                        <div style="font-size: 26px; font-weight: bold; text-align: center; width: 85%; font-family: 'TH Sarabun New', 'Sarabun', sans-serif;">บันทึกข้อความ</div>
+                        <div style="font-size: 26px; font-weight: bold; text-align: center; width: 85%; font-family: 'TH Sarabun New', 'TH SarabunIT๙', 'Sarabun', sans-serif;">บันทึกข้อความ</div>
                     </div>
                     <div style="margin-bottom: 10px; font-size: 14.5px;">
                         <div class="memo-field"><span class="memo-label">ส่วนราชการ</span><span class="memo-value">{disp_dept}{dept_tel_str}</span></div>

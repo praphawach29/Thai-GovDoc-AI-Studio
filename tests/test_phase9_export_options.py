@@ -2,10 +2,10 @@
 test_phase9_export_options.py — ทดสอบตัวเลือกการส่งออก Word (Sprint 1)
 
 ครอบคลุม:
-- ฝังฟอนต์ TrueType (odttf) + fontTable + settings
+- ฝังฟอนต์ TrueType (odttf) + fontTable + settings (TH Sarabun New / IT9)
 - ระยะห่างตัวอักษร (character spacing) ระดับ style
 - ขอบกระดาษบันทึกข้อความ 1.5 ซม. และเลขหน้าไทย
-- ตัวเลือกซ่อนตราครุฑ / เส้นคั่น
+- ตัวเลือกซ่อนตราคุฑ / เส้นคั่น
 """
 
 import zipfile
@@ -32,7 +32,11 @@ def _export(doc, tmp_path, **kwargs):
     return out
 
 
-def test_docx_embeds_psk_fonts_and_spacing(memo_doc, tmp_path):
+def test_default_export_font_is_sarabun_new():
+    assert ExportOptions().export_font == "sarabun_new"
+
+
+def test_docx_embeds_new_fonts_and_spacing(memo_doc, tmp_path):
     out = _export(memo_doc, tmp_path)
 
     with zipfile.ZipFile(out) as z:
@@ -46,7 +50,7 @@ def test_docx_embeds_psk_fonts_and_spacing(memo_doc, tmp_path):
         assert "word/fonts/font1.odttf" in names
         assert "word/fonts/font2.odttf" in names
         assert "embedRegular" in font_table and "embedBold" in font_table
-        assert "TH SarabunPSK" in font_table
+        assert "TH Sarabun New" in font_table
         assert "embedTrueTypeFonts" in settings
         assert 'Extension="odttf"' in content_types
         # 0.4 pt = 8 twips ใน style Normal
@@ -54,6 +58,7 @@ def test_docx_embeds_psk_fonts_and_spacing(memo_doc, tmp_path):
         # ขอบบน 1.5 ซม. = 850 twips + เลขหน้าไทย
         assert 'w:top="850"' in document
         assert 'w:pgNumType w:fmt="thaiNumbers"' in document
+        assert 'w:ascii="TH Sarabun New"' in document
 
     # ต้องเปิดกลับด้วย python-docx ได้
     assert len(Document(str(out)).paragraphs) > 5
@@ -61,7 +66,7 @@ def test_docx_embeds_psk_fonts_and_spacing(memo_doc, tmp_path):
 
 def test_odttf_is_obfuscated_but_same_length(tmp_path, memo_doc):
     out = _export(memo_doc, tmp_path)
-    regular = Path("assets/fonts/THSarabunPSK.ttf").read_bytes()
+    regular = Path("assets/fonts/THSarabunNew.ttf").read_bytes()
     with zipfile.ZipFile(out) as z:
         embedded = z.read("word/fonts/font1.odttf")
 
@@ -92,12 +97,15 @@ def test_divider_line_adds_border(memo_doc, tmp_path):
     assert "<w:pBdr>" in document
 
 
-def test_sarabun_new_option_without_font_files_skips_embedding(memo_doc, tmp_path):
-    out = _export(memo_doc, tmp_path, export_font="sarabun_new", embed_fonts=True)
+def test_it9_font_embedding(memo_doc, tmp_path):
+    out = _export(memo_doc, tmp_path, export_font="it9")
     with zipfile.ZipFile(out) as z:
         document = z.read("word/document.xml").decode("utf-8")
-        assert not [n for n in z.namelist() if n.startswith("word/fonts/")]
-    assert 'w:ascii="TH Sarabun New"' in document
+        font_table = z.read("word/fontTable.xml").decode("utf-8")
+        names = z.namelist()
+    assert "TH SarabunIT\u0e59" in font_table
+    assert 'w:ascii="TH SarabunIT\u0e59"' in document
+    assert "word/fonts/font1.odttf" in names
 
 
 def test_embedding_can_be_disabled(memo_doc, tmp_path):

@@ -76,5 +76,5 @@ def test_typst_compiles(tmp_path, template_id, style):
         assert res.returncode == 0, res.stderr
     pdf = tmp_path / "out.pdf"
     assert pdf.exists() and pdf.read_bytes().startswith(b"%PDF-")
-    # ต้องฝังฟอนต์ตระกูล Sarabun จาก assets/fonts ไม่ใช่ fallback ภาษาอังกฤษ
-    assert b"Sarabun" in pdf.read_bytes()
+    # ต้องฝังฟอนต์ TH Sarabun New จาก assets/fonts ไม่ใช่ fallback ภาษาอังกฤษ
+    assert b"SarabunNew" in pdf.read_bytes()

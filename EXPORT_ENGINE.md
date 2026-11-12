@@ -213,7 +213,7 @@ def setup_govdoc_margins(doc: Document):
 
 | ตัวเลือก | ค่าเริ่มต้น | ผลในไฟล์ DOCX |
 |---|---|---|
-| `export_font` | `"psk"` | ใช้ TH SarabunPSK (หรือ `"sarabun_new"` สำหรับ TH Sarabun New) |
+| `export_font` | `"sarabun_new"` | ใช้ TH Sarabun New (หรือ `"psk"` / `"it9"`) |
 | `letter_spacing_pt` | `0.4` | `<w:spacing w:val="8"/>` ใน style Normal (8 twips = 0.4 pt) |
 | `letterhead` | `"garuda"` | แสดง/ซ่อนตราครุฑ (บันทึกข้อความ 1.5 ซม., ภายนอก 3 ซม.) |
 | `divider` | `"none"` | `"line"` เพิ่มเส้นคั่นใต้ส่วนหัว (`w:pBdr`) |

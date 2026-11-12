@@ -35,7 +35,7 @@
       align(center, text(size: 16pt, weight: "bold", fill: rgb("#c00000"), label))
     },
   )
-  #set text(font: ("TH Sarabun New", "TH SarabunPSK", "TH Sarabun PSK", "Sarabun"), size: 16pt, lang: "th")
+  #set text(font: ("TH Sarabun New", "TH SarabunPSK", "TH Sarabun PSK", "TH SarabunIT๙", "TH Sarabun IT9", "Sarabun"), size: 16pt, lang: "th")
   #set par(leading: 0.5em, justify: true, first-line-indent: 0pt)
 
   // ชั้นความเร็ว (ถ้ามี) มุมบนซ้าย

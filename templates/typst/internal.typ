@@ -60,7 +60,7 @@
     },
   )
   // ฟอนต์ตระกูล Sarabun มี ascender/descender สูงมาก — กำหนดขอบบรรทัดเองให้ระยะบรรทัดใกล้เคียง Word (single)
-  #set text(font: ("TH Sarabun New", "TH SarabunPSK", "TH Sarabun PSK", "Sarabun"), size: 16pt, lang: "th",
+  #set text(font: ("TH Sarabun New", "TH SarabunPSK", "TH Sarabun PSK", "TH SarabunIT๙", "TH Sarabun IT9", "Sarabun"), size: 16pt, lang: "th",
             top-edge: 0.75em, bottom-edge: -0.3em)
   #set par(leading: _leading, spacing: _leading, justify: true, first-line-indent: 0pt)
 

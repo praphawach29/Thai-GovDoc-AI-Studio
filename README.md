@@ -11,8 +11,8 @@
 3. **หน้าจอตรวจแก้แบบเคียงข้าง (Side-by-Side Review Workspace):** ดูเอกสารต้นเรื่องฝั่งซ้าย ตรวจและแก้ไขร่างหนังสือฝั่งขวา พร้อม AI Copilot ช่วยเกลาภาษาและย่อความเฉพาะจุด
 4. **ส่งออกเอกสารจริง 2 รูปแบบมาตรฐาน:**
    - **Vector PDF (ผ่าน Typst):** จัดหน้า ขอบกระดาษ 3-2-2.5 ซม. ตราครุฑ 3 ซม./1.5 ซม. สวยคมชัดระดับเวกเตอร์ คอมไพล์เร็วในระดับเสี้ยววินาที
-   - **Editable Word (`.docx`):** แก้ปัญหาการตัดคำภาษาไทยด้วย Zero-Width Space (`\u200b`) และตั้งค่า Thai Distributed เต็มขอบกระดาษ สระไม่ลอย ฝังฟอนต์ TH Sarabun PSK ลงในไฟล์ เปิดเครื่องอื่นแล้วหน้าตาไม่เพี้ยน
-5. **ตัวเลือกการส่งออก Word:** เลือกฟอนต์ (PSK/New), ระยะห่างตัวอักษร (ค่าเริ่มต้น 0.4 pt), แสดง/ซ่อนตราครุฑ, เส้นคั่นใต้ส่วนหัว และเปิด/ปิดการฝังฟอนต์
+   - **Editable Word (`.docx`):** แก้ปัญหาการตัดคำภาษาไทยด้วย Zero-Width Space (`\u200b`) และตั้งค่า Thai Distributed เต็มขอบกระดาษ สระไม่ลอย ฝังฟอนต์ TH Sarabun New (หรือ PSK/IT9) ลงในไฟล์ เปิดเครื่องอื่นแล้วหน้าตาไม่เพี้ยน
+5. **ตัวเลือกการส่งออก Word:** เลือกฟอนต์ (New/PSK/IT9), ระยะห่างตัวอักษร (ค่าเริ่มต้น 0.4 pt), แสดง/ซ่อนตราครุฑ, เส้นคั่นใต้ส่วนหัว และเปิด/ปิดการฝังฟอนต์
 6. **ระบบทะเบียนคุมสารบรรณ (e-Document Ready):** รองรับระบบออกเลขที่หนังสือราชการอัตโนมัติ ทะเบียนรับ ทะเบียนส่ง และการจองเลขหนังสือ
 
 ---
@@ -86,9 +86,9 @@
 │
 ├── assets/                 # ทรัพยากรภาพและฟอนต์
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
-│   └── fonts/              # TH Sarabun PSK 4 น้ำหนัก (Regular/Bold/Italic/BoldItalic)
+│   └── fonts/              # TH Sarabun New / IT9 / PSK (ครบ 4 น้ำหนัก)
 │
-├── tests/                  # ชุดทดสอบ 100 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
+├── tests/                  # ชุดทดสอบ 101 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
 └── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
     └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
 ```
@@ -100,7 +100,7 @@
 ### 1. ความต้องการของระบบ (Prerequisites)
 - **Python 3.10+** — ติดตั้ง dependencies ทั้งหมดด้วย `python -m pip install -r requirements.txt`
 - **Typst** — ใช้ได้ทั้ง Typst CLI หรือ Python binding `typst` (ติดตั้งจาก `requirements.txt` และฝัง compiler ไว้ในตัว)
-- **ฟอนต์** — โปรเจกต์แนบ **TH Sarabun PSK** ครบ 4 น้ำหนัก (Regular/Bold/Italic/BoldItalic) ไว้ใน `assets/fonts` สำหรับเรนเดอร์ PDF (ระเบียบงานสารบรรณอนุญาตให้ใช้ TH Sarabun New หรือ TH Sarabun PSK)
+- **ฟอนต์** — โปรเจกต์แนบ **TH Sarabun New, IT9 และ PSK** ครบ 4 น้ำหนัก (Regular/Bold/Italic/BoldItalic) ไว้ใน `assets/fonts` สำหรับเรนเดอร์ PDF (ระเบียบงานสารบรรณอนุญาตให้ใช้ TH Sarabun New หรือ TH Sarabun PSK)
 - **Docker (ทางเลือก)** — สำหรับ OCR ออฟไลน์ด้วย image `tha-tesseract:latest` (ดู `Dockerfile.tesseract`)
 
 ### 2. ขั้นตอนการทำงานแบบย่อ
@@ -113,7 +113,7 @@
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
 
-- **สถานะชุดทดสอบ:** **100 tests — ผ่าน 95 / ข้าม 5 / ล้มเหลว 0**
+- **สถานะชุดทดสอบ:** **101 tests — ผ่าน 96 / ข้าม 5 / ล้มเหลว 0**
   - เทส PDF (headless browser) และ OCR จะ **ข้ามอัตโนมัติ** เมื่อเครื่องไม่มี browser/API key/Docker โดยใช้ marker กลางใน `tests/conftest.py` (ไม่ถูกนับเป็น fail)
 - **ระยะการพัฒนาที่แล้วเสร็จ:**
   - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
@@ -124,7 +124,7 @@
   - ✅ **Phase 6:** Standard BMA Memo Structure (4 ส่วนตามแบบ กทม.) & Hierarchy Routing
   - ✅ **Phase 7:** Multi-Engine OCR (Docker Tesseract + Gemini Vision), Fail-Safe Ingestion, `RULE_FILENAME_IN_METADATA` & Persistent User Organization Profile
   - ✅ **Phase 8:** Multi-Document Case Dossier Modeling (แฟ้มเรื่อง, สายเกษียนสั่งการ และการสังเคราะห์ย่อหน้า "ต้นเรื่อง")
-  - ✅ **Phase 8.1:** Export fidelity — ตัวเลือกฟอนต์/ครุฑ/ระยะตัวอักษร, ฝังฟอนต์ PSK ใน Word, เลขหน้าไทย
+  - ✅ **Phase 8.1:** Export fidelity — ตัวเลือกฟอนต์/ครุฑ/ระยะตัวอักษร, ฝังฟอนต์ New/IT9 ใน Word, เลขหน้าไทย
 - **แผนงานระยะถัดไป (Roadmap):**
   - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
   - 🚩 **Phase 10:** Multi-Document Review, Hierarchical Approval & E-Office Integration

@@ -64,7 +64,7 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 
 | Capability | Thai GovDoc AI Studio today | Adaptation |
 |---|---|---|
-| Drafting and export | Drafting intents, rule-based and model-backed drafting, DOCX/Typst/PDF, profile settings, and placeholders are implemented. DOCX export now supports ExportOptions, embedded PSK fonts, 0.4 pt spacing, Thai page numbers, and 1.5 cm memo top margin. | Keep the domain-specific format, BMA hierarchy, and export fidelity as the differentiator; validate required sections and make placeholders and review status visible before export. |
+| Drafting and export | Drafting intents, rule-based and model-backed drafting, DOCX/Typst/PDF, profile settings, and placeholders are implemented. DOCX export now supports ExportOptions, embedded New/IT9/PSK fonts, 0.4 pt spacing, Thai page numbers, and 1.5 cm memo top margin. | Keep the domain-specific format, BMA hierarchy, and export fidelity as the differentiator; validate required sections and make placeholders and review status visible before export. |
 | Review and annotation | `MEMO_REVIEW`, source dossier, references/attachments, paragraph copilot, linter, and audit/diff are implemented. | Add side-by-side comparison of multiple source versions and explicit evidence links from draft claims to source passages. Never promote inferred content to verified fact. |
 | Forms/templates | `PRESET_TEMPLATES` already supplies reusable templates. | Curate and tag by document type, work mission, authority, and last-reviewed date; distinguish verified official templates from editable examples. |
 | Multi-document reading and OCR | Multi-engine OCR, preprocessing, dossier extraction, and fail-safe behavior are implemented. | Preserve the no-invention fail-safe; expose per-file extraction confidence and let users ask questions over the dossier with page-level citations. |
@@ -75,13 +75,13 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 
 ## Applied from this benchmark (Sprint 1)
 
-- `core/models.py`: `ExportOptions` (font, letterhead, divider, letter spacing, embed flag, private flag).
+- `core/models.py`: `ExportOptions` (font: New/PSK/IT9, letterhead, divider, letter spacing, embed flag, private flag).
 - `core/docx_fonts.py`: OOXML font embedding (`fontTable` + `odttf` + relationships + content types + settings).
 - `core/word_exporter.py`: style-level character spacing, 1.5 cm memo top margin, Thai page-number format, optional garuda/divider, font selection.
 - `web/app.py`: export-options panel (font, garuda, divider, spacing, embedding) wired to the Word download.
 - `tests/test_phase9_export_options.py`: seven tests covering embedding, obfuscation, spacing, margins, page numbers, letterhead, divider, and font fallback.
 
-Test suite after Sprint 1: **100 tests collected — 95 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
+Test suite after Sprint 1: **101 tests collected — 96 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
 
 ## Recommended application sequence
 

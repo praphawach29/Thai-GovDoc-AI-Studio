@@ -21,13 +21,16 @@ from core.models import ExportOptions, GovDocumentSchema, DocType, UrgencyLevel,
 from core.thai_segmenter import insert_zwsp, to_thai_numerals
 
 
-FONT_NAME = "TH SarabunPSK"
+FONT_NAME = "TH Sarabun New"
 DEFAULT_FONT_SIZE = 16
 _ACTIVE_FONT: ContextVar[str] = ContextVar("govdoc_font", default=FONT_NAME)
 
 
 def _font_for_option(font_key: str) -> str:
-    return "TH Sarabun New" if font_key == "sarabun_new" else "TH SarabunPSK"
+    return {
+        "psk": "TH SarabunPSK",
+        "it9": "TH SarabunIT\u0e59",
+    }.get(font_key, "TH Sarabun New")
 
 
 def _apply_thai_distributed(paragraph):

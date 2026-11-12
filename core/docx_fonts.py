@@ -20,15 +20,20 @@ from pathlib import Path
 from typing import Optional
 
 FONT_FILES = {
-    "psk": {
-        "family": "TH SarabunPSK",
-        "regular": "THSarabunPSK.ttf",
-        "bold": "THSarabunPSK-Bold.ttf",
-    },
     "sarabun_new": {
         "family": "TH Sarabun New",
         "regular": "THSarabunNew.ttf",
         "bold": "THSarabunNew-Bold.ttf",
+    },
+    "it9": {
+        "family": "TH SarabunIT\u0e59",
+        "regular": "THSarabunIT9.ttf",
+        "bold": "THSarabunIT9-Bold.ttf",
+    },
+    "psk": {
+        "family": "TH SarabunPSK",
+        "regular": "THSarabunPSK.ttf",
+        "bold": "THSarabunPSK-Bold.ttf",
     },
 }
 
@@ -108,7 +113,7 @@ def _update_settings(xml: str) -> str:
 
 def resolve_font_paths(font_key: str) -> tuple:
     """คืน (family, regular_path, bold_path) โดย bold เป็น None ได้"""
-    spec = FONT_FILES.get(font_key, FONT_FILES["psk"])
+    spec = FONT_FILES.get(font_key, FONT_FILES["sarabun_new"])
     font_dir = Path(__file__).resolve().parent.parent / "assets" / "fonts"
     regular = font_dir / spec["regular"]
     bold = font_dir / spec["bold"]

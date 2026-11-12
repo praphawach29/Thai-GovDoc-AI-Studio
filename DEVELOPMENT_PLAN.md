@@ -1,7 +1,7 @@
 # 📑 แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบ (Development Plan & Architecture Specification)
 ## Thai GovDoc AI Studio — ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ
 **เวอร์ชันเอกสาร:** 2.2 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
-**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.1 (100 tests: ผ่าน 95 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
+**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.1 (101 tests: ผ่าน 96 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
 **อ้างอิงกฎหมายและระเบียบ:** ระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม, ระเบียบกรุงเทพมหานครว่าด้วยงานสารบรรณ
 
 ---
@@ -73,7 +73,7 @@ flowchart TD
 
 ## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.1)
 
-ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **100 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
+ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **101 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
 
 | ระยะการพัฒนา (Phase) | ขอบเขตงานสำคัญ | ไฟล์และโมดูลที่เกี่ยวข้อง | สถานะ |
 | :--- | :--- | :--- | :---: |
@@ -85,7 +85,7 @@ flowchart TD
 | **Phase 6: BMA Memo Template & Hierarchy** | • โครงสร้าง 4 ส่วนตามแบบ กทม.: ต้นเรื่อง, ข้อเท็จจริง, ข้อกฎหมาย (ถ้ามี), ข้อพิจารณาและเสนอแนะ, ประโยคลงท้าย<br/>• ระบบย่อหน้าตามระดับชั้น (2.5 ซม., 3.5 ซม., 4.5 ซม.)<br/>• ระดับชั้นการเสนอเรื่อง (`MemoHierarchyLevel`): กลุ่มงาน $\rightarrow$ กอง $\rightarrow$ สำนัก $\rightarrow$ ปลัด $\rightarrow$ ผู้ว่าฯ | `core/memo_layout.py`<br/>`core/templates_library.py` | ✅ สำเร็จ |
 | **Phase 7: Multi-Engine OCR & Profile** | • Local Docker Tesseract Container (`tha-tesseract:latest`) แบบออฟไลน์<br/>• Gemini Vision API ถอดลายมือเกษียนและตรายาง<br/>• ยุบช่องว่างพยัญชนะไทย และรวมสระอำจากการ OCR<br/>• Fail-Safe Halt: ป้องกันการนำชื่อไฟล์มาเป็นเรื่องหรืออ้างถึง<br/>• Linter Rule `RULE_FILENAME_IN_METADATA`<br/>• ระบบโปรไฟล์หน่วยงานของผู้ใช้ (`UserProfileSchema` $\rightarrow$ `data/user_profile.json`) พร้อมแท็บ UI ตั้งค่า | `core/extractor.py`<br/>`core/profile_manager.py`<br/>`core/ai_drafter.py`<br/>`core/linter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8: Multi-Document Case Dossier** | • สถาปัตยกรรมสำนวนแฟ้มเรื่อง `SourceCase`, `SourceItem`, `RoutingNote`<br/>• ตัวสกัดเอกสารหลายฉบับในแฟ้ม และตรวจจับฉบับที่ส่งมาแทนหนังสือเดิม<br/>• ตัวสกัดสายบันทึกเกษียนสั่งการ (Chain of Command)<br/>• กลไกสังเคราะห์ย่อหน้า "ต้นเรื่อง" บันทึกข้อความ กทม. อัตโนมัติ | `core/case_dossier.py`<br/>`core/models.py`<br/>`core/extractor.py`<br/>`core/ai_drafter.py` | ✅ สำเร็จ |
-| **Phase 8.1: Export Fidelity (Sprint 1)** | • `ExportOptions` (ฟอนต์/ครุฑ/เส้นคั่น/ระยะตัวอักษร/ฝังฟอนต์)<br/>• ฝังฟอนต์ TH Sarabun PSK เป็น `odttf` ตาม OOXML<br/>• ระยะตัวอักษร 0.4 pt ระดับ style, ขอบบนบันทึกข้อความ 1.5 ซม.<br/>• เลขหน้าไทย + หน้าแรกไม่แสดงเลข | `core/models.py`<br/>`core/docx_fonts.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
+| **Phase 8.1: Export Fidelity (Sprint 1)** | • `ExportOptions` (ฟอนต์/ครุฑ/เส้นคั่น/ระยะตัวอักษร/ฝังฟอนต์)<br/>• ฝังฟอนต์ TH Sarabun New/IT9/PSK เป็น `odttf` ตาม OOXML<br/>• ระยะตัวอักษร 0.4 pt ระดับ style, ขอบบนบันทึกข้อความ 1.5 ซม.<br/>• เลขหน้าไทย + หน้าแรกไม่แสดงเลข | `core/models.py`<br/>`core/docx_fonts.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 
 ---
 
@@ -280,8 +280,8 @@ class SourceCase(BaseModel):
 │   └── edocument.db            # ฐานข้อมูลสมุดทะเบียนคุมสารบรรณ
 │
 ├── uploads/                    # โฟลเดอร์จัดเก็บไฟล์ต้นเรื่องที่แนบเข้ามา
-├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun PSK 4 น้ำหนัก
-├── tests/                      # ชุดทดสอบ 100 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
+├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun New/IT9/PSK 4 น้ำหนัก
+├── tests/                      # ชุดทดสอบ 101 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
 └── web/                        # ระบบหน้าบ้าน (Web UI)
     └── app.py                  # แอปพลิเคชัน Streamlit หน้าจอ 3 แท็บ (ร่าง, ทะเบียน, ตั้งค่า)
 ```
@@ -296,17 +296,17 @@ class SourceCase(BaseModel):
 | **เว็บเฟรมเวิร์ก (Web Framework)** | Streamlit 1.52.0 (รันบนพอร์ต 8501 แบบ Headless) |
 | **เกตเวย์องค์กร (API Gateway)** | FastAPI + Uvicorn ASGI (`core/api.py`) |
 | **เครื่องมือเรนเดอร์ PDF** | Typst 0.15 (CLI หรือ Python binding `typst` ที่ฝัง compiler) — คอมไพล์ A4 Vector PDF ในเวลา 50-100 ms |
-| **ฟอนต์สำหรับ PDF** | TH Sarabun PSK 4 น้ำหนัก ใน `assets/fonts` (ระเบียบอนุญาต TH Sarabun New หรือ TH Sarabun PSK) |
+| **ฟอนต์สำหรับ PDF** | TH Sarabun New / IT9 / PSK ครบ 4 น้ำหนัก ใน `assets/fonts` (ระเบียบอนุญาต TH Sarabun New หรือ TH Sarabun PSK) |
 | **เครื่องมือสร้าง Word** | `python-docx` 1.2.0 ร่วมกับ `pythainlp` 5.4.0 แทรก ZWSP (`\u200b`) และเปิดโหมด Thai Distributed |
 | **เครื่องมือ OCR ท้องถิ่น** | Docker Engine + Image `tha-tesseract:latest` (Alpine + Tesseract 5.5.2 ภาษา `tha+eng`) |
 | **เครื่องมือ Cloud AI** | Google Gemini API (`gemini-2.5-flash`) ผ่านไลบรารี `google-genai` |
 | **ฐานข้อมูล (Database)** | SQLite 3 (ไฟล์ `audit.db` และ `edocument.db`) |
-| **สถานะชุดทดสอบ** | 100 tests: 95 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
+| **สถานะชุดทดสอบ** | 101 tests: 96 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
 
 ### ข้อจำกัดที่ทราบ (Known Limitations)
 
 1. **PDF ผ่าน headless browser**: ในสภาพแวดล้อมที่ถูก sandbox จำกัดสิทธิ์ (เช่น CI บางระบบ) Microsoft Edge/Chrome อาจเปิดโพรไฟล์ไม่ได้ ทำให้เทส PDF 4 รายการ skip — บนเครื่องผู้ใช้ปกติจะทำงานได้
 2. **OCR**: ต้องมี `GEMINI_API_KEY` หรือ Docker image `tha-tesseract`; หากไม่มี เทส OCR จะ skip และระบบจะเข้าสู่ Fail-Safe แทนการเดาข้อความ
-3. **ฟอนต์ใน Word**: ไฟล์ `.docx` ระบุชื่อฟอนต์ TH Sarabun New ตามมาตรฐาน แต่เครื่องปลายทางต้องติดตั้งฟอนต์นี้ (PDF ฝัง TH Sarabun PSK จาก `assets/fonts` แล้ว)
+3. **ฟอนต์ใน Word**: ไฟล์ `.docx` ฝังฟอนต์ TH Sarabun New ไว้แล้ว (odttf) จึงเปิดบนเครื่องอื่นได้โดยไม่ต้องติดตั้งฟอนต์; PDF ใช้ฟอนต์จาก `assets/fonts`
 4. **เลขข้อในสายเกษียน**: ระบบสร้างเลขไทย `๑. ๒. ๓.`; หากหน่วยงานเลือกใช้เลขอารบิกทั้งฉบับ ต้องแปลงภายหลังด้วยคำสั่งสลับเลขของ Copilot
 
