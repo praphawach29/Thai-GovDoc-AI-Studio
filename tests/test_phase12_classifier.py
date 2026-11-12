@@ -37,7 +37,7 @@ def test_classify_directive_and_public_relations():
     directive = classify_source_document(_ctx("คำสั่ง อาศัยอำนาจตามระเบียบ"))
     assert directive.kind == DocumentKind.DIRECTIVE
     assert directive.form_no in (4, 5)
-    assert directive.supported is False
+    assert directive.supported is True
 
     announcement = classify_source_document(_ctx("ประกาศ ประชาสัมพันธ์ แจ้งให้ทราบ"))
     assert announcement.kind == DocumentKind.PUBLIC_RELATIONS

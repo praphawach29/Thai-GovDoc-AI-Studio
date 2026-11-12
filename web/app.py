@@ -29,6 +29,7 @@ for mod in ["core.models", "core.profile_manager", "core.extractor", "core.templ
 import streamlit as st
 
 from core.classifier import DocumentKind, classify_source_document
+from core.special_drafter import draft_special_from_context
 from core.hierarchy import apply_hierarchy_role, build_hierarchy_chain, roles_from_profile
 from core.layout_profile import get_layout_profile
 from core.models import DOC_NUMBER_PLACEHOLDER, GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
@@ -962,7 +963,18 @@ with tab_main:
                             prov = "openai" if "OpenAI" in ai_prov else "gemini"
                             key = st.session_state.get("ai_api_key")
                             allow_cloud_now = st.session_state.get("allow_cloud_ai", True)
-                            if key and allow_cloud_now:
+                            if _cls_now and _cls_now.kind not in (
+                                DocumentKind.EXTERNAL_LETTER,
+                                DocumentKind.INTERNAL_MEMO,
+                            ):
+                                draft = draft_special_from_context(
+                                    ctx,
+                                    _cls_now.kind,
+                                    _cls_now.form_no,
+                                    get_user_profile(),
+                                )
+                                draft_author = "Special template (local)"
+                            elif key and allow_cloud_now:
                                 draft = draft_from_context_llm(ctx, doc_type=target_doc_type, intent=intent_choice[0], provider=prov, api_key=key)
                                 draft_author = f"AI Studio ({prov.upper()})"
                             else:
@@ -1432,7 +1444,37 @@ with tab_main:
                 atts_html = "".join(att_items)
 
             # HTML A4 Preview Template (Scaled for clean on-screen reading)
-            if doc.doc_type == DocType.EXTERNAL:
+            if doc.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+                _special_items = "".join(
+                    f'<p class="a4-indent">{highlight_placeholders_html((to_thai_numerals(str(i)) if doc.use_thai_numerals else str(i)) + ".  " + item)}</p>'
+                    for i, item in enumerate(doc.special_items or [], 1)
+                )
+                st.markdown(f"""
+                <div class="a4-paper">
+                    <div style="text-align: center; margin-bottom: 12px;">
+                        <img src="data:{garuda_mime};base64,{garuda_b64}" style="height: 3.0cm; width: auto;" alt="ตราครุฑ 3 ซม." />
+                    </div>
+                    <h2 style="text-align: center; font-size: 24px; margin: 4px 0 14px;">{highlight_placeholders_html(doc.special_title or doc.subject)}</h2>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14.5px;">
+                        <div>ที่  {disp_no}</div>
+                        <div>วันที่  {disp_date}</div>
+                    </div>
+                    <p style="font-size: 14.5px;"><strong>เรื่อง</strong>  {disp_subject}</p>
+                    <p class="a4-indent">{highlight_placeholders_html(doc.special_preamble or "")}</p>
+                    {_special_items}
+                    <p class="a4-indent">{highlight_placeholders_html(doc.special_note or "")}</p>
+                    <div style="text-align: center; margin-left: 45%; margin-top: 28px; margin-bottom: 20px; font-size: 14.5px;">
+                        {sig_preview_html}
+                        <p>{disp_sig_name}</p>
+                        <p>{disp_sig_pos}</p>
+                    </div>
+                    <div style="font-size: 12.5px !important; color: #334155;">
+                        <p style="margin: 0;">{highlight_placeholders_html(doc.contact_dept or '')}</p>
+                        <p style="margin: 0;">โทรศัพท์  {highlight_placeholders_html(doc.contact_tel or '')}</p>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif doc.doc_type == DocType.EXTERNAL:
                 st.markdown(f"""
                 <div class="a4-paper">
                     <div style="text-align: center; margin-bottom: 12px;">
@@ -1497,7 +1539,48 @@ with tab_main:
 
             # ----------------- กล่องแก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง -----------------
             st.markdown("##### ✏️ แก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง")
-            if doc.doc_type == DocType.INTERNAL:
+            if doc.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+                st.info("เอกสารชนิดพิเศษ: แก้ชื่อเอกสาร ความนำ ข้อความแยกข้อ และผู้ลงนามได้ด้านล่าง")
+                sp1, sp2 = st.columns(2)
+                with sp1:
+                    sp_title = st.text_input("ชื่อเอกสาร", value=doc.special_title or "", key="sp_title")
+                with sp2:
+                    sp_subject = st.text_input("เรื่อง", value=doc.subject or "", key="sp_subject")
+                sp_preamble = st.text_area(
+                    "ความนำ / อาศัยอำนาจ",
+                    value=doc.special_preamble or "",
+                    height=100,
+                    key="sp_preamble",
+                )
+                sp_items = st.text_area(
+                    "ข้อความแยกข้อ (หนึ่งบรรทัดต่อหนึ่งข้อ)",
+                    value="\n".join(doc.special_items or []),
+                    height=180,
+                    key="sp_items",
+                )
+                sp_note = st.text_area(
+                    "หมายเหตุ / บทบังคับใช้",
+                    value=doc.special_note or "",
+                    height=90,
+                    key="sp_note",
+                )
+                sp_sign_name = st.text_input(
+                    "ชื่อผู้ลงนาม", value=doc.signatory_name or "", key="sp_sign_name"
+                )
+                sp_sign_pos = st.text_input(
+                    "ตำแหน่งผู้ลงนาม", value=doc.signatory_position or "", key="sp_sign_pos"
+                )
+                if st.button("💾 บันทึกเอกสารชนิดพิเศษ", type="primary"):
+                    doc.special_title = sp_title.strip()
+                    doc.subject = sp_subject.strip()
+                    doc.special_preamble = sp_preamble.strip()
+                    doc.special_items = [line.strip() for line in sp_items.splitlines() if line.strip()]
+                    doc.special_note = sp_note.strip()
+                    doc.signatory_name = sp_sign_name.strip()
+                    doc.signatory_position = sp_sign_pos.strip()
+                    st.session_state.doc_data = doc
+                    st.rerun()
+            elif doc.doc_type == DocType.INTERNAL:
                 sec_tabs = st.tabs(["๑. ต้นเรื่อง (จำเป็น)", "๒. ข้อเท็จจริง (จำเป็น)", "๓. ข้อกฎหมาย (ถ้ามี)", "๔. ข้อพิจารณาและเสนอแนะ (จำเป็น)", "๕. ประโยคลงท้ายตามระดับชั้น", "✍️ ผู้ลงนาม"])
                 with sec_tabs[0]:
                     new_intro = st.text_area("เนื้อความ ๑. ต้นเรื่อง (จำเป็น):", value=doc.memo_intro or doc.paragraph_reason or "", height=95, key="dir_intro")

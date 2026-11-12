@@ -18,6 +18,30 @@ class DocType(str, Enum):
     INTERNAL = "internal"    # หนังสือภายใน / บันทึกข้อความ (ครุฑ 1.5 ซม. ด้านซ้าย)
 
 
+class DocumentKind(str, Enum):
+    """ชนิดหนังสือราชการ 6 ชนิดตามระเบียบงานสารบรรณ (แบบที่ 1–11)"""
+
+    EXTERNAL_LETTER = "external_letter"      # หนังสือภายนอก (แบบ 1)
+    INTERNAL_MEMO = "internal_memo"          # หนังสือภายใน/บันทึกข้อความ (แบบ 2)
+    STAMP_LETTER = "stamp_letter"            # หนังสือประทับตรา (แบบ 3)
+    DIRECTIVE = "directive"                  # คำสั่ง/ระเบียบ/ข้อบังคับ (แบบ 4–6)
+    PUBLIC_RELATIONS = "public_relations"    # ประกาศ/แถลงการณ์/ข่าว (แบบ 7–9)
+    EVIDENCE = "evidence"                    # หนังสือรับรอง/รายงานการประชุม/บันทึก (แบบ 10–11)
+
+    def thai_label(self) -> str:
+        return {
+            DocumentKind.EXTERNAL_LETTER: "หนังสือภายนอก (แบบ 1)",
+            DocumentKind.INTERNAL_MEMO: "หนังสือภายใน / บันทึกข้อความ (แบบ 2)",
+            DocumentKind.STAMP_LETTER: "หนังสือประทับตรา (แบบ 3)",
+            DocumentKind.DIRECTIVE: "หนังสือสั่งการ: คำสั่ง/ระเบียบ/ข้อบังคับ (แบบ 4–6)",
+            DocumentKind.PUBLIC_RELATIONS: "หนังสือประชาสัมพันธ์: ประกาศ/แถลงการณ์/ข่าว (แบบ 7–9)",
+            DocumentKind.EVIDENCE: "หนังสือรับรอง/รายงานการประชุม/บันทึก (แบบ 10–11)",
+        }[self]
+
+    def is_generation_supported(self) -> bool:
+        return True
+
+
 class UrgencyLevel(str, Enum):
     NORMAL = "normal"              # ปกติ
     URGENT = "urgent"              # ด่วน
@@ -258,6 +282,11 @@ class SourceDocumentContext(BaseModel):
 class GovDocumentSchema(BaseModel):
     """โมเดลข้อมูลหนังสือราชการฉบับร่าง/ส่งออกสมบูรณ์"""
     doc_type: DocType = Field(default=DocType.EXTERNAL, description="ประเภทหนังสือ (ภายนอก / ภายใน)")
+    kind: DocumentKind = Field(default=DocumentKind.EXTERNAL_LETTER, description="ชนิดหนังสือ 6 ชนิดตามระเบียบ")
+    special_title: Optional[str] = Field(None, description="ชื่อเอกสารชนิดพิเศษ เช่น 'คำสั่งกรุงเทพมหานคร'")
+    special_preamble: Optional[str] = Field(None, description="ความนำ/อาศัยอำนาจของเอกสารชนิดพิเศษ")
+    special_items: List[str] = Field(default_factory=list, description="ข้อความแยกข้อของเอกสารชนิดพิเศษ")
+    special_note: Optional[str] = Field(None, description="หมายเหตุ/บทบังคับใช้ท้ายเอกสารชนิดพิเศษ")
     urgency: UrgencyLevel = Field(default=UrgencyLevel.NORMAL, description="ชั้นความเร็ว")
     secret: SecretLevel = Field(default=SecretLevel.NORMAL, description="ชั้นความลับ")
     use_thai_numerals: bool = Field(default=False, description="แปลงตัวเลขเป็นเลขไทยหรือไม่")

@@ -18,7 +18,7 @@ from docx.oxml.ns import qn, nsdecls
 
 from core.docx_fonts import embed_fonts
 from core.layout_profile import LayoutProfile, get_layout_profile
-from core.models import ExportOptions, GovDocumentSchema, DocType, UrgencyLevel, SecretLevel
+from core.models import ExportOptions, GovDocumentSchema, DocType, DocumentKind, UrgencyLevel, SecretLevel
 from core.thai_segmenter import insert_zwsp, to_thai_numerals
 
 
@@ -317,7 +317,9 @@ def export_govdoc_to_docx(
         fmt_details = to_thai_numerals(data.paragraph_details) if (data.paragraph_details and data.use_thai_numerals) else data.paragraph_details
         fmt_purpose = to_thai_numerals(data.paragraph_purpose) if data.use_thai_numerals else data.paragraph_purpose
 
-        if data.doc_type == DocType.EXTERNAL:
+        if data.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+            _build_special_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
+        elif data.doc_type == DocType.EXTERNAL:
             _build_external_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options, profile)
         else:
             _build_internal_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options, profile)
@@ -335,6 +337,98 @@ def export_govdoc_to_docx(
         return str(out_file)
     finally:
         _ACTIVE_FONT.reset(token)
+
+
+def _build_special_doc(
+    doc: Document,
+    data: GovDocumentSchema,
+    fmt_date: str,
+    fmt_number: str,
+    garuda_path: Optional[str],
+    options: ExportOptions,
+    profile: LayoutProfile,
+):
+    """สร้างเอกสารชนิดพิเศษ 4 ชนิด (ประทับตรา/สั่งการ/ประชาสัมพันธ์/หลักฐาน)"""
+    if garuda_path and os.path.exists(garuda_path):
+        p_garuda = doc.add_paragraph()
+        p_garuda.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_garuda.paragraph_format.space_after = Pt(8)
+        r_garuda = p_garuda.add_run()
+        r_garuda.add_picture(garuda_path, height=Cm(3.0))
+
+    p_title = doc.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.space_after = Pt(10)
+    r_title = p_title.add_run(data.special_title or data.subject)
+    _set_run_thai_font(r_title, size_pt=29, bold=True)
+
+    p_meta = doc.add_paragraph()
+    p_meta.paragraph_format.space_after = Pt(2)
+    p_meta.paragraph_format.tab_stops.add_tab_stop(Cm(TEXT_WIDTH_CM), WD_TAB_ALIGNMENT.RIGHT)
+    r_num = p_meta.add_run(f"ที่  {fmt_number}")
+    _set_run_thai_font(r_num, size_pt=DEFAULT_FONT_SIZE)
+    p_meta.add_run("\t")
+    r_date = p_meta.add_run(f"วันที่  {fmt_date}")
+    _set_run_thai_font(r_date, size_pt=DEFAULT_FONT_SIZE)
+
+    p_sub = doc.add_paragraph()
+    p_sub.paragraph_format.space_after = Pt(6)
+    r_sub_h = p_sub.add_run("เรื่อง  ")
+    _set_run_thai_font(r_sub_h, size_pt=DEFAULT_FONT_SIZE, bold=True)
+    r_sub_v = p_sub.add_run(insert_zwsp(data.subject))
+    _set_run_thai_font(r_sub_v, size_pt=DEFAULT_FONT_SIZE)
+
+    if options.divider == "line":
+        _add_divider(doc)
+
+    body_indent = 2.5 if profile.body_indent_cm is None else profile.body_indent_cm
+    preamble = data.special_preamble or data.paragraph_reason
+    _add_paragraph_with_zwsp(doc, preamble, indent_cm=body_indent, space_after_pt=6)
+
+    num = to_thai_numerals if data.use_thai_numerals else (lambda value: value)
+    for index, item in enumerate(data.special_items or [], 1):
+        p_item = doc.add_paragraph()
+        p_item.paragraph_format.space_after = Pt(2)
+        p_item.paragraph_format.first_line_indent = Cm(body_indent)
+        _apply_thai_distributed(p_item)
+        prefix = f"{num(str(index))}.  "
+        r_prefix = p_item.add_run(prefix)
+        _set_run_thai_font(r_prefix, size_pt=DEFAULT_FONT_SIZE)
+        r_item = p_item.add_run(insert_zwsp(item))
+        _set_run_thai_font(r_item, size_pt=DEFAULT_FONT_SIZE)
+
+    note = data.special_note or data.paragraph_purpose
+    if note:
+        _add_paragraph_with_zwsp(doc, note, indent_cm=body_indent, space_after_pt=12)
+
+    if data.kind != DocumentKind.STAMP_LETTER:
+        p_close = doc.add_paragraph()
+        p_close.paragraph_format.left_indent = Cm(8.0)
+        r_close = p_close.add_run(data.closing or "ขอแสดงความนับถือ")
+        _set_run_thai_font(r_close, size_pt=DEFAULT_FONT_SIZE)
+
+    p_sig = doc.add_paragraph()
+    p_sig.paragraph_format.left_indent = Cm(8.0)
+    p_sig.paragraph_format.space_after = Pt(2)
+    r_sig = p_sig.add_run(data.signatory_name)
+    _set_run_thai_font(r_sig, size_pt=DEFAULT_FONT_SIZE)
+
+    p_pos = doc.add_paragraph()
+    p_pos.paragraph_format.left_indent = Cm(8.0)
+    p_pos.paragraph_format.space_after = Pt(12)
+    r_pos = p_pos.add_run(data.signatory_position)
+    _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
+
+    if data.contact_dept or data.contact_tel:
+        p_contact = doc.add_paragraph()
+        p_contact.paragraph_format.space_after = Pt(2)
+        r_contact = p_contact.add_run(data.contact_dept or "")
+        _set_run_thai_font(r_contact, size_pt=14)
+        if data.contact_tel:
+            r_tel = p_contact.add_run(f"  โทร. {data.contact_tel}")
+            _set_run_thai_font(r_tel, size_pt=14)
+
+    _add_page_number_header(doc, profile.page_number_style)
 
 
 def _build_external_doc(doc: Document, data: GovDocumentSchema, 

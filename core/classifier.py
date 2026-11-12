@@ -5,36 +5,12 @@ classifier.py — จำแนกชนิดหนังสือราชก�
 ใช้กฎคำสำคัญจากต้นเรื่อง + metadata เพื่อเสนอชนิด/แบบ และให้ผู้ใช้ยืนยันก่อนร่าง
 """
 
-from enum import Enum
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
 from core.ai_drafter import DraftingIntent
-from core.models import DocType, SourceDocumentContext
-
-
-class DocumentKind(str, Enum):
-    EXTERNAL_LETTER = "external_letter"      # หนังสือภายนอก (แบบ 1)
-    INTERNAL_MEMO = "internal_memo"          # หนังสือภายใน/บันทึกข้อความ (แบบ 2)
-    STAMP_LETTER = "stamp_letter"            # หนังสือประทับตรา (แบบ 3)
-    DIRECTIVE = "directive"                  # หนังสือสั่งการ: คำสั่ง/ระเบียบ/ข้อบังคับ (แบบ 4–6)
-    PUBLIC_RELATIONS = "public_relations"    # หนังสือประชาสัมพันธ์: ประกาศ/แถลงการณ์/ข่าว (แบบ 7–9)
-    EVIDENCE = "evidence"                    # หนังสือรับรอง/รายงานการประชุม/บันทึก (แบบ 10–11)
-
-    def thai_label(self) -> str:
-        return {
-            DocumentKind.EXTERNAL_LETTER: "หนังสือภายนอก (แบบ 1)",
-            DocumentKind.INTERNAL_MEMO: "หนังสือภายใน / บันทึกข้อความ (แบบ 2)",
-            DocumentKind.STAMP_LETTER: "หนังสือประทับตรา (แบบ 3)",
-            DocumentKind.DIRECTIVE: "หนังสือสั่งการ: คำสั่ง/ระเบียบ/ข้อบังคับ (แบบ 4–6)",
-            DocumentKind.PUBLIC_RELATIONS: "หนังสือประชาสัมพันธ์: ประกาศ/แถลงการณ์/ข่าว (แบบ 7–9)",
-            DocumentKind.EVIDENCE: "หนังสือรับรอง/รายงานการประชุม/บันทึก (แบบ 10–11)",
-        }[self]
-
-    def is_generation_supported(self) -> bool:
-        """P1 รองรับการยกร่างอัตโนมัติเฉพาะหนังสือภายนอกและบันทึกข้อความ"""
-        return self in {DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO}
+from core.models import DocType, DocumentKind, SourceDocumentContext
 
 
 class ClassificationResult(BaseModel):
