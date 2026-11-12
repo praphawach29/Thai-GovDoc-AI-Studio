@@ -9,7 +9,6 @@ from enum import Enum
 from typing import Optional, List
 
 from core.models import (
-    DOC_NUMBER_PLACEHOLDER,
     GovDocumentSchema,
     SourceDocumentContext,
     DocType,
@@ -19,7 +18,7 @@ from core.models import (
 )
 from core.profile_manager import get_user_profile
 from core.security import CloudAIBlocked, assert_cloud_ai_allowed
-from core.thai_date import format_thai_date
+from core.thai_date import blank_doc_number, format_thai_date
 from core.thai_segmenter import to_thai_numerals, to_arabic_numerals
 
 
@@ -64,7 +63,7 @@ def draft_from_context_rule_based(ctx: SourceDocumentContext,
         contact_tel = user_prof.contact_tel
 
     # AI ต้องไม่สร้างเลขที่เอง — เว้นให้ทะเบียนออกเลขภายหลัง
-    doc_no = DOC_NUMBER_PLACEHOLDER
+    doc_no = blank_doc_number(use_thai_numerals=False)
     doc_date = format_thai_date(use_thai_numerals=False)
     
     # 1. การกำหนดเรื่อง (Subject) — ห้ามใช้ชื่อไฟล์ที่มีนามสกุล (.pdf, .docx) เด็ดขาด
@@ -296,7 +295,7 @@ def _build_llm_prompt(ctx: SourceDocumentContext, doc_type: DocType, intent: Dra
 
 def _sanitize_llm_draft(doc: GovDocumentSchema) -> GovDocumentSchema:
     """บังคับไม่ให้ AI สร้างเลขที่หนังสือ/วันที่เอง — เว้นเลขที่และใช้วันที่ปัจจุบัน"""
-    doc.doc_number = DOC_NUMBER_PLACEHOLDER
+    doc.doc_number = blank_doc_number(use_thai_numerals=doc.use_thai_numerals)
     doc.doc_date = format_thai_date(use_thai_numerals=doc.use_thai_numerals)
     return doc
 

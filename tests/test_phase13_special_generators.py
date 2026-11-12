@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from core.models import DocumentKind, SourceDocumentContext, UserProfileSchema
+from core.models import DocumentKind, SourceDocumentContext, UserProfileSchema, is_blank_doc_number
 from core.special_drafter import draft_special_from_context
 from core.word_exporter import export_govdoc_to_docx
 
@@ -41,7 +41,7 @@ def test_special_generator_creates_draft(ctx, profile, kind, form_no, prefix):
     doc = draft_special_from_context(ctx, kind, form_no, profile)
     assert doc.kind == kind
     assert doc.special_title.startswith(prefix)
-    assert doc.doc_number == "[✏️ เลขที่หนังสือ]"
+    assert is_blank_doc_number(doc.doc_number)
     assert doc.special_items
     assert doc.special_preamble
     assert doc.special_note

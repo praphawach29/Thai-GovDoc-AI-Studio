@@ -73,7 +73,7 @@ def sync_fields_from_sections(doc: GovDocumentSchema) -> GovDocumentSchema:
         return doc
 
     grouped = {}
-    for section in doc.sections:
+    for section in (sec for sec in doc.sections if sec.enabled):
         grouped.setdefault(section.kind, []).append(section)
 
     def first(kind: SectionKind) -> str:

@@ -1,7 +1,7 @@
 # 📑 แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบ (Development Plan & Architecture Specification)
 ## Thai GovDoc AI Studio — ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ
 **เวอร์ชันเอกสาร:** 2.2 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
-**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.7 (132 tests: ผ่าน 127 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
+**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.8 (135 tests: ผ่าน 130 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
 **อ้างอิงกฎหมายและระเบียบ:** ระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม, ระเบียบกรุงเทพมหานครว่าด้วยงานสารบรรณ
 
 ---
@@ -71,9 +71,9 @@ flowchart TD
 
 ---
 
-## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.7)
+## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.8)
 
-ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **132 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
+ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **135 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
 
 | ระยะการพัฒนา (Phase) | ขอบเขตงานสำคัญ | ไฟล์และโมดูลที่เกี่ยวข้อง | สถานะ |
 | :--- | :--- | :--- | :---: |
@@ -92,6 +92,7 @@ flowchart TD
 | **Phase 8.5: Document Classifier (P1)** | • จำแนกหนังสือ 6 ชนิด/แบบ 1–11 จากคำสำคัญ<br/>• การ์ดยืนยันชนิดก่อนร่าง + dropdown แก้ชนิด<br/>• รองรับร่างอัตโนมัติเฉพาะหนังสือภายนอก/บันทึกข้อความ | `core/classifier.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8.6: Special Document Generators** | • Generator 4 ชนิด: ประทับตรา/สั่งการ/ประชาสัมพันธ์/หลักฐาน<br/>• Word layout เฉพาะ (ชื่อเอกสาร ความนำ ข้อแยกข้อ หมายเหตุ)<br/>• UI แก้ไขและพรีวิวเอกสารชนิดพิเศษ | `core/special_drafter.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8.7: Flexible Sections** | • หัวข้อเอกสาร 12 ส่วนแบบเพิ่ม/ลบ/แก้ไข/สลับลำดับได้<br/>• `sections` เป็นแหล่งความจริง + sync กลับฟิลด์เดิม<br/>• Word/Preview เรนเดอร์ตามลำดับหัวข้อจริง | `core/sections.py`<br/>`core/models.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
+| **Phase 8.8: Header Fit & Blank Number** | • บีบตัวอักษร (w:w) ให้บรรทัดส่วนราชการอยู่ในบรรทัดเดียว<br/>• เลขที่หนังสือแบบเว้นช่อง ......../พ.ศ. ให้เขียนเลขเอง<br/>• Checkbox แสดง/ซ่อนแต่ละหัวข้อ และซ่อนอัตโนมัติเมื่อเนื้อหาว่าง | `core/models.py`<br/>`core/thai_date.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 
 ---
 
@@ -294,7 +295,7 @@ class SourceCase(BaseModel):
 │
 ├── uploads/                    # โฟลเดอร์จัดเก็บไฟล์ต้นเรื่องที่แนบเข้ามา
 ├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun New/IT9/PSK 4 น้ำหนัก
-├── tests/                      # ชุดทดสอบ 132 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
+├── tests/                      # ชุดทดสอบ 135 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
 └── web/                        # ระบบหน้าบ้าน (Web UI)
     └── app.py                  # แอปพลิเคชัน Streamlit หน้าจอ 3 แท็บ (ร่าง, ทะเบียน, ตั้งค่า)
 ```
@@ -314,7 +315,7 @@ class SourceCase(BaseModel):
 | **เครื่องมือ OCR ท้องถิ่น** | Docker Engine + Image `tha-tesseract:latest` (Alpine + Tesseract 5.5.2 ภาษา `tha+eng`) |
 | **เครื่องมือ Cloud AI** | Google Gemini API (`gemini-2.5-flash`) ผ่านไลบรารี `google-genai` |
 | **ฐานข้อมูล (Database)** | SQLite 3 (ไฟล์ `audit.db` และ `edocument.db`) |
-| **สถานะชุดทดสอบ** | 132 tests: 127 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
+| **สถานะชุดทดสอบ** | 135 tests: 130 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
 
 ### ข้อจำกัดที่ทราบ (Known Limitations)
 

@@ -33,7 +33,7 @@ from core.special_drafter import draft_special_from_context
 from core.hierarchy import apply_hierarchy_role, build_hierarchy_chain, roles_from_profile
 from core.sections import ensure_sections, sync_fields_from_sections
 from core.layout_profile import get_layout_profile
-from core.models import DOC_NUMBER_PLACEHOLDER, DocumentSection, GovDocumentSchema, DocType, SectionKind, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
+from core.models import DocumentSection, is_blank_doc_number, GovDocumentSchema, DocType, SectionKind, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
 from core.profile_manager import get_user_profile, save_user_profile, reset_to_default_profile
 from core.extractor import extract_source_document, extract_from_raw_text
 from core.ai_drafter import draft_from_context_rule_based, draft_from_context_llm, DraftingIntent
@@ -386,7 +386,7 @@ def get_docx_bytes(doc_schema: GovDocumentSchema, options: ExportOptions | None 
 def audit_doc_id(doc: GovDocumentSchema) -> str:
     """ใช้เลขที่หนังสือเป็นรหัส audit; ถ้ายังเป็น placeholder ให้ใช้รหัสชั่วคราวต่อ session"""
     number = (doc.doc_number or "").strip()
-    if number and DOC_NUMBER_PLACEHOLDER not in number:
+    if number and not is_blank_doc_number(number):
         return number
     if "draft_uid" not in st.session_state:
         st.session_state.draft_uid = f"draft-{uuid.uuid4().hex[:8]}"
@@ -1455,6 +1455,8 @@ with tab_main:
             ):
                 _sec_html = []
                 for _section in doc.sections:
+                    if not _section.enabled:
+                        continue
                     _label = _section.label or _section.kind.default_label()
                     _content = _section.content or ""
                     _secondary = _section.secondary or ""
@@ -1605,6 +1607,8 @@ with tab_main:
                     st.caption("แก้ไขชื่อ/เนื้อหา เพิ่ม ลบ หรือสลับลำดับหัวข้อได้ตามต้องการ")
                     for idx, sec in enumerate(list(doc.sections)):
                         _label = sec.label or sec.kind.default_label()
+                        if not sec.enabled:
+                            _label += " (ซ่อนอยู่)"
                         with st.expander(f"{idx + 1}. {_label}", expanded=False):
                             new_label = st.text_input(
                                 "ชื่อหัวข้อ", value=sec.label, key=f"sec_label_{sec.id}"
@@ -1622,12 +1626,24 @@ with tab_main:
                                     value=sec.secondary,
                                     key=f"sec_secondary_{sec.id}",
                                 )
+                            new_enabled = st.checkbox(
+                                "แสดงหัวข้อนี้ในเอกสาร",
+                                value=bool(sec.enabled),
+                                key=f"sec_enabled_{sec.id}",
+                                help="ยกเลิกเพื่อซ่อนหัวข้อนี้ออกจากเอกสาร โดยไม่ต้องลบเนื้อหา",
+                            )
+                            if new_enabled != sec.enabled:
+                                sec.enabled = new_enabled
+                                sync_fields_from_sections(doc)
+                                st.session_state.doc_data = doc
+                                st.rerun()
                             c_save, c_up, c_down, c_del = st.columns([1.2, 0.5, 0.5, 0.6])
                             with c_save:
                                 if st.button("💾 บันทึก", key=f"sec_save_{sec.id}", type="primary"):
                                     sec.label = new_label.strip() or sec.kind.default_label()
                                     sec.content = new_content.strip()
                                     sec.secondary = new_secondary.strip()
+                                    sec.enabled = new_enabled
                                     doc.sections[idx] = sec
                                     sync_fields_from_sections(doc)
                                     st.session_state.doc_data = doc

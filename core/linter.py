@@ -7,7 +7,7 @@ import re
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
-from core.models import DOC_NUMBER_PLACEHOLDER, DocType, GovDocumentSchema
+from core.models import DocType, GovDocumentSchema, is_blank_doc_number
 
 
 THAI_MONTHS = [
@@ -77,9 +77,9 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
             severity="error",
             field="doc_number",
             message="ยังไม่มีเลขที่หนังสือ",
-            suggestion=f"เว้นเป็น '{DOC_NUMBER_PLACEHOLDER}' แล้วออกเลขจากทะเบียนหนังสือส่งก่อนส่งออก"
+            suggestion="เว้นช่องเป็น '......../ปี พ.ศ.' แล้วออกเลขจากทะเบียนหนังสือส่งก่อนส่งออก"
         ))
-    elif DOC_NUMBER_PLACEHOLDER in number:
+    elif is_blank_doc_number(number):
         issues.append(LintIssue(
             rule_id="RULE_DOC_NUMBER_PLACEHOLDER",
             severity="warning",

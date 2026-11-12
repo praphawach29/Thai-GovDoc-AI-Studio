@@ -3,6 +3,7 @@ models.py — Data Schemas for Thai Official Government Documents
 อ้างอิงตามระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม
 """
 
+import re
 from enum import Enum
 from typing import List, Literal, Optional
 from uuid import uuid4
@@ -13,6 +14,16 @@ from core.thai_segmenter import to_thai_numerals
 
 
 DOC_NUMBER_PLACEHOLDER = "[✏️ เลขที่หนังสือ]"
+
+
+def is_blank_doc_number(number: Optional[str]) -> bool:
+    """ตรวจว่าเลขที่ยังเป็นช่องว่างให้เขียนด้วยมือ เช่น '......../2569'"""
+    text = (number or "").strip()
+    if not text:
+        return True
+    if DOC_NUMBER_PLACEHOLDER in text:
+        return True
+    return bool(re.match(r"^[.…_\-]+\s*/", text))
 
 
 class DocType(str, Enum):
@@ -326,6 +337,7 @@ class DocumentSection(BaseModel):
     label: str = ""
     content: str = ""
     secondary: str = ""  # วันที่ (NUMBER_DATE) หรือตำแหน่ง (SIGNATURE)
+    enabled: bool = True
 
 
 class GovDocumentSchema(BaseModel):

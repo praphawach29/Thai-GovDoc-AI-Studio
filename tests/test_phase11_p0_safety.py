@@ -8,10 +8,10 @@ import pytest
 
 from core.ai_drafter import draft_from_context_llm, draft_from_context_rule_based
 from core.linter import lint_gov_document
-from core.models import DOC_NUMBER_PLACEHOLDER, DocType, SecretLevel, SourceDocumentContext
+from core.models import DOC_NUMBER_PLACEHOLDER, DocType, SecretLevel, SourceDocumentContext, is_blank_doc_number
 from core.security import CloudAIBlocked, assert_cloud_ai_allowed, cloud_ai_allowed
 from core.templates_library import PRESET_TEMPLATES
-from core.thai_date import format_thai_date
+from core.thai_date import blank_doc_number, format_thai_date
 
 
 @pytest.fixture
@@ -29,7 +29,8 @@ def ctx():
 
 def test_rule_based_draft_does_not_invent_number_or_date(ctx):
     doc = draft_from_context_rule_based(ctx, doc_type=DocType.INTERNAL)
-    assert doc.doc_number == DOC_NUMBER_PLACEHOLDER
+    assert is_blank_doc_number(doc.doc_number)
+    assert doc.doc_number == blank_doc_number()
     assert doc.doc_date == format_thai_date()
     assert "มีนาคม ๒๕๖๙" not in doc.doc_date
 
@@ -76,3 +77,10 @@ def test_linter_warns_multiple_references_for_external():
     doc.references = ["หนังสือฉบับที่ ๑", "หนังสือฉบับที่ ๒"]
     res = lint_gov_document(doc)
     assert any(i.rule_id == "RULE_REFERENCES_SINGLE" for i in res.warnings)
+
+
+def test_blank_doc_number_format_and_detection():
+    value = blank_doc_number()
+    assert value.startswith("......../")
+    assert is_blank_doc_number(value) is True
+    assert is_blank_doc_number("123/2569") is False

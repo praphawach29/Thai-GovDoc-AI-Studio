@@ -17,3 +17,13 @@ def format_thai_date(day: Optional[date] = None, use_thai_numerals: bool = False
         from core.thai_segmenter import to_thai_numerals
         return to_thai_numerals(text)
     return text
+
+
+def blank_doc_number(use_thai_numerals: bool = False, day: Optional[date] = None) -> str:
+    """เลขที่หนังสือแบบเว้นช่องให้เขียนด้วยมือ เช่น '......../2569'"""
+    d = day or date.today()
+    year = str(d.year + 543)
+    if use_thai_numerals:
+        from core.thai_segmenter import to_thai_numerals
+        year = to_thai_numerals(year)
+    return f"......../{year}"

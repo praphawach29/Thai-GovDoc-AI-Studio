@@ -84,3 +84,32 @@ def test_sections_from_document_is_reversible():
     sync_fields_from_sections(doc)
     assert doc.subject
     assert doc.signatory_name
+
+
+def test_disabled_section_is_omitted_from_export(tmp_path):
+    doc = _memo()
+    law = next(sec for sec in doc.sections if sec.kind == SectionKind.LAW)
+    law.enabled = False
+    sync_fields_from_sections(doc)
+
+    out = tmp_path / "disabled_law.docx"
+    export_govdoc_to_docx(doc, str(out))
+    with zipfile.ZipFile(out) as archive:
+        xml = archive.read("word/document.xml").decode("utf-8").replace("\u200b", "")
+    assert "พระราชบัญญัติ" not in xml
+
+
+def test_long_department_header_is_compressed(tmp_path):
+    doc = _memo()
+    dept = next(sec for sec in doc.sections if sec.kind == SectionKind.DEPT)
+    dept.content = (
+        "สำนักวัฒนธรรม กีฬา และการท่องเที่ยว (กองการกีฬา โทร. ๐ ๒๒๔๖ ๘๐๗๙ "
+        "โทรสาร ๐ ๒๒๔๖ ๑๒๘๒) กรุงเทพมหานคร"
+    )
+    sync_fields_from_sections(doc)
+
+    out = tmp_path / "long_dept.docx"
+    export_govdoc_to_docx(doc, str(out))
+    with zipfile.ZipFile(out) as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+    assert "w:w w:val=" in xml

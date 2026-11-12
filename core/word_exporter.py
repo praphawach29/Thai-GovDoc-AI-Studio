@@ -72,6 +72,30 @@ def _set_run_thai_font(run, font_name=None, size_pt=DEFAULT_FONT_SIZE, bold=Fals
     rPr.append(rFonts)
 
 
+def _set_character_scale(run, percent: int):
+    """บีบ/ขยายความกว้างตัวอักษรใน Word (w:w) เช่น 80 = 80%"""
+    rPr = run._r.get_or_add_rPr()
+    for child in list(rPr):
+        if child.tag.endswith("}w"):
+            rPr.remove(child)
+    width = OxmlElement("w:w")
+    width.set(qn("w:val"), str(max(40, min(200, int(percent)))))
+    sz = rPr.find(qn("w:sz"))
+    if sz is not None:
+        sz.addprevious(width)
+    else:
+        rPr.append(width)
+
+
+def _fit_run_to_width(run, text: str, available_cm: float, font_size_pt: float = 16.0):
+    """ประมาณความกว้างข้อความไทย แล้วบีบตัวอักษรให้พอดีหนึ่งบรรทัด"""
+    if not text or available_cm <= 0:
+        return
+    estimated_cm = len(text) * (font_size_pt / 28.35) * 0.52
+    if estimated_cm > available_cm:
+        _set_character_scale(run, int(available_cm / estimated_cm * 100))
+
+
 def _setup_page_margins(doc: Document, profile: LayoutProfile):
     """กำหนดขนาดขอบกระดาษตาม LayoutProfile ของแม่แบบ"""
     for section in doc.sections:
@@ -388,6 +412,7 @@ def _build_sections_doc(
             _set_run_thai_font(r_label, size_pt=20, bold=True)
             r_value = p.add_run(insert_zwsp(value))
             _set_run_thai_font(r_value, size_pt=16)
+            _fit_run_to_width(r_value, value, 13.0)
             _add_header_tab(p, TEXT_WIDTH_CM, profile.header_style)
             p.add_run("\t")
         elif kind == SectionKind.SUBJECT:
@@ -434,6 +459,8 @@ def _build_sections_doc(
             _set_run_thai_font(r_text, size_pt=16)
 
     for section in data.sections or []:
+        if not section.enabled:
+            continue
         kind = section.kind
         label = (section.label or kind.default_label()).strip()
         content = (section.content or "").strip()
@@ -653,6 +680,7 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
     p_dept.paragraph_format.space_after = Pt(4)
     r_dept = p_dept.add_run(insert_zwsp(data.dept_name))
     _set_run_thai_font(r_dept, size_pt=DEFAULT_FONT_SIZE)
+    _fit_run_to_width(r_dept, data.dept_name, 8.5)
 
     # 4. วันที่ (วางตำแหน่งตรงกลางเยื้องขวา ประมาณ 8 ซม. จากขอบซ้าย)
     p_date = doc.add_paragraph()
@@ -819,6 +847,8 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     p_dept.paragraph_format.space_after = Pt(0)
     _add_header_tab(p_dept, TEXT_WIDTH_CM, profile.header_style)
     _memo_field(p_dept, "ส่วนราชการ", to_thai_numerals(dept_value) if data.use_thai_numerals else dept_value)
+    if p_dept.runs:
+        _fit_run_to_width(p_dept.runs[-1], dept_value, 13.0)
     p_dept.add_run("\t")
     if profile.header_style == "solid":
         _apply_bottom_border(p_dept)

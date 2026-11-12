@@ -8,14 +8,13 @@ special_drafter.py — สร้างร่างเอกสารชนิด
 from typing import List
 
 from core.models import (
-    DOC_NUMBER_PLACEHOLDER,
     DocType,
     DocumentKind,
     GovDocumentSchema,
     SourceDocumentContext,
     UserProfileSchema,
 )
-from core.thai_date import format_thai_date
+from core.thai_date import blank_doc_number, format_thai_date
 
 
 PREFIX_BY_FORM = {
@@ -95,7 +94,7 @@ def draft_special_from_context(
         urgency="normal",
         secret="normal",
         use_thai_numerals=use_thai_numerals,
-        doc_number=DOC_NUMBER_PLACEHOLDER,
+        doc_number=blank_doc_number(use_thai_numerals=use_thai_numerals),
         dept_name=profile.department_full or profile.dept_name,
         doc_date=format_thai_date(use_thai_numerals=use_thai_numerals),
         subject=subject,
