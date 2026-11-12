@@ -207,18 +207,30 @@ def setup_govdoc_margins(doc: Document):
 
 ---
 
-### 2.3 ตัวเลือกการส่งออก Word และการฝังฟอนต์ (Sprint 1)
+### 2.3 ตัวเลือกการส่งออก Word, LayoutProfile และการฝังฟอนต์ (Sprint 1–2)
 
 `export_govdoc_to_docx(data, path, options=ExportOptions(...))` รองรับตัวเลือกต่อไปนี้:
 
 | ตัวเลือก | ค่าเริ่มต้น | ผลในไฟล์ DOCX |
 |---|---|---|
-| `export_font` | `"sarabun_new"` | ใช้ TH Sarabun New (หรือ `"psk"` / `"it9"`) |
-| `letter_spacing_pt` | `0.4` | `<w:spacing w:val="8"/>` ใน style Normal (8 twips = 0.4 pt) |
+| `layout_profile` | `None` (อัตโนมัติ) | เลือกโปรไฟล์การจัดหน้า: `standard_memo`, `standard_external`, `form_it9_2026` |
+| `export_font` | `None` (ตามโปรไฟล์) | ใช้ TH Sarabun New / PSK / IT9 |
+| `letter_spacing_pt` | `None` (ตามโปรไฟล์) | `<w:spacing w:val>` ใน style Normal เช่น 8 = 0.4 pt, -4 = -0.2 pt |
 | `letterhead` | `"garuda"` | แสดง/ซ่อนตราครุฑ (บันทึกข้อความ 1.5 ซม., ภายนอก 3 ซม.) |
 | `divider` | `"none"` | `"line"` เพิ่มเส้นคั่นใต้ส่วนหัว (`w:pBdr`) |
 | `embed_fonts` | `True` | ฝังฟอนต์ TrueType เป็น `word/fonts/*.odttf` |
 | `is_private` | `False` | ทำเครื่องหมายเอกสารส่วนตัวสำหรับ flow ภายนอก |
+
+โปรไฟล์ที่ให้มา (`core/layout_profile.py`):
+
+| โปรไฟล์ | ขอบ ซ/ข/บ/ล (ซม.) | ฟอนต์ | ระยะตัวอักษร | ย่อหน้าเนื้อความ | หัวฟอร์ม | เลขหน้า |
+|---|---|---|---|---|---|---|
+| `standard_memo` | 3/2/1.5/2 | New | +0.4 pt | ตามลำดับชั้น (2.5/3.5/4.5) | จุดไข่ปลา | ไทย |
+| `standard_external` | 3/2/2.5/2 | New | +0.4 pt | 2.5 ซม. | จุดไข่ปลา | ไทย |
+| `form_it9_2026` | 2.75/1.75/1.75/1.75 | IT9 | -0.2 pt | ไม่ย่อ | เส้นทึบ | อารบิก |
+
+`form_it9_2026` สร้างจากไฟล์บันทึกข้อความจริง (`คิ๊กบ็อกซิ่ง2569...docx`) และใช้ `docGrid linePitch=435`
+พร้อมหัวฟอร์มแบบเส้นทึบ (`header_style="solid"`) แทน tab leader แบบจุดไข่ปลา
 
 การฝังฟอนต์ทำใน `core/docx_fonts.py` หลัง `doc.save()`:
 
@@ -228,7 +240,7 @@ def setup_govdoc_margins(doc: Document):
 4. ประกาศ `Default Extension="odttf"` ใน `[Content_Types].xml`
 5. เปิด `<w:embedTrueTypeFonts/>` และ `<w:saveSubsetFonts/>` ใน `word/settings.xml`
 
-ผลลัพธ์: เปิดไฟล์บนเครื่องที่ไม่มีฟอนต์ TH Sarabun ก็ยังเห็นหน้าตาเดิม และขอบบนของบันทึกข้อความใช้ 1.5 ซม. พร้อมเลขหน้าไทย (`w:pgNumType w:fmt="thaiNumbers"`)
+ผลลัพธ์: เปิดไฟล์บนเครื่องที่ไม่มีฟอนต์ TH Sarabun ก็ยังเห็นหน้าตาเดิม ส่วนขอบ/ระยะย่อหน้า/เลขหน้าเป็นไปตาม LayoutProfile ที่เลือก (`w:pgNumType w:fmt="thaiNumbers"`)
 
 ---
 

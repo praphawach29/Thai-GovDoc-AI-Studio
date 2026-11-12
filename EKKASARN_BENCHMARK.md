@@ -73,15 +73,16 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 | Organization/security | Profile and local workflow exist; enterprise account controls are not evidenced in this codebase review. | Before multi-user deployment, define access roles, retention/deletion, secret handling, and audit boundaries; do not infer Ekkasarn's controls beyond its public statements. |
 | Document model | Structured fields (`memo_intro`, `memo_facts`, ...) with validation. | Add a full-text projection and parser for Word round-trip while retaining the structured model for linting and rules. |
 
-## Applied from this benchmark (Sprint 1)
+## Applied from this benchmark (Sprint 1–2)
 
-- `core/models.py`: `ExportOptions` (font: New/PSK/IT9, letterhead, divider, letter spacing, embed flag, private flag).
+- `core/models.py`: `ExportOptions` (layout profile, font: New/PSK/IT9, letterhead, divider, letter spacing, embed flag, private flag).
+- `core/layout_profile.py`: `LayoutProfile` + `standard_memo`, `standard_external`, `form_it9_2026` (margins/fonts/spacing/indent/header style/page numbers from the real memo).
 - `core/docx_fonts.py`: OOXML font embedding (`fontTable` + `odttf` + relationships + content types + settings).
-- `core/word_exporter.py`: style-level character spacing, 1.5 cm memo top margin, Thai page-number format, optional garuda/divider, font selection.
-- `web/app.py`: export-options panel (font, garuda, divider, spacing, embedding) wired to the Word download.
-- `tests/test_phase9_export_options.py`: seven tests covering embedding, obfuscation, spacing, margins, page numbers, letterhead, divider, and font fallback.
+- `core/word_exporter.py`: profile-driven margins, style-level character spacing, solid/dotted header, Thai/Arabic page numbers, optional garuda/divider, font selection.
+- `web/app.py`: export-options panel (layout profile, font, garuda, divider, spacing, embedding) wired to the Word download.
+- `tests/test_phase9_export_options.py`: nine tests covering embedding, obfuscation, spacing, margins, page numbers, letterhead, divider, font selection, and the `form_it9_2026` profile.
 
-Test suite after Sprint 1: **101 tests collected — 96 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
+Test suite after Sprint 1–2: **102 tests collected — 97 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
 
 ## Recommended application sequence
 

@@ -12,7 +12,7 @@
 4. **ส่งออกเอกสารจริง 2 รูปแบบมาตรฐาน:**
    - **Vector PDF (ผ่าน Typst):** จัดหน้า ขอบกระดาษ 3-2-2.5 ซม. ตราครุฑ 3 ซม./1.5 ซม. สวยคมชัดระดับเวกเตอร์ คอมไพล์เร็วในระดับเสี้ยววินาที
    - **Editable Word (`.docx`):** แก้ปัญหาการตัดคำภาษาไทยด้วย Zero-Width Space (`\u200b`) และตั้งค่า Thai Distributed เต็มขอบกระดาษ สระไม่ลอย ฝังฟอนต์ TH Sarabun New (หรือ PSK/IT9) ลงในไฟล์ เปิดเครื่องอื่นแล้วหน้าตาไม่เพี้ยน
-5. **ตัวเลือกการส่งออก Word:** เลือกฟอนต์ (New/PSK/IT9), ระยะห่างตัวอักษร (ค่าเริ่มต้น 0.4 pt), แสดง/ซ่อนตราครุฑ, เส้นคั่นใต้ส่วนหัว และเปิด/ปิดการฝังฟอนต์
+5. **ตัวเลือกการส่งออก Word:** เลือก **แม่แบบการจัดหน้า (LayoutProfile)** 3 โปรไฟล์ (มาตรฐาน / หนังสือภายนอก / ฟอร์มราชการ IT9), ฟอนต์ (New/PSK/IT9), ระยะห่างตัวอักษร, ตราครุฑ, เส้นคั่น และการฝังฟอนต์
 6. **ระบบทะเบียนคุมสารบรรณ (e-Document Ready):** รองรับระบบออกเลขที่หนังสือราชการอัตโนมัติ ทะเบียนรับ ทะเบียนส่ง และการจองเลขหนังสือ
 
 ---
@@ -66,6 +66,7 @@
 │   ├── ai_drafter.py       # สมองกลยกร่างหนังสือตามระเบียบ 3 ภาค และบันทึก กทม.
 │   ├── linter.py           # Automated Sarabun Linter (ตรวจระเบียบและชื่อไฟล์ดิบ)
 │   ├── memo_layout.py      # ตัวจัดหน้าบันทึกข้อความ กทม. (Indentation 2.5/3.5/4.5 ซม.)
+│   ├── layout_profile.py     # โปรไฟล์การจัดหน้าต่อแม่แบบ (ขอบ/ฟอนต์/เลขหน้า)
 │   ├── word_exporter.py    # ตัวสร้างไฟล์ Word (.docx) พร้อมตัดคำ ZWSP ชิดขอบ
 │   ├── typst_exporter.py   # ตัวคอมไพล์ PDF เวกเตอร์ด้วย Typst (CLI หรือ Python binding)
 │   ├── pdf_exporter.py     # ตัวเรนเดอร์ PDF ผ่าน HTML + headless browser
@@ -88,7 +89,7 @@
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
 │   └── fonts/              # TH Sarabun New / IT9 / PSK (ครบ 4 น้ำหนัก)
 │
-├── tests/                  # ชุดทดสอบ 101 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
+├── tests/                  # ชุดทดสอบ 102 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
 └── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
     └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
 ```
@@ -113,7 +114,7 @@
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
 
-- **สถานะชุดทดสอบ:** **101 tests — ผ่าน 96 / ข้าม 5 / ล้มเหลว 0**
+- **สถานะชุดทดสอบ:** **102 tests — ผ่าน 97 / ข้าม 5 / ล้มเหลว 0**
   - เทส PDF (headless browser) และ OCR จะ **ข้ามอัตโนมัติ** เมื่อเครื่องไม่มี browser/API key/Docker โดยใช้ marker กลางใน `tests/conftest.py` (ไม่ถูกนับเป็น fail)
 - **ระยะการพัฒนาที่แล้วเสร็จ:**
   - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
@@ -125,6 +126,7 @@
   - ✅ **Phase 7:** Multi-Engine OCR (Docker Tesseract + Gemini Vision), Fail-Safe Ingestion, `RULE_FILENAME_IN_METADATA` & Persistent User Organization Profile
   - ✅ **Phase 8:** Multi-Document Case Dossier Modeling (แฟ้มเรื่อง, สายเกษียนสั่งการ และการสังเคราะห์ย่อหน้า "ต้นเรื่อง")
   - ✅ **Phase 8.1:** Export fidelity — ตัวเลือกฟอนต์/ครุฑ/ระยะตัวอักษร, ฝังฟอนต์ New/IT9 ใน Word, เลขหน้าไทย
+- ✅ **Phase 8.2:** LayoutProfile 3 โปรไฟล์, หัวฟอร์มเส้นทึบ, ขอบ/ระยะย่อหน้า/เลขหน้าตามแม่แบบ
 - **แผนงานระยะถัดไป (Roadmap):**
   - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
   - 🚩 **Phase 10:** Multi-Document Review, Hierarchical Approval & E-Office Integration

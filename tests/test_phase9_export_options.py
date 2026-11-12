@@ -14,7 +14,8 @@ from pathlib import Path
 import pytest
 from docx import Document
 
-from core.models import ExportOptions
+from core.layout_profile import get_layout_profile
+from core.models import DocType, ExportOptions
 from core.templates_library import PRESET_TEMPLATES
 from core.word_exporter import export_govdoc_to_docx
 
@@ -32,8 +33,36 @@ def _export(doc, tmp_path, **kwargs):
     return out
 
 
-def test_default_export_font_is_sarabun_new():
-    assert ExportOptions().export_font == "sarabun_new"
+def test_default_profile_resolves_to_sarabun_new():
+    options = ExportOptions()
+    assert options.export_font is None
+    assert options.letter_spacing_pt is None
+    profile = get_layout_profile(None, DocType.INTERNAL)
+    assert profile.font_key == "sarabun_new"
+    assert profile.header_style == "dotted"
+
+
+def test_form_it9_profile_applies_layout(memo_doc, tmp_path):
+    out = _export(memo_doc, tmp_path, layout_profile="form_it9_2026")
+
+    with zipfile.ZipFile(out) as z:
+        document = z.read("word/document.xml").decode("utf-8")
+        styles = z.read("word/styles.xml").decode("utf-8")
+        font_table = z.read("word/fontTable.xml").decode("utf-8")
+
+    reopened = Document(str(out))
+    section = reopened.sections[0]
+    assert round(section.top_margin.cm, 2) == 1.75
+    assert round(section.bottom_margin.cm, 2) == 1.75
+    assert round(section.left_margin.cm, 2) == 2.75
+    assert round(section.right_margin.cm, 2) == 1.75
+
+    assert '<w:docGrid w:linePitch="435"/>' in document
+    assert '<w:spacing w:val="-4"/>' in styles
+    assert "TH SarabunIT\u0e59" in font_table
+    assert "<w:pBdr>" in document  # หัวฟอร์มแบบเส้นทึบ
+    assert 'w:firstLine="1418"' not in document  # ไม่ย่อหน้า 2.5 ซม.
+    assert "thaiNumbers" not in document  # เลขหน้าอารบิก
 
 
 def test_docx_embeds_new_fonts_and_spacing(memo_doc, tmp_path):

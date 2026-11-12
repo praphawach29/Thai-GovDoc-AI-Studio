@@ -17,6 +17,7 @@ from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn, nsdecls
 
 from core.docx_fonts import embed_fonts
+from core.layout_profile import LayoutProfile, get_layout_profile
 from core.models import ExportOptions, GovDocumentSchema, DocType, UrgencyLevel, SecretLevel
 from core.thai_segmenter import insert_zwsp, to_thai_numerals
 
@@ -71,22 +72,28 @@ def _set_run_thai_font(run, font_name=None, size_pt=DEFAULT_FONT_SIZE, bold=Fals
     rPr.append(rFonts)
 
 
-def _setup_page_margins(doc: Document, doc_type: DocType):
-    """
-    กำหนดขนาดขอบกระดาษตามระเบียบงานสารบรรณ:
-    - หนังสือภายนอก: ซ้าย 3.0 ซม., ขวา 2.0 ซม., บน 2.5 ซม., ล่าง 2.0 ซม.
-    - หนังสือภายใน: ซ้าย 3.0 ซม., ขวา 2.0 ซม., บน 1.5 ซม., ล่าง 2.0 ซม.
-    """
+def _setup_page_margins(doc: Document, profile: LayoutProfile):
+    """กำหนดขนาดขอบกระดาษตาม LayoutProfile ของแม่แบบ"""
     for section in doc.sections:
         section.page_width = Cm(21.0)
         section.page_height = Cm(29.7)
-        section.left_margin = Cm(3.0)
-        section.right_margin = Cm(2.0)
-        section.bottom_margin = Cm(2.0)
-        if doc_type == DocType.INTERNAL:
-            section.top_margin = Cm(1.5)
-        else:
-            section.top_margin = Cm(2.5)
+        section.left_margin = Cm(profile.margins.left_cm)
+        section.right_margin = Cm(profile.margins.right_cm)
+        section.bottom_margin = Cm(profile.margins.bottom_cm)
+        section.top_margin = Cm(profile.margins.top_cm)
+        section.header_distance = Cm(profile.margins.header_cm)
+
+
+def _set_doc_grid(doc: Document, line_pitch_twips: int):
+    """กำหนด docGrid linePitch ให้ระยะบรรทัดฐานใกล้เคียงแม่แบบต้นฉบับ"""
+    for section in doc.sections:
+        sectPr = section._sectPr
+        for child in list(sectPr):
+            if child.tag.endswith("docGrid"):
+                sectPr.remove(child)
+        grid = OxmlElement("w:docGrid")
+        grid.set(qn("w:linePitch"), str(line_pitch_twips))
+        sectPr.append(grid)
 
 
 def _apply_letter_spacing(doc: Document, points: float):
@@ -128,19 +135,50 @@ TEXT_WIDTH_CM = 16.0
 MEMO_LABEL_SIZE = 20
 
 
-def _add_dotted_leader(paragraph, position_cm: float = TEXT_WIDTH_CM):
-    """เพิ่ม Tab Stop แบบเส้นประ (dot leader) — ใช้ทำเส้นจุดไข่ปลาหลังหัวข้อบันทึกข้อความ"""
-    paragraph.paragraph_format.tab_stops.add_tab_stop(Cm(position_cm), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+def _add_header_tab(paragraph, position_cm: float = TEXT_WIDTH_CM, style: str = "dotted"):
+    """
+    เพิ่ม tab stop สำหรับหัวฟอร์ม
+    - dotted: เส้นจุดไข่ปลา (แบบเดิม)
+    - solid: ไม่มี leader แล้ววาดเส้นทึบด้วยขอบล่างย่อหน้า
+    """
+    leader = WD_TAB_LEADER.DOTS if style == "dotted" else WD_TAB_LEADER.SPACES
+    paragraph.paragraph_format.tab_stops.add_tab_stop(
+        Cm(position_cm), WD_TAB_ALIGNMENT.RIGHT, leader
+    )
 
 
-def _add_page_number_header(doc: Document, thai_numerals: bool):
+def _apply_bottom_border(paragraph):
+    """ขีดเส้นทึบใต้ย่อหน้า (ใช้ทำหัวฟอร์มแบบ solid)"""
+    pPr = paragraph._p.get_or_add_pPr()
+    existing = pPr.find(qn("w:pBdr"))
+    if existing is not None:
+        pPr.remove(existing)
+    pBdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), "000000")
+    pBdr.append(bottom)
+    # pBdr ต้องอยู่ก่อน tabs/spacing/ind/jc ตามลำดับ schema
+    for tag in ("w:shd", "w:tabs", "w:spacing", "w:ind", "w:jc"):
+        element = pPr.find(qn(tag))
+        if element is not None:
+            element.addprevious(pBdr)
+            return
+    pPr.append(pBdr)
+
+
+def _add_page_number_header(doc: Document, style: str = "thai"):
     """
-    ใส่เลขหน้ารูปแบบ "-๒-" กึ่งกลางด้านบน เริ่มแสดงตั้งแต่หน้าที่ ๒ (หน้าแรกไม่แสดง)
-    ใช้ฟิลด์ PAGE ของ Word พร้อม switch ThaiArabic เมื่อใช้เลขไทย
+    ใส่เลขหน้ารูปแบบ "-๒-" หรือ "-2-" กึ่งกลางด้านบน เริ่มแสดงตั้งแต่หน้าที่ ๒
+    style: thai | arabic | none
     """
+    if style == "none":
+        return
+    thai_numerals = style == "thai"
     for section in doc.sections:
         section.different_first_page_header_footer = True
-        section.header_distance = Cm(1.2)
         if thai_numerals:
             sectPr = section._sectPr
             for child in list(sectPr):
@@ -185,7 +223,7 @@ def _add_page_number_header(doc: Document, thai_numerals: bool):
             _set_run_thai_font(r)
 
 
-def _add_memo_blocks(doc: Document, data: GovDocumentSchema):
+def _add_memo_blocks(doc: Document, data: GovDocumentSchema, profile: LayoutProfile):
     """เขียนเนื้อความบันทึกข้อความจาก MemoBlock (หัวข้อขีดเส้นใต้/ตัวหนา + ย่อหน้าตามลำดับเลขข้อ)"""
     num = (lambda t: to_thai_numerals(t)) if data.use_thai_numerals else (lambda t: t)
     for b in data.get_memo_blocks():
@@ -194,8 +232,9 @@ def _add_memo_blocks(doc: Document, data: GovDocumentSchema):
         pf.space_before = Pt(b.space_before_pt)
         pf.space_after = Pt(0)
         pf.line_spacing = 1.0
-        if b.indent_cm > 0:
-            pf.first_line_indent = Cm(b.indent_cm)
+        indent = b.indent_cm if profile.body_indent_cm is None else profile.body_indent_cm
+        if indent > 0:
+            pf.first_line_indent = Cm(indent)
         if b.kind == "heading":
             pf.keep_with_next = True
         else:
@@ -241,14 +280,22 @@ def export_govdoc_to_docx(
     """
     สร้างและส่งออกหนังสือราชการเป็นไฟล์ .docx ตามมาตรฐานงานสารบรรณ
 
-    options: ตัวเลือกฟอนต์/ระยะตัวอักษร/ครุฑ/การฝังฟอนต์ (ค่าเริ่มต้น = TH SarabunPSK 0.4 pt)
+    options: ตัวเลือก LayoutProfile / ฟอนต์ / ระยะตัวอักษร / ครุฑ / การฝังฟอนต์
     """
     options = options or ExportOptions()
-    token = _ACTIVE_FONT.set(_font_for_option(options.export_font))
+    profile = get_layout_profile(options.layout_profile, data.doc_type)
+    font_key = options.export_font or profile.font_key
+    letter_spacing = (
+        profile.letter_spacing_pt
+        if options.letter_spacing_pt is None
+        else options.letter_spacing_pt
+    )
+    token = _ACTIVE_FONT.set(_font_for_option(font_key))
     try:
         doc = Document()
-        _setup_page_margins(doc, data.doc_type)
-        _apply_letter_spacing(doc, options.letter_spacing_pt)
+        _setup_page_margins(doc, profile)
+        _set_doc_grid(doc, profile.line_pitch_twips)
+        _apply_letter_spacing(doc, letter_spacing)
 
         # ตราครุฑ: ปิดได้ผ่าน letterhead="none"
         if options.letterhead == "none":
@@ -266,9 +313,9 @@ def export_govdoc_to_docx(
         fmt_purpose = to_thai_numerals(data.paragraph_purpose) if data.use_thai_numerals else data.paragraph_purpose
 
         if data.doc_type == DocType.EXTERNAL:
-            _build_external_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options)
+            _build_external_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options, profile)
         else:
-            _build_internal_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options)
+            _build_internal_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options, profile)
 
         # บันทึกไฟล์
         out_file = Path(output_path)
@@ -277,7 +324,7 @@ def export_govdoc_to_docx(
 
         # ฝังฟอนต์ TrueType (odttf) เพื่อให้เปิดบนเครื่องอื่นแล้วหน้าตาไม่เพี้ยน
         if options.embed_fonts:
-            embed_fonts(out_file, options.export_font)
+            embed_fonts(out_file, font_key)
 
         return str(out_file)
     finally:
@@ -287,7 +334,7 @@ def export_govdoc_to_docx(
 def _build_external_doc(doc: Document, data: GovDocumentSchema, 
                         fmt_date: str, fmt_number: str, 
                         fmt_reason: str, fmt_details: Optional[str], fmt_purpose: str, 
-                        garuda_path: Optional[str], options: ExportOptions):
+                        garuda_path: Optional[str], options: ExportOptions, profile: LayoutProfile):
     """สร้างโครงสร้างหนังสือภายนอก (ครุฑ 3 ซม. กึ่งกลาง)"""
     
     # 1. ชั้นความลับ / ชั้นความเร็ว (ถ้ามี)
@@ -399,15 +446,16 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
             r_att_v = p_att.add_run(insert_zwsp(att))
             _set_run_thai_font(r_att_v, size_pt=DEFAULT_FONT_SIZE)
 
-    # 6. เนื้อหา 3 ย่อหน้า (ย่อหน้า 2.5 ซม. + Thai Distributed)
+    # 6. เนื้อหา 3 ย่อหน้า (ย่อหน้าตาม LayoutProfile + Thai Distributed)
+    body_indent = 2.5 if profile.body_indent_cm is None else profile.body_indent_cm
     if options.divider == "line":
         _add_divider(doc)
-    _add_paragraph_with_zwsp(doc, fmt_reason, indent_cm=2.5, space_after_pt=6)
+    _add_paragraph_with_zwsp(doc, fmt_reason, indent_cm=body_indent, space_after_pt=6)
 
     if fmt_details:
-        _add_paragraph_with_zwsp(doc, fmt_details, indent_cm=2.5, space_after_pt=6)
+        _add_paragraph_with_zwsp(doc, fmt_details, indent_cm=body_indent, space_after_pt=6)
 
-    _add_paragraph_with_zwsp(doc, fmt_purpose, indent_cm=2.5, space_after_pt=18)
+    _add_paragraph_with_zwsp(doc, fmt_purpose, indent_cm=body_indent, space_after_pt=18)
 
     # 7. คำลงท้าย และผู้ลงนาม (วางเยื้องขวา 8 ซม.)
     p_close = doc.add_paragraph()
@@ -457,11 +505,13 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
         r_cinfo = p_cinfo.add_run(" \n".join(contact_details))
         _set_run_thai_font(r_cinfo, size_pt=14)
 
+    _add_page_number_header(doc, profile.page_number_style)
+
 
 def _build_internal_doc(doc: Document, data: GovDocumentSchema, 
                         fmt_date: str, fmt_number: str, 
                         fmt_reason: str, fmt_details: Optional[str], fmt_purpose: str, 
-                        garuda_path: Optional[str], options: ExportOptions):
+                        garuda_path: Optional[str], options: ExportOptions, profile: LayoutProfile):
     """สร้างโครงสร้างหนังสือภายใน / บันทึกข้อความ (ครุฑ 1.5 ซม. ด้านซ้าย)"""
 
     # 1. แถวหัวกระดาษ: ครุฑ 1.5 ซม. ชิดซ้าย + ข้อความ "บันทึกข้อความ" 29 pt หนา กึ่งกลาง
@@ -500,19 +550,23 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         dept_value = f"{dept_value}  โทร. {data.contact_tel}"
     p_dept = doc.add_paragraph()
     p_dept.paragraph_format.space_after = Pt(0)
-    _add_dotted_leader(p_dept)
+    _add_header_tab(p_dept, TEXT_WIDTH_CM, profile.header_style)
     _memo_field(p_dept, "ส่วนราชการ", to_thai_numerals(dept_value) if data.use_thai_numerals else dept_value)
     p_dept.add_run("\t")
+    if profile.header_style == "solid":
+        _apply_bottom_border(p_dept)
 
-    # ที่ ....... วันที่ ....... (บรรทัดเดียวกัน ใช้ Tab จุดไข่ปลา ๒ ช่วง)
+    # ที่ ....... วันที่ ....... (บรรทัดเดียวกัน ใช้ Tab ๒ ช่วง)
     p_meta = doc.add_paragraph()
     p_meta.paragraph_format.space_after = Pt(0)
-    _add_dotted_leader(p_meta, 7.5)
-    _add_dotted_leader(p_meta, TEXT_WIDTH_CM)
+    _add_header_tab(p_meta, 7.5, profile.header_style)
+    _add_header_tab(p_meta, TEXT_WIDTH_CM, profile.header_style)
     _memo_field(p_meta, "ที่", fmt_number)
     p_meta.add_run("\t")
     _memo_field(p_meta, "วันที่", fmt_date)
     p_meta.add_run("\t")
+    if profile.header_style == "solid":
+        _apply_bottom_border(p_meta)
 
     # เรื่อง (บรรทัดที่สองเยื้องตรงกับข้อความ — hanging indent)
     clean_sub = re.sub(r'^เรื่อง\s*', '', data.subject.strip())
@@ -520,9 +574,11 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     p_sub.paragraph_format.space_after = Pt(6)
     p_sub.paragraph_format.left_indent = Cm(1.25)
     p_sub.paragraph_format.first_line_indent = Cm(-1.25)
-    _add_dotted_leader(p_sub)
+    _add_header_tab(p_sub, TEXT_WIDTH_CM, profile.header_style)
     _memo_field(p_sub, "เรื่อง", to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub)
     p_sub.add_run("\t")
+    if profile.header_style == "solid":
+        _apply_bottom_border(p_sub)
 
     # เรียน (ตัวปกติ 16 pt ตามแบบบันทึกข้อความ)
     sal_text = data.salutation.strip()
@@ -569,10 +625,10 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     # 3. เนื้อความบันทึกข้อความ (ต้นเรื่อง / ข้อกฎหมาย / ข้อเท็จจริง / ข้อพิจารณาและเสนอแนะ / ภาคความประสงค์)
     if options.divider == "line":
         _add_divider(doc)
-    _add_memo_blocks(doc, data)
+    _add_memo_blocks(doc, data, profile)
 
     # เลขหน้า -๒- ด้านบนกึ่งกลาง ตั้งแต่หน้าที่ ๒
-    _add_page_number_header(doc, data.use_thai_numerals)
+    _add_page_number_header(doc, profile.page_number_style)
 
     # 4. ผู้ลงนาม (บันทึกข้อความไม่มีคำลงท้าย เช่น ขอแสดงความนับถือ)
     if data.signature_image_path and os.path.exists(data.signature_image_path):

@@ -27,6 +27,7 @@ for mod in ["core.models", "core.profile_manager", "core.extractor", "core.templ
 
 import streamlit as st
 
+from core.layout_profile import get_layout_profile
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
 from core.profile_manager import get_user_profile, save_user_profile, reset_to_default_profile
 from core.extractor import extract_source_document, extract_from_raw_text
@@ -1014,22 +1015,42 @@ with tab_main:
         # ----------------- TAB PREVIEW & QUICK ACTIONS -----------------
         with tab_preview:
             # ตัวเลือกการส่งออก Word (ฟอนต์ / ระยะตัวอักษร / ตราครุฑ / การฝังฟอนต์)
-            if "export_options" not in st.session_state:
+            if "export_options" not in st.session_state or not hasattr(
+                st.session_state.export_options, "layout_profile"
+            ):
                 st.session_state.export_options = ExportOptions()
             _eo = st.session_state.export_options
-            with st.expander("⚙️ ตัวเลือกการส่งออก Word (ฟอนต์ / ระยะตัวอักษร / ตราครุฑ)", expanded=False):
+            with st.expander("⚙️ ตัวเลือกการส่งออก Word (แม่แบบหน้า / ฟอนต์ / ระยะตัวอักษร)", expanded=False):
+                _profile_choice = st.selectbox(
+                    "แม่แบบการจัดหน้า",
+                    options=["auto", "standard_memo", "standard_external", "form_it9_2026"],
+                    index=["auto", "standard_memo", "standard_external", "form_it9_2026"].index(
+                        _eo.layout_profile or "auto"
+                    ),
+                    format_func=lambda v: {
+                        "auto": "อัตโนมัติตามชนิดหนังสือ",
+                        "standard_memo": "บันทึกข้อความมาตรฐาน",
+                        "standard_external": "หนังสือภายนอกมาตรฐาน",
+                        "form_it9_2026": "ฟอร์มราชการ IT9 (จากไฟล์จริง)",
+                    }[v],
+                    key="exp_profile",
+                )
+                _profile = get_layout_profile(
+                    None if _profile_choice == "auto" else _profile_choice,
+                    st.session_state.doc_data.doc_type,
+                )
                 oc1, oc2, oc3 = st.columns(3)
                 with oc1:
                     _font = st.selectbox(
                         "ฟอนต์",
                         options=["sarabun_new", "psk", "it9"],
-                        index=["sarabun_new", "psk", "it9"].index(_eo.export_font),
+                        index=["sarabun_new", "psk", "it9"].index(_profile.font_key),
                         format_func=lambda v: {
                             "sarabun_new": "TH Sarabun New (มาตรฐาน)",
                             "psk": "TH Sarabun PSK",
                             "it9": "TH Sarabun IT9",
                         }.get(v, v),
-                        key="exp_font",
+                        key=f"exp_font_{_profile.name}",
                     )
                 with oc2:
                     _letterhead = st.selectbox(
@@ -1051,11 +1072,11 @@ with tab_main:
                 with oc4:
                     _spacing = st.number_input(
                         "ระยะห่างตัวอักษร (pt)",
-                        min_value=0.0,
+                        min_value=-2.0,
                         max_value=2.0,
-                        value=float(_eo.letter_spacing_pt),
+                        value=float(_profile.letter_spacing_pt),
                         step=0.1,
-                        key="exp_spacing",
+                        key=f"exp_spacing_{_profile.name}",
                     )
                 with oc5:
                     _embed = st.checkbox(
@@ -1064,13 +1085,18 @@ with tab_main:
                         key="exp_embed",
                     )
                 st.session_state.export_options = ExportOptions(
+                    layout_profile=None if _profile_choice == "auto" else _profile_choice,
                     export_font=_font,
                     letterhead=_letterhead,
                     divider=_divider,
                     letter_spacing_pt=float(_spacing),
                     embed_fonts=_embed,
                 )
-                st.caption("ค่าเริ่มต้น: TH Sarabun New, ระยะตัวอักษร 0.4 pt, ฝังฟอนต์ — เลือก PSK/IT9 ได้ตามนโยบายหน่วยงาน")
+                st.caption(
+                    f"โปรไฟล์: {_profile.description} · ขอบ ซ้าย {_profile.margins.left_cm}/"
+                    f"ขวา {_profile.margins.right_cm}/บน {_profile.margins.top_cm}/"
+                    f"ล่าง {_profile.margins.bottom_cm} ซม."
+                )
 
             # 1-Click Action Toolbar ปรับปุ่มให้กะทัดรัด สวยงาม สไตล์โมเดิร์น
             t1, t2, t3, t4, t5 = st.columns([1.05, 1.15, 1.15, 1.1, 1.15], gap="small")

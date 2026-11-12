@@ -50,17 +50,21 @@ class SecretLevel(str, Enum):
 class ExportOptions(BaseModel):
     """ตัวเลือกการส่งออก Word/PDF (แยกจากข้อมูลเอกสาร เพราะเป็นค่าเฉพาะการเรนเดอร์)"""
 
+    layout_profile: Optional[str] = Field(
+        default=None,
+        description="ชื่อ LayoutProfile เช่น standard_memo / form_it9_2026 (None = อัตโนมัติตามชนิดหนังสือ)",
+    )
     letterhead: Literal["garuda", "none"] = Field(
         default="garuda", description="แสดงตราครุฑหรือไม่"
     )
     divider: Literal["none", "line"] = Field(
         default="none", description="เส้นคั่นใต้ส่วนหัว (none/line)"
     )
-    letter_spacing_pt: float = Field(
-        default=0.4, ge=-2.0, le=20.0, description="ระยะห่างตัวอักษร (pt) เช่น 0.4"
+    letter_spacing_pt: Optional[float] = Field(
+        default=None, ge=-2.0, le=20.0, description="ระยะห่างตัวอักษร (pt); None = ใช้ค่าจาก LayoutProfile"
     )
-    export_font: Literal["sarabun_new", "psk", "it9"] = Field(
-        default="sarabun_new", description="ฟอนต์ที่ใช้ส่งออก: TH Sarabun New (ค่าเริ่มต้น), PSK หรือ IT9"
+    export_font: Optional[Literal["sarabun_new", "psk", "it9"]] = Field(
+        default=None, description="ฟอนต์ที่ใช้ส่งออก; None = ใช้ค่าจาก LayoutProfile"
     )
     embed_fonts: bool = Field(
         default=True, description="ฝังฟอนต์ลงในไฟล์ .docx (odttf)"
