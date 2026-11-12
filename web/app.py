@@ -9,6 +9,7 @@ import re
 import sys
 import base64
 import tempfile
+import uuid
 from pathlib import Path
 
 # เพิ่ม Root directory เข้า sys.path
@@ -29,7 +30,7 @@ import streamlit as st
 
 from core.hierarchy import apply_hierarchy_role, build_hierarchy_chain, roles_from_profile
 from core.layout_profile import get_layout_profile
-from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
+from core.models import DOC_NUMBER_PLACEHOLDER, GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
 from core.profile_manager import get_user_profile, save_user_profile, reset_to_default_profile
 from core.extractor import extract_source_document, extract_from_raw_text
 from core.ai_drafter import draft_from_context_rule_based, draft_from_context_llm, DraftingIntent
@@ -377,6 +378,16 @@ def get_docx_bytes(doc_schema: GovDocumentSchema, options: ExportOptions | None 
             except Exception:
                 pass
     return data
+
+
+def audit_doc_id(doc: GovDocumentSchema) -> str:
+    """ใช้เลขที่หนังสือเป็นรหัส audit; ถ้ายังเป็น placeholder ให้ใช้รหัสชั่วคราวต่อ session"""
+    number = (doc.doc_number or "").strip()
+    if number and DOC_NUMBER_PLACEHOLDER not in number:
+        return number
+    if "draft_uid" not in st.session_state:
+        st.session_state.draft_uid = f"draft-{uuid.uuid4().hex[:8]}"
+    return st.session_state.draft_uid
 
 
 def get_typst_bytes(doc_schema: GovDocumentSchema) -> bytes:
@@ -802,7 +813,7 @@ with tab_main:
                 # สกัดข้อความอัตโนมัติเมื่อมีการอัปโหลดไฟล์ใหม่
                 if st.session_state.last_uploaded_file != uploaded_file.name:
                     with st.spinner("กำลังอ่านและสกัดข้อความจากเอกสารต้นเรื่อง (Multi-Engine OCR)..."):
-                        ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"))
+                        ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"), allow_cloud=st.session_state.get("allow_cloud_ai", True))
                         st.session_state.source_context = ctx
                         st.session_state.last_uploaded_file = uploaded_file.name
 
@@ -845,6 +856,14 @@ with tab_main:
                 target_doc_type = DocType.INTERNAL if is_internal_intent else DocType.EXTERNAL
 
                 with st.expander("⚙️ ตั้งค่าโมเดล AI ยกร่าง และ OCR (Gemini / OpenAI)", expanded=False):
+                    allow_cloud = st.checkbox(
+                        "อนุญาตส่งข้อมูลไป AI ภายนอก (Gemini/OpenAI)",
+                        value=bool(st.session_state.get("allow_cloud_ai", True)),
+                        key="allow_cloud_ai",
+                        help="หากเป็นเอกสารชั้นลับ/ข้อมูลอ่อนไหว ให้ปิดเพื่อใช้ Rule-based และ OCR ภายในเครื่องเท่านั้น",
+                    )
+                    if not allow_cloud:
+                        st.warning("โหมดข้อมูลอ่อนไหว: ระบบจะไม่ส่งเนื้อหาไปยัง AI ภายนอก และจะใช้ Rule-based/local OCR")
                     ai_prov = st.selectbox("AI Engine:", ["Gemini 2.5 Flash (Google)", "OpenAI GPT-4o-mini"], index=0)
                     ai_key_input = st.text_input("API Key (เว้นว่างเพื่อใช้ Local OCR / Rule-based)", value=st.session_state.get("ai_api_key", ""), type="password")
                     if ai_key_input:
@@ -852,7 +871,7 @@ with tab_main:
                     st.caption("💡 ใส่ Gemini API Key เพื่อให้ระบบอ่านลายมือเกษียนสั่งการและตรายางได้แม่นยำ 100%")
                     if st.button("🔄 รัน OCR ถอดข้อความใหม่อีกครั้ง", use_container_width=True):
                         with st.spinner("กำลังประมวลผล OCR อีกครั้งด้วย API Key/เครื่องมือที่ระบุ..."):
-                            re_ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"))
+                            re_ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"), allow_cloud=st.session_state.get("allow_cloud_ai", True))
                             st.session_state.source_context = re_ctx
                             st.rerun()
 
@@ -864,16 +883,22 @@ with tab_main:
                         with st.spinner("AI กำลังวิเคราะห์และยกร่างโครงสร้างตามระเบียบ..."):
                             prov = "openai" if "OpenAI" in ai_prov else "gemini"
                             key = st.session_state.get("ai_api_key")
-                            if key:
+                            allow_cloud_now = st.session_state.get("allow_cloud_ai", True)
+                            if key and allow_cloud_now:
                                 draft = draft_from_context_llm(ctx, doc_type=target_doc_type, intent=intent_choice[0], provider=prov, api_key=key)
+                                draft_author = f"AI Studio ({prov.upper()})"
                             else:
                                 draft = draft_from_context_rule_based(ctx, doc_type=target_doc_type, intent=intent_choice[0])
+                                draft_author = "Rule-based (local)"
+                                if not allow_cloud_now:
+                                    st.info("โหมดข้อมูลอ่อนไหว: ระบบใช้ Rule-based ภายในเครื่อง โดยไม่ส่งข้อมูลไป AI ภายนอก")
+                            st.session_state.draft_uid = f"draft-{uuid.uuid4().hex[:8]}"
                             st.session_state.doc_data = draft
                             st.session_state.initial_ai_draft = draft.model_copy(deep=True)
                             audit_mgr.save_version(
-                                doc_id=draft.doc_number,
+                                doc_id=audit_doc_id(draft),
                                 doc=draft,
-                                author=f"AI Studio ({prov.upper() if key else 'Rule-based'})",
+                                author=draft_author,
                                 note=f"ร่างเริ่มต้นจากเอกสารต้นเรื่อง ({intent_choice[1]})"
                             )
                             st.success("ยกร่างหนังสือสำเร็จ! ตรวจสอบได้ที่หน้ากระดาษฝั่งขวา")
@@ -909,7 +934,7 @@ with tab_main:
                 st.session_state.doc_data = curr_tmpl.schema.model_copy(deep=True)
                 st.session_state.initial_ai_draft = curr_tmpl.schema.model_copy(deep=True)
                 audit_mgr.save_version(
-                    doc_id=curr_tmpl.schema.doc_number,
+                    doc_id=audit_doc_id(curr_tmpl.schema),
                     doc=curr_tmpl.schema,
                     author="Preset Template",
                     note=f"โหลดจากแบบฟอร์มมาตรฐาน: {curr_tmpl.title}"
@@ -1801,7 +1826,7 @@ with tab_main:
             with v_col2:
                 if st.button("📌 บันทึกเวอร์ชันใหม่", use_container_width=True):
                     new_v = audit_mgr.save_version(
-                        doc_id=st.session_state.doc_data.doc_number,
+                        doc_id=audit_doc_id(st.session_state.doc_data),
                         doc=st.session_state.doc_data,
                         author="ผู้ตรวจทาน",
                         note=v_note

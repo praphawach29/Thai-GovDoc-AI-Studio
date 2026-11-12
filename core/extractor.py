@@ -93,7 +93,9 @@ def extract_ocr_pytesseract(pil_img: Image.Image) -> str:
         return ""
 
 
-def try_extract_ocr_multi_engine(pil_img: Image.Image, api_key: Optional[str] = None) -> Tuple[str, Optional[str]]:
+def try_extract_ocr_multi_engine(
+    pil_img: Image.Image, api_key: Optional[str] = None, allow_cloud: bool = True
+) -> Tuple[str, Optional[str]]:
     """
     พยายามถอดข้อความจากภาพผ่านลำดับความสำคัญของ OCR Engines:
     1. Gemini Vision (ถ้ามี API Key) -> แม่นยำที่สุดทั้งตัวพิมพ์ ลายมือ และตรายาง
@@ -107,7 +109,7 @@ def try_extract_ocr_multi_engine(pil_img: Image.Image, api_key: Optional[str] = 
     png_bytes = buf.getvalue()
 
     # 1. ลอง Gemini Vision ก่อน
-    if api_key or os.getenv("GEMINI_API_KEY"):
+    if allow_cloud and (api_key or os.getenv("GEMINI_API_KEY")):
         gemini_txt = extract_ocr_gemini(pil_img, api_key=api_key)
         if len(gemini_txt.strip()) >= 20:
             return gemini_txt, "Gemini Vision"
@@ -125,7 +127,9 @@ def try_extract_ocr_multi_engine(pil_img: Image.Image, api_key: Optional[str] = 
     return "", None
 
 
-def extract_text_from_pdf(pdf_path: str, api_key: Optional[str] = None) -> Tuple[str, bool, int, Optional[str], bool, Optional[str], Optional[str]]:
+def extract_text_from_pdf(
+    pdf_path: str, api_key: Optional[str] = None, allow_cloud: bool = True
+) -> Tuple[str, bool, int, Optional[str], bool, Optional[str], Optional[str]]:
     """
     สกัดข้อความจากไฟล์ PDF:
     - ถ้าเป็น Digital PDF -> สกัดข้อความโดยตรง
@@ -195,7 +199,7 @@ def extract_text_from_pdf(pdf_path: str, api_key: Optional[str] = None) -> Tuple
 
         ocr_pages = []
         for idx, img in enumerate(images):
-            txt, eng_name = try_extract_ocr_multi_engine(img, api_key=api_key)
+            txt, eng_name = try_extract_ocr_multi_engine(img, api_key=api_key, allow_cloud=allow_cloud)
             if txt:
                 ocr_pages.append(f"--- หน้าที่ {idx + 1} ---\n{txt}")
                 if not ocr_engine_used and eng_name:
@@ -250,7 +254,9 @@ def extract_text_from_docx(docx_path: str) -> str:
         return f"Error extracting DOCX: {str(e)}"
 
 
-def extract_text_from_image_file(image_path: str, api_key: Optional[str] = None) -> Tuple[str, Optional[str], bool, Optional[str], Optional[str]]:
+def extract_text_from_image_file(
+    image_path: str, api_key: Optional[str] = None, allow_cloud: bool = True
+) -> Tuple[str, Optional[str], bool, Optional[str], Optional[str]]:
     """
     ประมวลผลรูปภาพเอกสารสแกน:
     1. ปรับมุมเอียง (Deskew) และปรับ Contrast ด้วย OpenCV
@@ -270,7 +276,7 @@ def extract_text_from_image_file(image_path: str, api_key: Optional[str] = None)
         cv2.imwrite(preview_path, enhanced)
 
     pil_img = Image.open(preview_path)
-    text, eng_name = try_extract_ocr_multi_engine(pil_img, api_key=api_key)
+    text, eng_name = try_extract_ocr_multi_engine(pil_img, api_key=api_key, allow_cloud=allow_cloud)
 
     if len(text.strip()) >= 20:
         return text, preview_path, False, None, eng_name
@@ -383,7 +389,7 @@ def parse_govdoc_metadata(raw_text: str) -> dict:
     }
 
 
-def extract_source_document(file_path: str, api_key: Optional[str] = None) -> SourceDocumentContext:
+def extract_source_document(file_path: str, api_key: Optional[str] = None, allow_cloud: bool = True) -> SourceDocumentContext:
     """
     ฟังก์ชันหลักสำหรับวิเคราะห์และสกัดข้อมูลจากไฟล์ต้นเรื่องทุกชนิด
     รองรับ Multi-Engine OCR และ Fail-Safe ป้องกันการนำชื่อไฟล์มาใช้เป็นเนื้อหา
@@ -402,7 +408,7 @@ def extract_source_document(file_path: str, api_key: Optional[str] = None) -> So
     ocr_engine_used = None
 
     if ext == ".pdf":
-        raw_text, is_scanned, page_count, preview_path, extraction_failed, extraction_error, ocr_engine_used = extract_text_from_pdf(str(path), api_key=api_key)
+        raw_text, is_scanned, page_count, preview_path, extraction_failed, extraction_error, ocr_engine_used = extract_text_from_pdf(str(path), api_key=api_key, allow_cloud=allow_cloud)
     elif ext in [".docx", ".doc"]:
         raw_text = extract_text_from_docx(str(path))
         is_scanned = False
@@ -410,7 +416,7 @@ def extract_source_document(file_path: str, api_key: Optional[str] = None) -> So
         if extraction_failed:
             extraction_error = "ไม่สามารถอ่านข้อความจากไฟล์ Word ได้ หรือไฟล์ไม่มีเนื้อความ"
     elif ext in [".png", ".jpg", ".jpeg", ".tiff", ".bmp"]:
-        raw_text, preview_path, extraction_failed, extraction_error, ocr_engine_used = extract_text_from_image_file(str(path), api_key=api_key)
+        raw_text, preview_path, extraction_failed, extraction_error, ocr_engine_used = extract_text_from_image_file(str(path), api_key=api_key, allow_cloud=allow_cloud)
         is_scanned = True
     elif ext in [".txt", ".md", ".json"]:
         raw_text = path.read_text(encoding="utf-8")

@@ -8,8 +8,18 @@ import re
 from enum import Enum
 from typing import Optional, List
 
-from core.models import GovDocumentSchema, SourceDocumentContext, DocType, UrgencyLevel, SecretLevel, MemoHierarchyLevel
+from core.models import (
+    DOC_NUMBER_PLACEHOLDER,
+    GovDocumentSchema,
+    SourceDocumentContext,
+    DocType,
+    UrgencyLevel,
+    SecretLevel,
+    MemoHierarchyLevel,
+)
 from core.profile_manager import get_user_profile
+from core.security import CloudAIBlocked, assert_cloud_ai_allowed
+from core.thai_date import format_thai_date
 from core.thai_segmenter import to_thai_numerals, to_arabic_numerals
 
 
@@ -53,9 +63,9 @@ def draft_from_context_rule_based(ctx: SourceDocumentContext,
     if contact_tel is None:
         contact_tel = user_prof.contact_tel
 
-    origin_code = user_prof.doc_origin_code or "กท ๐๒๐๔/"
-    doc_no = f"{origin_code}ว ๑๒๓" if doc_type == DocType.EXTERNAL else "๑๒๓/๒๕๖๙"
-    doc_date = "๑๕ มีนาคม ๒๕๖๙"
+    # AI ต้องไม่สร้างเลขที่เอง — เว้นให้ทะเบียนออกเลขภายหลัง
+    doc_no = DOC_NUMBER_PLACEHOLDER
+    doc_date = format_thai_date(use_thai_numerals=False)
     
     # 1. การกำหนดเรื่อง (Subject) — ห้ามใช้ชื่อไฟล์ที่มีนามสกุล (.pdf, .docx) เด็ดขาด
     file_ext_pattern = r'\.(pdf|docx?|xlsx?|pptx?|png|jpe?g|txt)\b'
@@ -284,15 +294,27 @@ def _build_llm_prompt(ctx: SourceDocumentContext, doc_type: DocType, intent: Dra
 """
 
 
+def _sanitize_llm_draft(doc: GovDocumentSchema) -> GovDocumentSchema:
+    """บังคับไม่ให้ AI สร้างเลขที่หนังสือ/วันที่เอง — เว้นเลขที่และใช้วันที่ปัจจุบัน"""
+    doc.doc_number = DOC_NUMBER_PLACEHOLDER
+    doc.doc_date = format_thai_date(use_thai_numerals=doc.use_thai_numerals)
+    return doc
+
+
 def draft_from_context_llm(ctx: SourceDocumentContext, 
                            doc_type: DocType = DocType.EXTERNAL,
                            intent: DraftingIntent = DraftingIntent.ACCEPT,
                            provider: str = "gemini",
                            model_name: Optional[str] = None,
-                           api_key: Optional[str] = None) -> GovDocumentSchema:
+                           api_key: Optional[str] = None,
+                           secret: SecretLevel = SecretLevel.NORMAL,
+                           allow_cloud: bool = True) -> GovDocumentSchema:
     """
     ร่างหนังสือราชการด้วย AI (Gemini หรือ OpenAI)
     พร้อมระบบสำรอง (Fallback) สู่ Rule-based เสมอหากไม่มี API key หรือเกิดข้อผิดพลาด
+
+    secret: ชั้นความลับของเอกสาร; หากไม่ใช่ normal จะไม่อนุญาตให้ส่งไป AI ภายนอก
+    allow_cloud: False = บังคับใช้เฉพาะ Rule-based/local (สำหรับโหมดข้อมูลอ่อนไหว)
     """
     # 0. FAIL-SAFE CHECK: ห้ามยกร่างหากการสกัดข้อความล้มเหลว หรือไม่มีข้อความ
     if getattr(ctx, "extraction_failed", False) or not (ctx.raw_text or "").strip():
@@ -300,6 +322,14 @@ def draft_from_context_llm(ctx: SourceDocumentContext,
             "ไม่สามารถยกร่างหนังสือได้ เนื่องจากระบบไม่สามารถสกัดข้อความจากเอกสารต้นเรื่องได้ "
             "(กรุณาระบุ GEMINI_API_KEY หรือเปิดใช้งาน Local Docker OCR หรือกรอกข้อความด้วยตนเอง)"
         )
+
+    if not allow_cloud:
+        raise CloudAIBlocked(
+            "โหมดข้อมูลอ่อนไหว: ระบบไม่อนุญาตให้ส่งเนื้อหาไปยัง AI ภายนอก "
+            "กรุณาใช้ Rule-based หรือ Template ภายในเครื่อง"
+        )
+    assert_cloud_ai_allowed(secret)
+
     prov = (provider or "gemini").lower()
     if prov == "openai":
         key = api_key or os.getenv("OPENAI_API_KEY")
@@ -318,7 +348,7 @@ def draft_from_context_llm(ctx: SourceDocumentContext,
                 ],
                 response_format={"type": "json_object"}
             )
-            return GovDocumentSchema.model_validate_json(res.choices[0].message.content)
+            return _sanitize_llm_draft(GovDocumentSchema.model_validate_json(res.choices[0].message.content))
         except Exception as e:
             print(f"OpenAI drafting failed, falling back to rule-based: {e}")
             return draft_from_context_rule_based(ctx, doc_type=doc_type, intent=intent)
@@ -339,7 +369,7 @@ def draft_from_context_llm(ctx: SourceDocumentContext,
                     'response_schema': GovDocumentSchema,
                 }
             )
-            return GovDocumentSchema.model_validate_json(res.text)
+            return _sanitize_llm_draft(GovDocumentSchema.model_validate_json(res.text))
         except Exception as e:
             print(f"Gemini drafting failed, falling back to rule-based: {e}")
             return draft_from_context_rule_based(ctx, doc_type=doc_type, intent=intent)

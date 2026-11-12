@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field, model_validator
 from core.thai_segmenter import to_thai_numerals
 
 
+DOC_NUMBER_PLACEHOLDER = "[✏️ เลขที่หนังสือ]"
+
+
 class DocType(str, Enum):
     EXTERNAL = "external"    # หนังสือภายนอก (ครุฑ 3 ซม. กึ่งกลาง)
     INTERNAL = "internal"    # หนังสือภายใน / บันทึกข้อความ (ครุฑ 1.5 ซม. ด้านซ้าย)

@@ -7,7 +7,7 @@ import re
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
-from core.models import GovDocumentSchema, DocType
+from core.models import DOC_NUMBER_PLACEHOLDER, DocType, GovDocumentSchema
 
 
 THAI_MONTHS = [
@@ -67,6 +67,35 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
             field="doc_date",
             message="วันที่ควรระบุชื่อเดือนเต็มเป็นภาษาไทย",
             suggestion="เช่น '๑๕ มีนาคม ๒๕๖๙' หรือ '15 มีนาคม 2569'"
+        ))
+
+    # 1.1 ตรวจสอบเลขที่หนังสือ: AI ต้องไม่สร้างเอง และต้องออกจากทะเบียนก่อนส่ง
+    number = doc.doc_number.strip()
+    if not number:
+        issues.append(LintIssue(
+            rule_id="RULE_DOC_NUMBER_MISSING",
+            severity="error",
+            field="doc_number",
+            message="ยังไม่มีเลขที่หนังสือ",
+            suggestion=f"เว้นเป็น '{DOC_NUMBER_PLACEHOLDER}' แล้วออกเลขจากทะเบียนหนังสือส่งก่อนส่งออก"
+        ))
+    elif DOC_NUMBER_PLACEHOLDER in number:
+        issues.append(LintIssue(
+            rule_id="RULE_DOC_NUMBER_PLACEHOLDER",
+            severity="warning",
+            field="doc_number",
+            message="เลขที่หนังสือยังเป็นช่องว่างสำหรับกรอก",
+            suggestion="ออกเลขที่หนังสือจากทะเบียนส่ง แล้วแทนที่ช่องนี้ก่อนเสนอลงนาม"
+        ))
+
+    # 1.2 หนังสือภายนอกควรอ้างถึงหนังสือฉบับสุดท้ายเพียงฉบับเดียว
+    if doc.doc_type == DocType.EXTERNAL and doc.references and len(doc.references) > 1:
+        issues.append(LintIssue(
+            rule_id="RULE_REFERENCES_SINGLE",
+            severity="warning",
+            field="references",
+            message="หนังสือภายนอกควรอ้างถึงหนังสือที่เคยติดต่อกันฉบับสุดท้ายเพียงฉบับเดียว",
+            suggestion="เลือกอ้างถึงเฉพาะหนังสือฉบับสุดท้าย หรือย้ายฉบับอื่นไปไว้ใน 'สิ่งที่ส่งมาด้วย'"
         ))
 
     # 2. ตรวจสอบโครงสร้างเนื้อความ
