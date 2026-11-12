@@ -28,6 +28,7 @@ for mod in ["core.models", "core.profile_manager", "core.extractor", "core.templ
 
 import streamlit as st
 
+from core.classifier import DocumentKind, classify_source_document
 from core.hierarchy import apply_hierarchy_role, build_hierarchy_chain, roles_from_profile
 from core.layout_profile import get_layout_profile
 from core.models import DOC_NUMBER_PLACEHOLDER, GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
@@ -816,6 +817,10 @@ with tab_main:
                         ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"), allow_cloud=st.session_state.get("allow_cloud_ai", True))
                         st.session_state.source_context = ctx
                         st.session_state.last_uploaded_file = uploaded_file.name
+                        if not ctx.extraction_failed:
+                            st.session_state.classification = classify_source_document(ctx)
+                            st.session_state.pop("classified_kind", None)
+                            st.session_state.classification_confirmed = False
 
                 if st.session_state.source_context and st.session_state.source_context.extraction_failed:
                     st.error("⚠️ ไม่สามารถถอดข้อความจากไฟล์นี้ได้โดยอัตโนมัติ")
@@ -830,30 +835,87 @@ with tab_main:
                     if st.button("📥 บันทึกข้อความที่ป้อนด้วยตนเองนี้", use_container_width=True) and manual_text_in.strip():
                         new_ctx = extract_from_raw_text(manual_text_in, filename=uploaded_file.name)
                         st.session_state.source_context = new_ctx
+                        st.session_state.classification = classify_source_document(new_ctx)
+                        st.session_state.pop("classified_kind", None)
+                        st.session_state.classification_confirmed = False
                         st.success("บันทึกข้อความต้นเรื่องเรียบร้อยแล้ว!")
                         st.rerun()
                 else:
                     eng_badge = f" (สกัดผ่าน {st.session_state.source_context.ocr_engine_used})" if (st.session_state.source_context and st.session_state.source_context.ocr_engine_used) else ""
                     st.success(f"แนบและสกัดข้อมูลสำเร็จ: {uploaded_file.name}{eng_badge}")
 
+                # ชนิดหนังสือที่ตรวจพบ + ยืนยันก่อนร่าง
+                _cls = st.session_state.get("classification")
+                if _cls:
+                    st.markdown("##### 🔎 ชนิดหนังสือที่ตรวจพบ")
+                    _kinds = list(DocumentKind)
+                    _kind = st.selectbox(
+                        "ชนิดหนังสือ (เลือกแก้ได้)",
+                        options=_kinds,
+                        index=_kinds.index(_cls.kind),
+                        format_func=lambda k: k.thai_label(),
+                        key="classified_kind",
+                    )
+                    if _kind != _cls.kind:
+                        _cls = classify_source_document(
+                            st.session_state.source_context, forced_kind=_kind
+                        )
+                        st.session_state.classification = _cls
+                        st.session_state.classification_confirmed = False
+                        st.rerun()
+
+                    st.caption(
+                        f"ความมั่นใจ {_cls.confidence:.0%} · แบบที่ {_cls.form_no} · "
+                        f"{'รองรับการร่างอัตโนมัติ' if _cls.supported else 'ยังไม่รองรับการร่างอัตโนมัติ'}"
+                    )
+                    for _reason in _cls.reasons[:3]:
+                        st.caption(f"• {_reason}")
+                    if not _cls.supported:
+                        st.warning(
+                            "ชนิดนี้ยังไม่เปิดให้ร่างอัตโนมัติใน P1 — ใช้แม่แบบเอกสารหรือแก้ข้อความเองก่อนส่งออก"
+                        )
+                    if st.button("✅ ยืนยันชนิดนี้", type="primary"):
+                        st.session_state.classification_confirmed = True
+                        st.rerun()
+                    if st.session_state.get("classification_confirmed"):
+                        st.success("ยืนยันชนิดหนังสือแล้ว พร้อมยกร่าง")
+
                 # เลือกเจตนาการร่างหนังสือ (Drafting Intent)
                 st.markdown("##### 🎯 วัตถุประสงค์ในการร่างหนังสือ:")
+                _intent_options = [
+                    (DraftingIntent.MEMO_REVIEW, "📑 บันทึกข้อความรายงานการพิจารณา / เกษียนเรื่องเดิม"),
+                    (DraftingIntent.ACCEPT, "🤝 หนังสือตอบรับ / ยินดีให้ความอนุเคราะห์"),
+                    (DraftingIntent.DECLINE, "❌ หนังสือแจ้งข้อขัดข้อง / ปฏิเสธอย่างสุภาพ"),
+                    (DraftingIntent.FORWARD, "📨 หนังสือส่งต่อเรื่อง / แจ้งเวียน"),
+                    (DraftingIntent.PROPOSAL, "📝 บันทึกข้อความเสนอผู้บังคับบัญชาเพื่อพิจารณาอนุมัติ"),
+                ]
+                _suggested_intent = (
+                    st.session_state.get("classification").intent
+                    if st.session_state.get("classification")
+                    else DraftingIntent.MEMO_REVIEW
+                )
+                _intent_index = next(
+                    (i for i, (value, _) in enumerate(_intent_options) if value == _suggested_intent),
+                    0,
+                )
                 intent_choice = st.radio(
                     "เจตนาการตอบ/ยกร่าง:",
-                    options=[
-                        (DraftingIntent.MEMO_REVIEW, "📑 บันทึกข้อความรายงานการพิจารณา / เกษียนเรื่องเดิม (แนะนำ)"),
-                        (DraftingIntent.ACCEPT, "🤝 หนังสือตอบรับ / ยินดีให้ความอนุเคราะห์"),
-                        (DraftingIntent.DECLINE, "❌ หนังสือแจ้งข้อขัดข้อง / ปฏิเสธอย่างสุภาพ"),
-                        (DraftingIntent.FORWARD, "📨 หนังสือส่งต่อเรื่อง / แจ้งเวียน"),
-                        (DraftingIntent.PROPOSAL, "📝 บันทึกข้อความเสนอผู้บังคับบัญชาเพื่อพิจารณาอนุมัติ")
-                    ],
+                    options=_intent_options,
                     format_func=lambda x: x[1],
-                    index=0,
-                    label_visibility="collapsed"
+                    index=_intent_index,
+                    key=f"intent_{_suggested_intent.value}",
+                    label_visibility="collapsed",
                 )
 
                 is_internal_intent = intent_choice[0] in [DraftingIntent.PROPOSAL, DraftingIntent.MEMO_REVIEW]
                 target_doc_type = DocType.INTERNAL if is_internal_intent else DocType.EXTERNAL
+                _cls_now = st.session_state.get("classification")
+                if (
+                    _cls_now
+                    and st.session_state.get("classification_confirmed")
+                    and _cls_now.supported
+                ):
+                    target_doc_type = _cls_now.doc_type
 
                 with st.expander("⚙️ ตั้งค่าโมเดล AI ยกร่าง และ OCR (Gemini / OpenAI)", expanded=False):
                     allow_cloud = st.checkbox(
@@ -873,9 +935,25 @@ with tab_main:
                         with st.spinner("กำลังประมวลผล OCR อีกครั้งด้วย API Key/เครื่องมือที่ระบุ..."):
                             re_ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"), allow_cloud=st.session_state.get("allow_cloud_ai", True))
                             st.session_state.source_context = re_ctx
+                            if not re_ctx.extraction_failed:
+                                st.session_state.classification = classify_source_document(re_ctx)
+                                st.session_state.pop("classified_kind", None)
+                                st.session_state.classification_confirmed = False
                             st.rerun()
 
-                if st.button("🚀 ให้ AI ยกร่างหนังสือตามต้นเรื่องนี้", type="primary", use_container_width=True):
+                _can_draft = bool(
+                    _cls_now
+                    and st.session_state.get("classification_confirmed")
+                    and _cls_now.supported
+                )
+                if not _can_draft:
+                    st.caption("กรุณาตรวจและยืนยันชนิดหนังสือด้านบนก่อนยกร่าง")
+                if st.button(
+                    "🚀 ให้ AI ยกร่างหนังสือตามต้นเรื่องนี้",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not _can_draft,
+                ):
                     ctx = st.session_state.source_context
                     if not ctx or ctx.extraction_failed or not (ctx.raw_text or "").strip():
                         st.error("⚠️ ไม่สามารถยกร่างหนังสือได้ เนื่องจากไม่มีข้อความต้นเรื่องที่อ่านได้ กรุณาใส่ API Key หรือกรอกข้อความด้วยตนเองก่อน")
