@@ -34,6 +34,7 @@
 
 เพื่อความเข้าใจเชิงลึก โปรดศึกษาเอกสารข้อกำหนดแต่ละฉบับ:
 
+- 📑 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) — **แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบฉบับสมบูรณ์ (Roadmap Phase 1–10 & Spec)**
 - 📖 [AGENTS.md](AGENTS.md) — กฎเหล็กและข้อแนะนำการทำงานสำหรับ AI Coding Agents
 - 🏗️ [DESIGN.md](DESIGN.md) — รายละเอียดสถาปัตยกรรมระบบ โครงสร้างโมดูล และ Data Schema (Pydantic)
 - ⚖️ [SARABAN_RULES.md](SARABAN_RULES.md) — สรุประเบียบงานสารบรรณ ตารางเทียบคำขึ้นต้น-ลงท้าย และขนาดตราครุฑ
@@ -46,20 +47,33 @@
 
 ```text
 หนังสือราชการ/
-├── AGENTS.md               # กฎสำหรับ AI Agent
-├── DESIGN.md               # สถาปัตยกรรมระบบ
+├── DEVELOPMENT_PLAN.md     # แผนงานและสเปกระบบฉบับเต็ม (Roadmap & Architecture)
+├── README.md               # เอกสารภาพรวม (ไฟล์นี้)
+├── DESIGN.md               # สถาปัตยกรรมระบบและ Data Schemas
 ├── SARABAN_RULES.md        # ระเบียบงานสารบรรณฉบับสรุป
 ├── PROMPT_ENGINEERING.md   # Prompts & AI Drafting Schemas
 ├── EXPORT_ENGINE.md        # รายละเอียด Export (Typst + Word)
-├── README.md               # เอกสารภาพรวม (ไฟล์นี้)
+├── Dockerfile.tesseract    # Docker Container สำหรับ Local Thai OCR
 │
-├── core/                   # ระบบแกนหลัก (Core Processing)
-│   ├── models.py           # Data Models & Pydantic Schemas
-│   ├── extractor.py        # ตัวอ่านไฟล์ต้นเรื่อง (PDF / Scan / DOCX)
-│   ├── ai_drafter.py       # สมองกลยกร่างหนังสือตามระเบียบ
-│   ├── word_exporter.py    # ตัวสร้างไฟล์ Word (.docx) พร้อมตัดคำ ZWSP
-│   ├── typst_exporter.py   # ตัวคอมไพล์ PDF ด้วย Typst
-│   └── registry.py         # ทะเบียนคุมสารบรรณและออกเลขที่หนังสือ
+├── core/                   # ระบบแกนหลัก (Core Business Logic)
+│   ├── models.py           # Data Models (GovDoc, UserProfile, SourceContext)
+│   ├── profile_manager.py  # ระบบจัดการโปรไฟล์หน่วยงานของผู้ใช้
+│   ├── extractor.py        # Multi-Engine OCR (Gemini + Docker) & Fail-Safe Ingestion
+│   ├── ocr_preprocessor.py # ตัวประมวลผลภาพ (Deskew, CLAHE, Binarize)
+│   ├── ai_drafter.py       # สมองกลยกร่างหนังสือตามระเบียบ 3 ภาค และบันทึก กทม.
+│   ├── linter.py           # Automated Sarabun Linter (ตรวจระเบียบและชื่อไฟล์ดิบ)
+│   ├── memo_layout.py      # ตัวจัดหน้าบันทึกข้อความ กทม. (Indentation 2.5/3.5/4.5 ซม.)
+│   ├── word_exporter.py    # ตัวสร้างไฟล์ Word (.docx) พร้อมตัดคำ ZWSP ชิดขอบ
+│   ├── typst_exporter.py   # ตัวคอมไพล์ PDF เวกเตอร์ด้วย Typst
+│   ├── audit.py            # ประวัติเวอร์ชันและระบบ Diff Engine
+│   ├── copilot.py          # AI Copilot ขัดเกลาภาษาเฉพาะจุด
+│   ├── registry.py         # ทะเบียนคุมสารบรรณและออกเลขที่หนังสือ
+│   └── templates_library.py# คลังแม่แบบมาตรฐานและแม่แบบ กทม.
+│
+├── data/                   # ฐานข้อมูลและโปรไฟล์ผู้ใช้
+│   ├── user_profile.json   # การตั้งค่าหน่วยงานและผู้ลงนาม
+│   ├── audit.db            # บันทึกประวัติการแก้ไขและเวอร์ชัน
+│   └── edocument.db        # สมุดทะเบียนรับ-ส่ง และเลขจอง
 │
 ├── templates/              # แม่แบบเอกสาร
 │   ├── typst/              # external.typ, internal.typ
@@ -69,8 +83,9 @@
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
 │   └── fonts/              # ฟอนต์ TH Sarabun New
 │
-└── web/                    # เว็บแอปพลิเคชัน (UI Workspace)
-    └── app.py              # หน้าจอหลักสำหรับแนบไฟล์ ตรวจแก้ และส่งออก
+├── tests/                  # ชุดทดสอบอัตโนมัติ (84 Passed, 100%)
+└── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
+    └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
 ```
 
 ---
@@ -83,8 +98,28 @@
 - **ฟอนต์ TH Sarabun New** (ติดตั้งในเครื่อง หรือวางในโฟลเดอร์ `assets/fonts`)
 
 ### 2. ขั้นตอนการทำงานแบบย่อ
-1. **แนบไฟล์:** ผู้ใช้อัปโหลดไฟล์ต้นเรื่องผ่านหน้าเว็บ
-2. **AI สกัดและร่าง:** AI สกัดข้อเท็จจริง และแปลงเป็นร่างหนังสือราชการตามโครงสร้าง 3 ภาค
-3. **ตรวจทาน:** ผู้ใช้ตรวจสอบผ่านหน้าจอเทียบต้นฉบับ ปรับแต่งข้อความ และใช้ AI Copilot ช่วยเกลา
-4. **ส่งออก:** กดดาวน์โหลดเป็นไฟล์ PDF พร้อมลงนาม หรือไฟล์ Word สำหรับแก้ไขเพิ่มเติม
+1. **แนบไฟล์:** ผู้ใช้อัปโหลดไฟล์ต้นเรื่องผ่านหน้าเว็บ (รองรับ PDF ดิจิทัล, สแกน, รูปภาพ, Word)
+2. **AI สกัดและร่าง:** Multi-Engine OCR ถอดข้อความ และ AI แปลงเป็นร่างหนังสือราชการตามระเบียบ
+3. **ตรวจทานเคียงข้าง:** ผู้ใช้ตรวจสอบผ่านหน้าจอเทียบต้นฉบับ ปรับแต่งข้อความ และใช้ AI Copilot ช่วยเกลา
+4. **ส่งออกจริง:** กดดาวน์โหลดเป็นไฟล์ Vector PDF (Typst) หรือ Editable Word (.docx) พร้อมลงทะเบียนคุมสารบรรณ
+
+---
+
+## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
+
+- **สถานะชุดทดสอบ:** ผ่านการทดสอบทั้งหมด **84/84 Tests (100% Pass)**
+- **ระยะการพัฒนาที่แล้วเสร็จ:**
+  - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
+  - ✅ **Phase 2:** OpenCV Ingestion, Contrast, Deskew, DOCX & PDF Plumber Parser
+  - ✅ **Phase 3:** Diff Engine, SQLite Audit Trail & AI Copilot Inline Tools
+  - ✅ **Phase 4:** Ekkasarn Alignment, Smart Placeholders `[✏️ ...]` & Memo Review Intent
+  - ✅ **Phase 5:** Digital Signature Embedding, 8 Preset Categories & AI Fallback
+  - ✅ **Phase 6:** Standard BMA Memo Structure (4 ส่วนตามแบบ กทม.) & Hierarchy Routing
+  - ✅ **Phase 7:** Multi-Engine OCR (Docker Tesseract + Gemini Vision), Fail-Safe Ingestion, `RULE_FILENAME_IN_METADATA` & Persistent User Organization Profile
+- **แผนงานระยะถัดไป (Roadmap):**
+  - 🚩 **Phase 8:** Multi-Document Case Dossier Modeling (แฟ้มเรื่องและสายการสั่งการ)
+  - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
+  - 🚩 **Phase 10:** Hierarchical Approval Workflow & E-Office Integration
+
+> รายละเอียดเชิงลึก สถาปัตยกรรมระดับโมดูล และข้อมูลการออกแบบทั้งหมด สามารถศึกษาได้ที่ 📑 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
 

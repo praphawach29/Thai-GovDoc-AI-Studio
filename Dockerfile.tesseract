@@ -1,0 +1,4 @@
+FROM alpine:latest
+RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-tha tesseract-ocr-data-eng
+ENTRYPOINT ["tesseract"]
+

@@ -121,8 +121,8 @@ sequenceDiagram
 from enum import Enum
 
 class DocType(str, Enum):
-    EXTERNAL = "external"    # หนังสือภายนอก
-    INTERNAL = "internal"    # หนังสือภายใน (บันทึกข้อความ)
+    EXTERNAL = "external"    # หนังสือภายนอก (ครุฑใหญ่ 3 ซม. กึ่งกลาง)
+    INTERNAL = "internal"    # หนังสือภายใน / บันทึกข้อความ (ครุฑ 1.5 ซม. ซ้าย)
 
 class UrgencyLevel(str, Enum):
     NORMAL = "normal"        # ปกติ
@@ -135,9 +135,47 @@ class SecretLevel(str, Enum):
     SECRET = "secret"        # ลับ
     VERY_SECRET = "very_secret"  # ลับมาก
     TOP_SECRET = "top_secret"    # ลับที่สุด
+
+class MemoHierarchyLevel(str, Enum):
+    SECTION_TO_DIV = "section_to_div"       # ฝ่าย/กลุ่มงาน -> ผอ.กอง
+    DIV_TO_DEPT = "div_to_dept"             # กอง -> ผอ.สำนัก
+    DEPT_TO_PERM_SEC = "dept_to_perm_sec"   # สำนัก -> ปลัด (นำเรียนผู้ว่าฯ)
+    FINAL_APPROVAL = "final_approval"       # เสนอผู้มีอำนาจสั่งการขั้นสุดท้าย
+    CUSTOM = "custom"                       # กำหนดประโยคลงท้ายเอง
 ```
 
-### 4.2. โมเดลหนังสือราชการฉบับสมบูรณ์ (`GovDocumentSchema`)
+### 4.2. โมเดลสำนวนแฟ้มเรื่องและสายเกษียนสั่งการ (Case Dossier Schemas)
+```python
+class RoutingNote(BaseModel):
+    author: str
+    position: Optional[str]
+    target: Optional[str]
+    order_text: str
+    order_date: Optional[str]
+    signature_present: bool = True
+
+class SourceItem(BaseModel):
+    item_id: str
+    title: str
+    doc_no: Optional[str]
+    doc_date: Optional[str]
+    sender: Optional[str]
+    receiver: Optional[str]
+    page_start: int = 1
+    page_end: int = 1
+    doc_type: str = "external"
+    replaces_item_id: Optional[str] = None
+
+class SourceCase(BaseModel):
+    case_title: str
+    items: List[SourceItem]
+    routing_notes: List[RoutingNote]
+    deadlines: List[str]
+    requested_items: List[str]
+    raw_text: Optional[str]
+```
+
+### 4.3. โมเดลหนังสือราชการฉบับสมบูรณ์ (`GovDocumentSchema`)
 ```python
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -158,10 +196,18 @@ class GovDocumentSchema(BaseModel):
     references: Optional[List[str]] = Field(default=None, description="อ้างถึง (ถ้ามี)")
     attachments: Optional[List[str]] = Field(default=None, description="สิ่งที่ส่งมาด้วย (ถ้ามี)")
     
-    # ส่วนเนื้อความ (3 ภาค)
+    # ส่วนเนื้อความมาตรฐาน 3 ภาค (หนังสือภายนอก)
     paragraph_reason: str = Field(..., description="ภาคเหตุ (เช่น ด้วย, ตามที่, เนื่องจาก...)")
     paragraph_details: Optional[str] = Field(None, description="ภาคข้อเท็จจริง/พิจารณา (รายละเอียด)")
     paragraph_purpose: str = Field(..., description="ภาคสรุป/ประสงค์ (เช่น จึงเรียนมาเพื่อโปรด...)")
+
+    # ส่วนเนื้อความบันทึกข้อความ กทม. 4 หัวข้อมาตรฐาน
+    memo_intro: Optional[str] = Field(None, description="ต้นเรื่อง (ความเป็นมา)")
+    memo_facts: Optional[str] = Field(None, description="ข้อเท็จจริง")
+    memo_law: Optional[str] = Field(None, description="ข้อกฎหมาย (ถ้ามี)")
+    memo_consideration: Optional[str] = Field(None, description="ข้อพิจารณาและเสนอแนะ")
+    memo_request: Optional[str] = Field(None, description="ประโยคลงท้ายตามระดับชั้น")
+    memo_hierarchy_level: MemoHierarchyLevel = Field(default=MemoHierarchyLevel.DEPT_TO_PERM_SEC)
     
     # ส่วนท้ายหนังสือ
     closing: str = Field(default="ขอแสดงความนับถือ", description="คำลงท้าย")

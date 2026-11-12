@@ -18,7 +18,7 @@ def _escape_typst_string(s: Optional[str]) -> str:
     if s is None:
         return '""'
     # Escape backslashes and double quotes
-    escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "").replace("\n", "\\n")
     return f'"{escaped}"'
 
 
@@ -27,7 +27,30 @@ def _format_typst_list(items: Optional[list]) -> str:
     if not items:
         return "()"
     escaped_items = [_escape_typst_string(item) for item in items]
-    return f"({', '.join(escaped_items)})"
+    # comma ท้ายเสมอ: ("x") ใน Typst คือ string ไม่ใช่ array
+    return f"({', '.join(escaped_items)},)"
+
+
+def _format_memo_blocks(data: GovDocumentSchema) -> str:
+    """แปลง MemoBlock (core.memo_layout) เป็น Typst array ของ dictionary"""
+    num = to_thai_numerals if data.use_thai_numerals else (lambda t: t)
+    items = []
+    for b in data.get_memo_blocks():
+        items.append(
+            "(lead: {lead}, lead_style: {style}, text: {text}, indent: {indent:.2f}cm, "
+            "space_before: {sb:.0f}pt, kind: {kind})".format(
+                lead=_escape_typst_string(num(b.lead)),
+                style=_escape_typst_string(b.lead_style),
+                text=_escape_typst_string(num(b.text)),
+                indent=b.indent_cm,
+                sb=b.space_before_pt,
+                kind=_escape_typst_string(b.kind),
+            )
+        )
+    if not items:
+        return "()"
+    # Typst ต้องมี comma ท้ายเมื่อ array มีสมาชิกเดียว
+    return "(\n    " + ",\n    ".join(items) + ",\n  )"
 
 
 def generate_typst_content(data: GovDocumentSchema, garuda_rel_path: str = "assets/garuda.svg") -> str:
@@ -64,6 +87,7 @@ def generate_typst_content(data: GovDocumentSchema, garuda_rel_path: str = "asse
   urgency: "{data.urgency.value}",
   secret: "{data.secret.value}",
   garuda_path: "{garuda_rel_path}",
+  garuda: read("{garuda_rel_path}", encoding: none),
 )
 """
     else:
@@ -82,11 +106,14 @@ def generate_typst_content(data: GovDocumentSchema, garuda_rel_path: str = "asse
   paragraph_reason: {_escape_typst_string(fmt_reason)},
   paragraph_details: {details_val},
   paragraph_purpose: {_escape_typst_string(fmt_purpose)},
+  memo_blocks: {_format_memo_blocks(data)},
   signatory_name: {_escape_typst_string(data.signatory_name)},
   signatory_position: {_escape_typst_string(data.signatory_position)},
   urgency: "{data.urgency.value}",
   secret: "{data.secret.value}",
+  thai_page_numbers: {"true" if data.use_thai_numerals else "false"},
   garuda_path: "{garuda_rel_path}",
+  garuda: read("{garuda_rel_path}", encoding: none),
 )
 """
     return typst_code
