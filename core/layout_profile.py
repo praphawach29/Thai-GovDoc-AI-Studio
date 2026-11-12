@@ -30,7 +30,7 @@ class LayoutProfile(BaseModel):
     # None = ใช้ระยะย่อหน้าตามลำดับชั้นของ memo block, 0 = ไม่ย่อหน้า
     body_indent_cm: Optional[float] = None
     line_pitch_twips: int = 360
-    header_style: Literal["dotted", "solid"] = "dotted"
+    header_style: Literal["dotted", "segmented", "solid"] = "dotted"
     page_number_style: Literal["thai", "arabic", "none"] = "thai"
 
 
@@ -65,7 +65,7 @@ PROFILES: Dict[str, LayoutProfile] = {
         letter_spacing_pt=-0.2,
         body_indent_cm=0.0,
         line_pitch_twips=435,
-        header_style="solid",
+        header_style="segmented",
         page_number_style="arabic",
     ),
 }

@@ -67,6 +67,7 @@
 │   ├── linter.py           # Automated Sarabun Linter (ตรวจระเบียบและชื่อไฟล์ดิบ)
 │   ├── memo_layout.py      # ตัวจัดหน้าบันทึกข้อความ กทม. (Indentation 2.5/3.5/4.5 ซม.)
 │   ├── layout_profile.py     # โปรไฟล์การจัดหน้าต่อแม่แบบ (ขอบ/ฟอนต์/เลขหน้า)
+│   ├── hierarchy.py         # สร้างชุดบันทึกตามลำดับชั้น (P3)
 │   ├── word_exporter.py    # ตัวสร้างไฟล์ Word (.docx) พร้อมตัดคำ ZWSP ชิดขอบ
 │   ├── typst_exporter.py   # ตัวคอมไพล์ PDF เวกเตอร์ด้วย Typst (CLI หรือ Python binding)
 │   ├── pdf_exporter.py     # ตัวเรนเดอร์ PDF ผ่าน HTML + headless browser
@@ -89,7 +90,7 @@
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
 │   └── fonts/              # TH Sarabun New / IT9 / PSK (ครบ 4 น้ำหนัก)
 │
-├── tests/                  # ชุดทดสอบ 102 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
+├── tests/                  # ชุดทดสอบ 107 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
 └── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
     └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
 ```
@@ -114,7 +115,7 @@
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
 
-- **สถานะชุดทดสอบ:** **102 tests — ผ่าน 97 / ข้าม 5 / ล้มเหลว 0**
+- **สถานะชุดทดสอบ:** **107 tests — ผ่าน 102 / ข้าม 5 / ล้มเหลว 0**
   - เทส PDF (headless browser) และ OCR จะ **ข้ามอัตโนมัติ** เมื่อเครื่องไม่มี browser/API key/Docker โดยใช้ marker กลางใน `tests/conftest.py` (ไม่ถูกนับเป็น fail)
 - **ระยะการพัฒนาที่แล้วเสร็จ:**
   - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
@@ -126,7 +127,8 @@
   - ✅ **Phase 7:** Multi-Engine OCR (Docker Tesseract + Gemini Vision), Fail-Safe Ingestion, `RULE_FILENAME_IN_METADATA` & Persistent User Organization Profile
   - ✅ **Phase 8:** Multi-Document Case Dossier Modeling (แฟ้มเรื่อง, สายเกษียนสั่งการ และการสังเคราะห์ย่อหน้า "ต้นเรื่อง")
   - ✅ **Phase 8.1:** Export fidelity — ตัวเลือกฟอนต์/ครุฑ/ระยะตัวอักษร, ฝังฟอนต์ New/IT9 ใน Word, เลขหน้าไทย
-- ✅ **Phase 8.2:** LayoutProfile 3 โปรไฟล์, หัวฟอร์มเส้นทึบ, ขอบ/ระยะย่อหน้า/เลขหน้าตามแม่แบบ
+- ✅ **Phase 8.2:** LayoutProfile 3 โปรไฟล์, หัวฟอร์มเส้นทึบแบบแบ่งช่วง, ขอบ/ระยะย่อหน้า/เลขหน้าตามแม่แบบ
+- ✅ **Phase 8.3:** Hierarchy Chain — สร้างชุด 3 ฉบับตามลำดับชั้น + dropdown เลือกผู้รับภายหลัง
 - **แผนงานระยะถัดไป (Roadmap):**
   - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
   - 🚩 **Phase 10:** Multi-Document Review, Hierarchical Approval & E-Office Integration

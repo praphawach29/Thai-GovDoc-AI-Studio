@@ -27,6 +27,7 @@ for mod in ["core.models", "core.profile_manager", "core.extractor", "core.templ
 
 import streamlit as st
 
+from core.hierarchy import apply_hierarchy_role, build_hierarchy_chain, roles_from_profile
 from core.layout_profile import get_layout_profile
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel, UserProfileSchema, ExportOptions
 from core.profile_manager import get_user_profile, save_user_profile, reset_to_default_profile
@@ -1014,6 +1015,29 @@ with tab_main:
 
         # ----------------- TAB PREVIEW & QUICK ACTIONS -----------------
         with tab_preview:
+            # เลือกผู้รับ/ระดับชั้นการเสนอได้ภายหลัง (dropdown)
+            _roles = roles_from_profile(get_user_profile())
+            _current_recipient = st.session_state.doc_data.salutation.replace("เรียน", "").strip()
+            _role_match = next(
+                (i for i, r in enumerate(_roles) if r.recipient == _current_recipient), -1
+            )
+
+            def _on_recipient_change():
+                idx = st.session_state.get("recipient_role_idx", -1)
+                if idx is not None and idx >= 0:
+                    st.session_state.doc_data = apply_hierarchy_role(
+                        st.session_state.doc_data, _roles[idx]
+                    )
+
+            st.selectbox(
+                "ส่งถึง (เลือกภายหลังได้)",
+                options=list(range(len(_roles))) + [-1],
+                index=_role_match if _role_match >= 0 else len(_roles),
+                format_func=lambda i: "✏️ กำหนดเอง (แก้ในปุ่มดินสอ)" if i == -1 else _roles[i].label,
+                key="recipient_role_idx",
+                on_change=_on_recipient_change,
+            )
+
             # ตัวเลือกการส่งออก Word (ฟอนต์ / ระยะตัวอักษร / ตราครุฑ / การฝังฟอนต์)
             if "export_options" not in st.session_state or not hasattr(
                 st.session_state.export_options, "layout_profile"
@@ -1151,6 +1175,36 @@ with tab_main:
                         st.success(f"บันทึกสำเร็จ (รหัสทะเบียน: {new_id})")
                     except Exception as e:
                         st.error(f"ไม่สามารถลงทะเบียนได้: {str(e)}")
+
+            # สร้างชุดบันทึกตามลำดับชั้น (P3)
+            if st.button(
+                "🏛️ สร้างชุด 3 ฉบับตามลำดับชั้น (กลุ่มงาน → กอง → สำนัก)",
+                use_container_width=False,
+            ):
+                _chain = build_hierarchy_chain(st.session_state.doc_data, get_user_profile())
+                st.session_state.hierarchy_chain = _chain
+                st.session_state.doc_data = _chain[0].document
+                st.rerun()
+
+            _chain = st.session_state.get("hierarchy_chain")
+            if _chain:
+                with st.expander("📚 ชุดบันทึกตามลำดับชั้น", expanded=True):
+                    for i, item in enumerate(_chain):
+                        st.markdown(f"**{item.role.label}** — เรียน {item.role.recipient}")
+                        st.caption(item.document.memo_request)
+                        c_dl, c_open = st.columns([1, 1])
+                        with c_dl:
+                            st.download_button(
+                                "ดาวน์โหลด Word",
+                                data=get_docx_bytes(item.document, st.session_state.export_options),
+                                file_name=f"hierarchy_{i + 1}.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                key=f"chain_dl_{i}",
+                            )
+                        with c_open:
+                            if st.button("เปิดฉบับนี้ในห้องร่าง", key=f"chain_open_{i}"):
+                                st.session_state.doc_data = item.document
+                                st.rerun()
 
             # ----------------- แถบปุ่มดินสอแก้ไขด่วนตามหัวข้อต่าง ๆ -----------------
             doc = st.session_state.doc_data

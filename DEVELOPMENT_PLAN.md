@@ -1,7 +1,7 @@
 # 📑 แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบ (Development Plan & Architecture Specification)
 ## Thai GovDoc AI Studio — ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ
 **เวอร์ชันเอกสาร:** 2.2 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
-**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.2 (102 tests: ผ่าน 97 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
+**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.3 (107 tests: ผ่าน 102 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
 **อ้างอิงกฎหมายและระเบียบ:** ระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม, ระเบียบกรุงเทพมหานครว่าด้วยงานสารบรรณ
 
 ---
@@ -71,9 +71,9 @@ flowchart TD
 
 ---
 
-## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.2)
+## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.3)
 
-ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **102 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
+ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **107 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
 
 | ระยะการพัฒนา (Phase) | ขอบเขตงานสำคัญ | ไฟล์และโมดูลที่เกี่ยวข้อง | สถานะ |
 | :--- | :--- | :--- | :---: |
@@ -86,7 +86,8 @@ flowchart TD
 | **Phase 7: Multi-Engine OCR & Profile** | • Local Docker Tesseract Container (`tha-tesseract:latest`) แบบออฟไลน์<br/>• Gemini Vision API ถอดลายมือเกษียนและตรายาง<br/>• ยุบช่องว่างพยัญชนะไทย และรวมสระอำจากการ OCR<br/>• Fail-Safe Halt: ป้องกันการนำชื่อไฟล์มาเป็นเรื่องหรืออ้างถึง<br/>• Linter Rule `RULE_FILENAME_IN_METADATA`<br/>• ระบบโปรไฟล์หน่วยงานของผู้ใช้ (`UserProfileSchema` $\rightarrow$ `data/user_profile.json`) พร้อมแท็บ UI ตั้งค่า | `core/extractor.py`<br/>`core/profile_manager.py`<br/>`core/ai_drafter.py`<br/>`core/linter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8: Multi-Document Case Dossier** | • สถาปัตยกรรมสำนวนแฟ้มเรื่อง `SourceCase`, `SourceItem`, `RoutingNote`<br/>• ตัวสกัดเอกสารหลายฉบับในแฟ้ม และตรวจจับฉบับที่ส่งมาแทนหนังสือเดิม<br/>• ตัวสกัดสายบันทึกเกษียนสั่งการ (Chain of Command)<br/>• กลไกสังเคราะห์ย่อหน้า "ต้นเรื่อง" บันทึกข้อความ กทม. อัตโนมัติ | `core/case_dossier.py`<br/>`core/models.py`<br/>`core/extractor.py`<br/>`core/ai_drafter.py` | ✅ สำเร็จ |
 | **Phase 8.1: Export Fidelity (Sprint 1)** | • `ExportOptions` (ฟอนต์/ครุฑ/เส้นคั่น/ระยะตัวอักษร/ฝังฟอนต์)<br/>• ฝังฟอนต์ TH Sarabun New/IT9/PSK เป็น `odttf` ตาม OOXML<br/>• ระยะตัวอักษร 0.4 pt ระดับ style, ขอบบนบันทึกข้อความ 1.5 ซม.<br/>• เลขหน้าไทย + หน้าแรกไม่แสดงเลข | `core/models.py`<br/>`core/docx_fonts.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
-| **Phase 8.2: Layout Profiles & Solid Header (P1–P2)** | • `LayoutProfile` แยกขอบ/ฟอนต์/ระยะตัวอักษร/การย่อหน้า/เลขหน้าต่อแม่แบบ<br/>• โปรไฟล์ `standard_memo`, `standard_external`, `form_it9_2026` (จากไฟล์จริง)<br/>• หัวฟอร์มแบบเส้นทึบ (`header_style=solid`) แทนจุดไข่ปลา<br/>• `docGrid` linePitch และเลขหน้าอารบิก/ไทยตามโปรไฟล์ | `core/layout_profile.py`<br/>`core/word_exporter.py`<br/>`core/models.py`<br/>`web/app.py` | ✅ สำเร็จ |
+| **Phase 8.2: Layout Profiles & Segmented Header (P1–P2)** | • `LayoutProfile` แยกขอบ/ฟอนต์/ระยะตัวอักษร/การย่อหน้า/เลขหน้าต่อแม่แบบ<br/>• โปรไฟล์ `standard_memo`, `standard_external`, `form_it9_2026` (จากไฟล์จริง)<br/>• หัวฟอร์มเส้นทึบแบบแบ่งช่วง (`header_style=segmented`) แทนจุดไข่ปลา<br/>• `docGrid` linePitch และเลขหน้าอารบิก/ไทยตามโปรไฟล์ | `core/layout_profile.py`<br/>`core/word_exporter.py`<br/>`core/models.py`<br/>`web/app.py` | ✅ สำเร็จ |
+| **Phase 8.3: Hierarchy Chain (P3)** | • สร้างชุด 3 ฉบับ (สำนัก→ปลัด, กอง→สำนัก, กลุ่มงาน→กอง) จากต้นเรื่องเดียว<br/>• ผู้รับ/ผู้ลงนาม/ประโยคลงท้ายตามระดับชั้น<br/>• Dropdown เลือกผู้รับภายหลังได้ | `core/hierarchy.py`<br/>`core/models.py`<br/>`web/app.py` | ✅ สำเร็จ |
 
 ---
 
@@ -268,6 +269,7 @@ class SourceCase(BaseModel):
 │   ├── linter.py               # Automated Sarabun Linter ตรวจระเบียบและชื่อไฟล์ดิบ
 │   ├── memo_layout.py          # ตัวจัดหน้าบันทึกข้อความ กทม. และระบบ Indentation
 │   ├── layout_profile.py     # โปรไฟล์การจัดหน้าต่อแม่แบบ (ขอบ/ฟอนต์/เลขหน้า)
+│   ├── hierarchy.py         # สร้างชุดบันทึกตามลำดับชั้น (P3)
 │   ├── word_exporter.py        # ตัวส่งออกไฟล์ Word (.docx) ตัดคำด้วย ZWSP ชิดขอบกระดาษ
 │   ├── typst_exporter.py       # ตัวสร้างและคอมไพล์ Typst เป็น Vector PDF
 │   ├── audit.py                # ระบบติดตามประวัติการแก้ไข (Audit Trail & Diff)
@@ -283,7 +285,7 @@ class SourceCase(BaseModel):
 │
 ├── uploads/                    # โฟลเดอร์จัดเก็บไฟล์ต้นเรื่องที่แนบเข้ามา
 ├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun New/IT9/PSK 4 น้ำหนัก
-├── tests/                      # ชุดทดสอบ 102 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
+├── tests/                      # ชุดทดสอบ 107 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
 └── web/                        # ระบบหน้าบ้าน (Web UI)
     └── app.py                  # แอปพลิเคชัน Streamlit หน้าจอ 3 แท็บ (ร่าง, ทะเบียน, ตั้งค่า)
 ```
@@ -303,7 +305,7 @@ class SourceCase(BaseModel):
 | **เครื่องมือ OCR ท้องถิ่น** | Docker Engine + Image `tha-tesseract:latest` (Alpine + Tesseract 5.5.2 ภาษา `tha+eng`) |
 | **เครื่องมือ Cloud AI** | Google Gemini API (`gemini-2.5-flash`) ผ่านไลบรารี `google-genai` |
 | **ฐานข้อมูล (Database)** | SQLite 3 (ไฟล์ `audit.db` และ `edocument.db`) |
-| **สถานะชุดทดสอบ** | 102 tests: 97 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
+| **สถานะชุดทดสอบ** | 107 tests: 102 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
 
 ### ข้อจำกัดที่ทราบ (Known Limitations)
 

@@ -60,7 +60,8 @@ def test_form_it9_profile_applies_layout(memo_doc, tmp_path):
     assert '<w:docGrid w:linePitch="435"/>' in document
     assert '<w:spacing w:val="-4"/>' in styles
     assert "TH SarabunIT\u0e59" in font_table
-    assert "<w:pBdr>" in document  # หัวฟอร์มแบบเส้นทึบ
+    assert 'w:leader="underscore"' in document  # เส้นทึบแบบ segmented
+    assert "<w:pBdr>" not in document  # ไม่ใช่ขอบล่างเต็มความกว้าง
     assert 'w:firstLine="1418"' not in document  # ไม่ย่อหน้า 2.5 ซม.
     assert "thaiNumbers" not in document  # เลขหน้าอารบิก
 

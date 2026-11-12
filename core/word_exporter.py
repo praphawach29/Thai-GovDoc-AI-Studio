@@ -138,10 +138,16 @@ MEMO_LABEL_SIZE = 20
 def _add_header_tab(paragraph, position_cm: float = TEXT_WIDTH_CM, style: str = "dotted"):
     """
     เพิ่ม tab stop สำหรับหัวฟอร์ม
-    - dotted: เส้นจุดไข่ปลา (แบบเดิม)
+    - dotted: เส้นจุดไข่ปลา
+    - segmented: เส้นทึบเฉพาะช่วง tab (แบบฟอร์มราชการ)
     - solid: ไม่มี leader แล้ววาดเส้นทึบด้วยขอบล่างย่อหน้า
     """
-    leader = WD_TAB_LEADER.DOTS if style == "dotted" else WD_TAB_LEADER.SPACES
+    if style == "dotted":
+        leader = WD_TAB_LEADER.DOTS
+    elif style == "segmented":
+        leader = WD_TAB_LEADER.LINES
+    else:
+        leader = WD_TAB_LEADER.SPACES
     paragraph.paragraph_format.tab_stops.add_tab_stop(
         Cm(position_cm), WD_TAB_ALIGNMENT.RIGHT, leader
     )
@@ -294,7 +300,6 @@ def export_govdoc_to_docx(
     try:
         doc = Document()
         _setup_page_margins(doc, profile)
-        _set_doc_grid(doc, profile.line_pitch_twips)
         _apply_letter_spacing(doc, letter_spacing)
 
         # ตราครุฑ: ปิดได้ผ่าน letterhead="none"
@@ -318,6 +323,7 @@ def export_govdoc_to_docx(
             _build_internal_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options, profile)
 
         # บันทึกไฟล์
+        _set_doc_grid(doc, profile.line_pitch_twips)
         out_file = Path(output_path)
         out_file.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(out_file))
