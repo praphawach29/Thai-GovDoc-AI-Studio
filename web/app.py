@@ -1326,13 +1326,15 @@ with tab_main:
 
             # ----------------- แถบปุ่มดินสอแก้ไขด่วนตามหัวข้อต่าง ๆ -----------------
             doc = st.session_state.doc_data
+            if doc.sections is not None:
+                st.caption("โหมดหัวข้ออิสระเปิดอยู่: ใช้ตัวจัดการหัวข้อด้านล่างแทนปุ่มดินสอ")
             st.markdown("""
             <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; margin-bottom: 4px;">
                 <span style="font-size: 0.82rem; font-weight: 600; color: #1e293b;">✏️ คลิกปุ่มดินสอเพื่อแก้ไขเนื้อหาตามหัวข้อ:</span>
             </div>
             """, unsafe_allow_html=True)
 
-            if doc.doc_type == DocType.INTERNAL:
+            if doc.sections is None and doc.doc_type == DocType.INTERNAL:
                 e1, e2, e3, e4, e5, e6 = st.columns(6, gap="small")
                 with e1:
                     if st.button("✏️ หัวหนังสือ", key="btn_dlg_header", use_container_width=True, help="แก้ไข ส่วนราชการ, ที่, วันที่, เรื่อง, เรียน"):
@@ -1352,7 +1354,7 @@ with tab_main:
                 with e6:
                     if st.button("✏️ ผู้ลงนาม", key="btn_dlg_signatory", use_container_width=True, help="แก้ไขชื่อ ตำแหน่ง และลายมือชื่อ"):
                         edit_signatory_dialog()
-            else:
+            elif doc.sections is None:
                 e1, e2, e3, e4, e5, e6 = st.columns(6, gap="small")
                 with e1:
                     if st.button("✏️ หัวหนังสือ", key="btn_dlg_ext_header", use_container_width=True):
@@ -1685,7 +1687,9 @@ with tab_main:
 
             # ----------------- กล่องแก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง -----------------
             st.markdown("##### ✏️ แก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง")
-            if doc.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+            if doc.sections is not None:
+                st.caption("โหมดหัวข้ออิสระเปิดอยู่: ใช้ตัวจัดการหัวข้อด้านบนเพื่อแก้ไข/เพิ่ม/ลบ/สลับหัวข้อ")
+            elif doc.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
                 st.info("เอกสารชนิดพิเศษ: แก้ชื่อเอกสาร ความนำ ข้อความแยกข้อ และผู้ลงนามได้ด้านล่าง")
                 sp1, sp2 = st.columns(2)
                 with sp1:

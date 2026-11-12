@@ -350,7 +350,7 @@ def _build_sections_doc(
     options: ExportOptions,
     profile: LayoutProfile,
 ):
-    """เรนเดอร์เอกสารตามลำดับหัวข้ออิสระ (data.sections)"""
+    """เรนเดอร์เอกสารตามลำดับหัวข้ออิสระ (data.sections) ให้ใกล้แบบราชการ"""
     internal = data.kind == DocumentKind.INTERNAL_MEMO or data.doc_type == DocType.INTERNAL
 
     if internal:
@@ -375,25 +375,50 @@ def _build_sections_doc(
         p_g.paragraph_format.space_after = Pt(8)
         p_g.add_run().add_picture(garuda_path, height=Cm(3.0))
 
-    field_kinds = {
-        SectionKind.DEPT,
-        SectionKind.SUBJECT,
-        SectionKind.SALUTATION,
-        SectionKind.REFERENCES,
-        SectionKind.ATTACHMENTS,
-    }
-    body_indent = 0 if profile.body_indent_cm is None else profile.body_indent_cm
+    body_indent = 2.5 if profile.body_indent_cm is None else profile.body_indent_cm
 
-    def add_field(label: str, value: str, size_label: int = 20, size_value: int = 16):
+    def add_header_line(kind: SectionKind, label: str, value: str):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(2)
+        if kind == SectionKind.SUBJECT:
+            p.paragraph_format.left_indent = Cm(1.25)
+            p.paragraph_format.first_line_indent = Cm(-1.25)
+        if kind == SectionKind.DEPT:
+            r_label = p.add_run(f"{label}  ")
+            _set_run_thai_font(r_label, size_pt=20, bold=True)
+            r_value = p.add_run(insert_zwsp(value))
+            _set_run_thai_font(r_value, size_pt=16)
+            _add_header_tab(p, TEXT_WIDTH_CM, profile.header_style)
+            p.add_run("\t")
+        elif kind == SectionKind.SUBJECT:
+            r_label = p.add_run(f"{label}  ")
+            _set_run_thai_font(r_label, size_pt=20, bold=True)
+            r_value = p.add_run(insert_zwsp(value))
+            _set_run_thai_font(r_value, size_pt=16)
+            _add_header_tab(p, TEXT_WIDTH_CM, profile.header_style)
+            p.add_run("\t")
+        else:  # SALUTATION
+            r_label = p.add_run(f"{label}  ")
+            _set_run_thai_font(r_label, size_pt=16)
+            r_value = p.add_run(insert_zwsp(value))
+            _set_run_thai_font(r_value, size_pt=16)
+        if profile.header_style == "solid" and kind in (SectionKind.DEPT, SectionKind.SUBJECT):
+            _apply_bottom_border(p)
+
+    def add_multiline_field(label: str, content: str):
         p = doc.add_paragraph()
         p.paragraph_format.space_after = Pt(2)
         if label:
             r_label = p.add_run(f"{label}  ")
-            _set_run_thai_font(r_label, size_pt=size_label, bold=True)
-        r_value = p.add_run(insert_zwsp(value))
-        _set_run_thai_font(r_value, size_pt=size_value)
+            _set_run_thai_font(r_label, size_pt=16, bold=True)
+        lines = content.splitlines() or [content]
+        for index, line in enumerate(lines):
+            if index:
+                p.add_run().add_break()
+            r_value = p.add_run(insert_zwsp(line))
+            _set_run_thai_font(r_value, size_pt=16)
 
-    def add_body(section, label: str, content: str):
+    def add_body(label: str, content: str):
         p = doc.add_paragraph()
         p.paragraph_format.space_after = Pt(4)
         p.paragraph_format.first_line_indent = Cm(body_indent)
@@ -402,8 +427,11 @@ def _build_sections_doc(
             r_label = p.add_run(f"{label}  ")
             _set_run_thai_font(r_label, size_pt=16)
             r_label.underline = True
-        r_text = p.add_run(insert_zwsp(content.replace("\n", " ")))
-        _set_run_thai_font(r_text, size_pt=16)
+        for index, line in enumerate(content.splitlines() or [content]):
+            if index:
+                p.add_run().add_break()
+            r_text = p.add_run(insert_zwsp(line))
+            _set_run_thai_font(r_text, size_pt=16)
 
     for section in data.sections or []:
         kind = section.kind
@@ -447,22 +475,33 @@ def _build_sections_doc(
         if kind == SectionKind.CLOSING:
             if content:
                 p = doc.add_paragraph()
-                p.paragraph_format.left_indent = Cm(8.0)
                 p.paragraph_format.space_after = Pt(8)
+                if internal or content.startswith("จึงเรียนมาเพื่อ"):
+                    p.paragraph_format.first_line_indent = Cm(body_indent)
+                    _apply_thai_distributed(p)
+                else:
+                    p.paragraph_format.left_indent = Cm(8.0)
                 r = p.add_run(content)
                 _set_run_thai_font(r, size_pt=16)
             continue
 
-        if kind in field_kinds:
+        if kind in (SectionKind.DEPT, SectionKind.SUBJECT, SectionKind.SALUTATION):
+            if not content:
+                continue
             if kind == SectionKind.SALUTATION:
                 content = re.sub(r'^(กราบเรียน|เรียน)\s*', '', content)
             elif kind == SectionKind.SUBJECT:
                 content = re.sub(r'^เรื่อง\s*', '', content)
-            add_field(label, content)
+            add_header_line(kind, label, content)
+            continue
+
+        if kind in (SectionKind.REFERENCES, SectionKind.ATTACHMENTS):
+            if content:
+                add_multiline_field(label, content)
             continue
 
         if content:
-            add_body(section, label, content)
+            add_body(label, content)
 
     _add_page_number_header(doc, profile.page_number_style)
 
