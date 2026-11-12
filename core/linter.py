@@ -199,16 +199,36 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
                 ))
 
     # 4. ตรวจสอบความสอดคล้องของตัวเลข (Rule: RULE_NUMERAL_CONSISTENCY)
-    full_text = f"{doc.paragraph_reason} {doc.paragraph_details or ''} {doc.paragraph_purpose}"
-    has_thai_digits = bool(re.search(r'[๐-๙]', full_text))
-    has_arabic_digits = bool(re.search(r'[0-9]', full_text))
-    if has_thai_digits and has_arabic_digits:
+    # ครอบคลุมทั้งหนังสือภายนอก (3 ภาค) และบันทึกข้อความ กทม. (ทุกส่วน) ไม่ใช่เฉพาะ paragraph_*
+    body_fields = [
+        ("paragraph_reason", doc.paragraph_reason),
+        ("paragraph_details", doc.paragraph_details),
+        ("paragraph_purpose", doc.paragraph_purpose),
+        ("memo_intro", doc.memo_intro),
+        ("memo_facts", doc.memo_facts),
+        ("memo_law", doc.memo_law),
+        ("memo_consideration", doc.memo_consideration),
+        ("memo_request", doc.memo_request),
+    ]
+    checked_texts = set()
+    mixed_fields = []
+    for field_name, value in body_fields:
+        text = (value or "").strip()
+        if not text or text in checked_texts:
+            continue
+        checked_texts.add(text)
+        has_thai_digits = bool(re.search(r'[๐-๙]', text))
+        has_arabic_digits = bool(re.search(r'[0-9]', text))
+        if has_thai_digits and has_arabic_digits:
+            mixed_fields.append(field_name)
+
+    if mixed_fields:
         issues.append(LintIssue(
             rule_id="RULE_MIXED_NUMERALS",
             severity="warning",
-            field="paragraphs",
-            message="พบการใช้ทั้งเลขไทยและเลขอารบิกปะปนกันในเนื้อหา",
-            suggestion="ควรเลือกใช้เลขไทยทั้งหมด หรือเลขอารบิกทั้งหมดให้เป็นไปในทิศทางเดียวกัน"
+            field=", ".join(mixed_fields),
+            message=f"พบการใช้ทั้งเลขไทยและเลขอารบิกปะปนกันใน: {', '.join(mixed_fields)}",
+            suggestion="ควรเลือกใช้เลขไทยทั้งหมด หรือเลขอารบิกทั้งหมดให้เป็นไปในทิศทางเดียวกัน (รวมถึงเลขลำดับข้อ เช่น '๑. ๒. ๓.')"
         ))
 
     # 5. ตรวจสอบข้อมูลผู้ลงนาม
@@ -242,6 +262,25 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
                     message=f"พบชื่อไฟล์ดิบ ('{ref}') ในเอกสารอ้างถึง",
                     suggestion="ควรระบุเป็น 'หนังสือ[หน่วยงาน] ที่... ลงวันที่...' แทนการอ้างอิงชื่อไฟล์ตรงๆ"
                 ))
+
+    # 6.1 ตรวจสอบชื่อไฟล์หลุดในเนื้อความของบันทึกข้อความ (ทุกส่วน)
+    memo_field_labels = {
+        "memo_intro": "ต้นเรื่อง",
+        "memo_facts": "ข้อเท็จจริง",
+        "memo_consideration": "ข้อพิจารณาและเสนอแนะ",
+        "memo_request": "ประโยคลงท้าย",
+    }
+    for field_name, label in memo_field_labels.items():
+        value = getattr(doc, field_name, None) or ""
+        match = re.search(file_ext_pattern, value, flags=re.IGNORECASE)
+        if match:
+            issues.append(LintIssue(
+                rule_id="RULE_FILENAME_IN_METADATA",
+                severity="error",
+                field=field_name,
+                message=f"พบนามสกุลไฟล์ ('{match.group(0)}') หลุดในส่วน '{label}'",
+                suggestion="ให้ระบุชื่อเรื่องหรือข้อความจริงของหนังสือ แทนการอ้างอิงชื่อไฟล์"
+            ))
 
     # คำนวณสถานะ is_valid (ต้องไม่มี error ใดๆ)
     has_errors = any(i.severity == "error" for i in issues)

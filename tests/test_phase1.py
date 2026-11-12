@@ -74,7 +74,9 @@ def test_thai_segmenter():
     text = "หนังสือราชการตามระเบียบสำนักนายกรัฐมนตรี"
     tokens = segment_thai_words(text)
     assert len(tokens) > 1
-    assert "หนังสือ" in tokens or "ราชการ" in tokens
+    # PyThaiNLP อาจคงคำประสม "หนังสือราชการ" เป็นคำเดียว ส่วน fallback จะแยกคำ
+    assert "".join(tokens) == text
+    assert any(t in tokens for t in ("หนังสือ", "ราชการ", "หนังสือราชการ"))
 
     # ทดสอบการแทรก ZWSP (\u200b)
     zwsp_text = insert_zwsp(text)

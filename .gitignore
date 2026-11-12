@@ -5,5 +5,10 @@ uploads/*
 !uploads/.gitkeep
 data/*.db
 data/*.db-journal
+data/pythainlp/
 .env
+.venv/
+tools/
+.tmp_*
+.edge-test/
 

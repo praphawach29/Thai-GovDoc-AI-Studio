@@ -4,7 +4,9 @@ thai_segmenter.py — เครื่องมือตัดคำภาษา�
 สำหรับใช้งานในเอกสารราชการไทยโดยเฉพาะ
 """
 
+import os
 import re
+from pathlib import Path
 from typing import List
 
 # พจนานุกรมคำภาษาไทยพื้นฐานและคำศัพท์เฉพาะในระเบียบงานสารบรรณ
@@ -50,6 +52,21 @@ def _is_thai_char(ch: str) -> bool:
     return '\u0e01' <= ch <= '\u0e5b'
 
 
+def _configure_pythainlp_data_dir() -> None:
+    """
+    กำหนดที่เก็บข้อมูล PyThaiNLP ให้อยู่ภายในโปรเจกต์ (data/pythainlp)
+    เพื่อไม่ให้พยายามเขียนไปที่ ~/pythainlp-data ซึ่งอาจถูก sandbox/สิทธิ์บล็อก
+    """
+    if os.environ.get("PYTHAINLP_DATA") or os.environ.get("PYTHAINLP_DATA_DIR"):
+        return
+    data_dir = Path(__file__).resolve().parent.parent / "data" / "pythainlp"
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["PYTHAINLP_DATA"] = str(data_dir)
+    except OSError:
+        pass
+
+
 def segment_thai_words(text: str) -> List[str]:
     """
     ตัดคำภาษาไทย:
@@ -60,9 +77,11 @@ def segment_thai_words(text: str) -> List[str]:
         return []
 
     try:
+        _configure_pythainlp_data_dir()
         import pythainlp
         return pythainlp.tokenize.word_tokenize(text, engine="newmm")
-    except ImportError:
+    except Exception:
+        # ไม่มีไลบรารี/ไม่มี corpus/ออฟไลน์ -> ใช้ fallback ด้านล่างเสมอ
         pass
 
     # Fallback: Rule-based / Longest matching tokenizer

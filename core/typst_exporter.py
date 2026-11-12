@@ -137,21 +137,65 @@ def export_govdoc_to_typst(data: GovDocumentSchema, output_typ_path: str) -> str
     return str(out_file)
 
 
+def find_typst_binary() -> Optional[str]:
+    """
+    ค้นหา Typst CLI: ใช้ตัวที่อยู่ใน PATH ก่อน หากไม่มีให้ใช้ binary ที่มากับโปรเจกต์
+    (tools/typst/typst.exe) เพื่อให้เครื่องที่ติดตั้งแบบ portable ใช้งานได้โดยไม่ต้องแก้ PATH
+    """
+    found = shutil.which("typst")
+    if found:
+        return found
+
+    root_dir = Path(__file__).resolve().parent.parent
+    candidates = [
+        root_dir / "tools" / "typst" / "typst.exe",
+        root_dir / "tools" / "typst.exe",
+        root_dir / "tools" / "typst" / "typst",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 def compile_typst_to_pdf(typ_path: str, output_pdf_path: str) -> Tuple[bool, str]:
     """
-    คอมไพล์ไฟล์ .typ เป็น .pdf ผ่าน Typst CLI
+    คอมไพล์ไฟล์ .typ เป็น .pdf
+    ลำดับ: Typst CLI (ถ้ามี) -> Python binding `typst` (pip install typst)
     คืนค่า (ความสำเร็จ True/False, ข้อความ Error หรือ Success)
     """
-    typst_bin = shutil.which("typst")
-    if not typst_bin:
-        return False, "Typst CLI is not installed on this system."
+    typst_bin = find_typst_binary()
+    if typst_bin:
+        cmd = [typst_bin, "compile"]
+        font_dir = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+        if font_dir.exists():
+            cmd += ["--font-path", str(font_dir)]
+        cmd += [typ_path, output_pdf_path]
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return True, f"Successfully compiled {output_pdf_path}"
+        except subprocess.CalledProcessError as e:
+            return False, f"Typst compilation failed: {e.stderr}"
+        except Exception as e:
+            return False, f"Execution error: {str(e)}"
 
-    cmd = [typst_bin, "compile", typ_path, output_pdf_path]
+    # ไม่มี CLI: ใช้ Python binding (pip install typst) ซึ่งฝัง compiler มาในตัว
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return True, f"Successfully compiled {output_pdf_path}"
-    except subprocess.CalledProcessError as e:
-        return False, f"Typst compilation failed: {e.stderr}"
+        import typst as typst_py
+    except ImportError:
+        return False, "Typst CLI/Python package is not installed on this system."
+
+    root_dir = Path(typ_path).resolve().parent
+    font_dir = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+    font_paths = [str(font_dir)] if font_dir.exists() else []
+    try:
+        typst_py.compile(
+            input=str(typ_path),
+            output=str(output_pdf_path),
+            root=str(root_dir),
+            font_paths=font_paths,
+        )
+        return True, f"Successfully compiled {output_pdf_path} (Python binding)"
     except Exception as e:
-        return False, f"Execution error: {str(e)}"
+        return False, f"Typst compilation failed: {e}"
 

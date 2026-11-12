@@ -193,6 +193,7 @@ def test_ocr_space_cleaning_and_date_parsing():
     assert "การจัดการแข่งขัน" in meta["subject"]
 
 
+@pytest.mark.requires_ocr
 def test_extract_source_document_real_scanned_pdf():
     """ทดสอบการประมวลผลไฟล์สแกนจริง งานวิ่งเปี้ยว-2569.pdf ผ่าน Docker Tesseract"""
     pdf_path = Path("uploads/งานวิ่งเปี้ยว-2569.pdf")

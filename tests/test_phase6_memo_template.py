@@ -14,7 +14,7 @@ import docx
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel
 from core.templates_library import PRESET_TEMPLATES
 from core.word_exporter import export_govdoc_to_docx
-from core.pdf_exporter import get_pdf_bytes, generate_govdoc_html
+from core.pdf_exporter import generate_govdoc_html
 from core.typst_exporter import generate_typst_content
 from core.ai_drafter import draft_from_context_rule_based, DraftingIntent
 from core.memo_layout import line_indent_cm, split_consideration_and_request
@@ -179,7 +179,8 @@ def test_word_export_legacy_internal(legacy_doc, tmp_path):
     assert "ต้นเรื่อง" in text and "จึงเรียนมาเพื่อโปรดทราบ" in text
 
 
-def test_pdf_html_memo(bma_cohost_doc):
+@pytest.mark.requires_browser
+def test_pdf_html_memo(bma_cohost_doc, export_pdf):
     html_code = generate_govdoc_html(bma_cohost_doc)
     for title in BMA_ORDER:
         assert title in html_code
@@ -189,7 +190,7 @@ def test_pdf_html_memo(bma_cohost_doc):
     assert "counter(page, thai)" in html_code  # เลขหน้าเลขไทย
     assert "@page :first" in html_code
 
-    pdf_bytes = get_pdf_bytes(bma_cohost_doc)
+    pdf_bytes = export_pdf(bma_cohost_doc)
     assert pdf_bytes.startswith(b"%PDF-")
     assert len(pdf_bytes) > 20000
 

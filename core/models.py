@@ -7,6 +7,8 @@ from enum import Enum
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
+from core.thai_segmenter import to_thai_numerals
+
 
 class DocType(str, Enum):
     EXTERNAL = "external"    # หนังสือภายนอก (ครุฑ 3 ซม. กึ่งกลาง)
@@ -194,7 +196,9 @@ class SourceCase(BaseModel):
                     author_pos += f" ({note.position})"
                 date_str = f" เมื่อวันที่ {note.order_date}" if note.order_date else ""
                 target_str = f" {note.target}" if note.target else ""
-                routing_lines.append(f"๑.{idx} {author_pos} ได้มีบันทึกเกษียนสั่งการ{target_str}{date_str} ว่า \"{note.order_text}\"")
+                # เลขลำดับข้อต้องเป็นเลขไทยล้วน (๑. ๒. ๓.) — ห้ามผสม "๑.1"
+                ordinal = to_thai_numerals(str(idx))
+                routing_lines.append(f"{ordinal}. {author_pos} ได้มีบันทึกเกษียนสั่งการ{target_str}{date_str} ว่า \"{note.order_text}\"")
             intro_parts.append("ต่อมา ได้มีบันทึกเกษียนสั่งการตามลำดับชั้น ดังนี้:\n" + "\n".join(routing_lines))
 
         return "\n\n".join(intro_parts)

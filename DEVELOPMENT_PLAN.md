@@ -1,7 +1,7 @@
 # 📑 แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบ (Development Plan & Architecture Specification)
 ## Thai GovDoc AI Studio — ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ
-**เวอร์ชันเอกสาร:** 2.1 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
-**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8 (ผ่านการทดสอบ 90/90 Tests, 100% Pass)  
+**เวอร์ชันเอกสาร:** 2.2 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
+**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8 (93 tests: ผ่าน 88 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
 **อ้างอิงกฎหมายและระเบียบ:** ระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม, ระเบียบกรุงเทพมหานครว่าด้วยงานสารบรรณ
 
 ---
@@ -73,7 +73,7 @@ flowchart TD
 
 ## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8)
 
-ระบบผ่านการพัฒนาและทดสอบอย่างเข้มงวด ครบถ้วนทั้ง 8 ระยะ รวม **90 การทดสอบ (100% Pass)**:
+ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **93 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
 
 | ระยะการพัฒนา (Phase) | ขอบเขตงานสำคัญ | ไฟล์และโมดูลที่เกี่ยวข้อง | สถานะ |
 | :--- | :--- | :--- | :---: |
@@ -216,7 +216,7 @@ class SourceCase(BaseModel):
   - [x] บันทึกข้อความแบ่ง 4 หัวข้อมาตรฐาน กทม. + ประโยคลงท้ายตามระดับชั้น
   - [x] การเยื้องระดับชั้น 2.5, 3.5, 4.5 ซม. เป็นไปตามระเบียบงานสารบรรณ
 - **Phase 7 (Multi-Engine OCR & Profile):**
-  - [x] ใช้งาน Docker Tesseract (`tha-tesseract:latest`) แบบออฟไลน์ได้
+  - [x] มีกลไก Multi-Engine OCR (Gemini Vision + Docker Tesseract) และ skip อัตโนมัติเมื่อไม่มี engine
   - [x] กลไก Fail-Safe หยุดการยกร่างเมื่อ OCR อ่านไม่ออก ป้องกันชื่อไฟล์หลุดเข้าเนื้อหา
   - [x] บันทึกและดึงโปรไฟล์หน่วยงานของผู้ใช้จาก `data/user_profile.json`
 - **Phase 8 (Case Dossier & Chain of Command):**
@@ -274,8 +274,8 @@ class SourceCase(BaseModel):
 │   └── edocument.db            # ฐานข้อมูลสมุดทะเบียนคุมสารบรรณ
 │
 ├── uploads/                    # โฟลเดอร์จัดเก็บไฟล์ต้นเรื่องที่แนบเข้ามา
-├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun New
-├── tests/                      # ชุดทดสอบครอบคลุมทุกโมดูล (90 Passed)
+├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun PSK 4 น้ำหนัก
+├── tests/                      # ชุดทดสอบ 93 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
 └── web/                        # ระบบหน้าบ้าน (Web UI)
     └── app.py                  # แอปพลิเคชัน Streamlit หน้าจอ 3 แท็บ (ร่าง, ทะเบียน, ตั้งค่า)
 ```
@@ -289,10 +289,18 @@ class SourceCase(BaseModel):
 | **สภาพแวดล้อม (OS & Runtime)** | Windows 10/11, Python 3.12.0 x64 |
 | **เว็บเฟรมเวิร์ก (Web Framework)** | Streamlit 1.52.0 (รันบนพอร์ต 8501 แบบ Headless) |
 | **เกตเวย์องค์กร (API Gateway)** | FastAPI + Uvicorn ASGI (`core/api.py`) |
-| **เครื่องมือเรนเดอร์ PDF** | Typst CLI 0.14+ (คอมไพล์ A4 Vector PDF ในเวลา 50-100 ms) |
-| **เครื่องมือสร้าง Word** | `python-docx` 1.2.0 ร่วมกับ `pythainlp` แทรก ZWSP (`\u200b`) และเปิดโหมด Thai Distributed |
+| **เครื่องมือเรนเดอร์ PDF** | Typst 0.15 (CLI หรือ Python binding `typst` ที่ฝัง compiler) — คอมไพล์ A4 Vector PDF ในเวลา 50-100 ms |
+| **ฟอนต์สำหรับ PDF** | TH Sarabun PSK 4 น้ำหนัก ใน `assets/fonts` (ระเบียบอนุญาต TH Sarabun New หรือ TH Sarabun PSK) |
+| **เครื่องมือสร้าง Word** | `python-docx` 1.2.0 ร่วมกับ `pythainlp` 5.4.0 แทรก ZWSP (`\u200b`) และเปิดโหมด Thai Distributed |
 | **เครื่องมือ OCR ท้องถิ่น** | Docker Engine + Image `tha-tesseract:latest` (Alpine + Tesseract 5.5.2 ภาษา `tha+eng`) |
 | **เครื่องมือ Cloud AI** | Google Gemini API (`gemini-2.5-flash`) ผ่านไลบรารี `google-genai` |
 | **ฐานข้อมูล (Database)** | SQLite 3 (ไฟล์ `audit.db` และ `edocument.db`) |
-| **สถานะชุดทดสอบ** | 90/90 ผ่านทั้งหมด (`python -m pytest`) |
+| **สถานะชุดทดสอบ** | 93 tests: 88 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
+
+### ข้อจำกัดที่ทราบ (Known Limitations)
+
+1. **PDF ผ่าน headless browser**: ในสภาพแวดล้อมที่ถูก sandbox จำกัดสิทธิ์ (เช่น CI บางระบบ) Microsoft Edge/Chrome อาจเปิดโพรไฟล์ไม่ได้ ทำให้เทส PDF 4 รายการ skip — บนเครื่องผู้ใช้ปกติจะทำงานได้
+2. **OCR**: ต้องมี `GEMINI_API_KEY` หรือ Docker image `tha-tesseract`; หากไม่มี เทส OCR จะ skip และระบบจะเข้าสู่ Fail-Safe แทนการเดาข้อความ
+3. **ฟอนต์ใน Word**: ไฟล์ `.docx` ระบุชื่อฟอนต์ TH Sarabun New ตามมาตรฐาน แต่เครื่องปลายทางต้องติดตั้งฟอนต์นี้ (PDF ฝัง TH Sarabun PSK จาก `assets/fonts` แล้ว)
+4. **เลขข้อในสายเกษียน**: ระบบสร้างเลขไทย `๑. ๒. ๓.`; หากหน่วยงานเลือกใช้เลขอารบิกทั้งฉบับ ต้องแปลงภายหลังด้วยคำสั่งสลับเลขของ Copilot
 

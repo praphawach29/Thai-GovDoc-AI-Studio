@@ -6,6 +6,8 @@ import pytest
 from core.models import SourceCase, SourceItem, RoutingNote, SourceDocumentContext, DocType
 from core.case_dossier import parse_case_dossier
 from core.ai_drafter import draft_from_context_rule_based, DraftingIntent
+from core.linter import lint_gov_document
+from core.templates_library import PRESET_TEMPLATES
 
 
 SAMPLE_DOSSIER_TEXT = """
@@ -101,6 +103,9 @@ def test_ai_drafter_integrates_case_dossier():
     # ข้อเท็จจริงต้องบรรจุคำขอความอนุเคราะห์
     assert doc.memo_facts is not None
     assert "ขอความอนุเคราะห์ใช้สถานที่" in doc.memo_facts or "ตราสัญลักษณ์" in doc.memo_facts
+    # เลขลำดับข้อต้องเป็นเลขไทยล้วน ไม่ใช่ "๑.1"
+    assert "๑.1" not in doc.memo_facts
+    assert "๑." in doc.memo_facts
 
 
 def test_effective_incoming_item_handles_replacement():
@@ -112,3 +117,39 @@ def test_effective_incoming_item_handles_replacement():
     assert effective is not None
     assert effective.item_id == "doc-new"
     assert effective.doc_no == "2/2570"
+
+
+def test_routing_notes_use_sequential_thai_ordinals():
+    """เลขลำดับข้อของสายเกษียนต้องเป็น ๑. ๒. ๓. ไม่ใช่ ๑.1 / ๑.2"""
+    case = parse_case_dossier(SAMPLE_DOSSIER_TEXT, filename="วิ่งเปี้ยว-แฟ้มเรื่อง.pdf")
+    case.routing_notes.append(RoutingNote(author="นายทดสอบ ระบบ", order_text="มอบให้ดำเนินการต่อ"))
+
+    intro = case.synthesize_memo_intro()
+    assert "๑. " in intro
+    assert "๒. " in intro
+    assert "๑.1" not in intro
+    assert "๑.2" not in intro
+
+
+def test_linter_checks_numerals_inside_memo_sections():
+    """Linter ต้องจับเลขไทยปนอารบิกใน memo_facts ไม่ใช่เฉพาะ paragraph_*"""
+    doc = PRESET_TEMPLATES["bma_memo_standard_template"].schema.model_copy(deep=True)
+    doc.memo_facts = "๑. ผู้ขอแจ้งความประสงค์ จำนวน 5 รายการ"
+
+    res = lint_gov_document(doc)
+    assert any(
+        i.rule_id == "RULE_MIXED_NUMERALS" and "memo_facts" in i.field
+        for i in res.warnings
+    ), [i.model_dump() for i in res.issues]
+
+
+def test_linter_checks_filename_leak_inside_memo_sections():
+    """Linter ต้องจับชื่อไฟล์หลุดในเนื้อหาบันทึกข้อความ ไม่ใช่แค่เรื่อง/อ้างถึง"""
+    doc = PRESET_TEMPLATES["bma_memo_standard_template"].schema.model_copy(deep=True)
+    doc.memo_intro = "ตามหนังสือ งานวิ่งเปี้ยว-2569.pdf ที่แนบมา"
+
+    res = lint_gov_document(doc)
+    assert any(
+        i.rule_id == "RULE_FILENAME_IN_METADATA" and i.field == "memo_intro"
+        for i in res.errors
+    ), [i.model_dump() for i in res.issues]

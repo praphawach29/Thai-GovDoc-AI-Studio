@@ -15,7 +15,7 @@ from PIL import Image
 
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext
 from core.templates_library import PRESET_TEMPLATES
-from core.pdf_exporter import get_pdf_bytes, export_govdoc_to_pdf, generate_govdoc_html
+from core.pdf_exporter import generate_govdoc_html
 from core.word_exporter import export_govdoc_to_docx
 from core.typst_exporter import generate_typst_content
 from core.ai_drafter import draft_from_context_llm, DraftingIntent
@@ -44,41 +44,26 @@ def dummy_signature_file(tmp_path):
     return str(sig_path)
 
 
-def _has_headless_browser() -> bool:
-    from core.pdf_exporter import _find_browser_executable
-    return _find_browser_executable() is not None
-
-
-@pytest.mark.skipif(not _has_headless_browser(), reason="No headless browser (Edge/Chrome) installed")
-def test_pdf_export_external(sample_external_doc):
+@pytest.mark.requires_browser
+def test_pdf_export_external(sample_external_doc, export_pdf):
     """ทดสอบการสร้าง PDF หนังสือภายนอก (ตราครุฑ 3 ซม. กึ่งกลางหน้า)"""
-    try:
-        pdf_bytes = get_pdf_bytes(sample_external_doc)
-        assert pdf_bytes is not None
-        assert len(pdf_bytes) > 20000  # ต้องมีขนาดอย่างน้อย 20KB
-        assert pdf_bytes.startswith(b"%PDF-"), "ต้องเป็นไฟล์ PDF ที่ถูกต้อง (Header %PDF-)"
-    except RuntimeError as e:
-        if "Access is denied" in str(e) or "การสร้างไฟล์ PDF ล้มเหลว" in str(e):
-            pytest.skip(f"Environment sandbox blocks headless browser execution: {e}")
-        raise
+    pdf_bytes = export_pdf(sample_external_doc)
+    assert pdf_bytes is not None
+    assert len(pdf_bytes) > 20000  # ต้องมีขนาดอย่างน้อย 20KB
+    assert pdf_bytes.startswith(b"%PDF-"), "ต้องเป็นไฟล์ PDF ที่ถูกต้อง (Header %PDF-)"
 
 
-@pytest.mark.skipif(not _has_headless_browser(), reason="No headless browser (Edge/Chrome) installed")
-def test_pdf_export_internal(sample_internal_doc):
+@pytest.mark.requires_browser
+def test_pdf_export_internal(sample_internal_doc, export_pdf):
     """ทดสอบการสร้าง PDF หนังสือภายใน / บันทึกข้อความ (ตราครุฑ 1.5 ซม. มุมบนซ้าย)"""
-    try:
-        pdf_bytes = get_pdf_bytes(sample_internal_doc)
-        assert pdf_bytes is not None
-        assert len(pdf_bytes) > 20000
-        assert pdf_bytes.startswith(b"%PDF-")
-    except RuntimeError as e:
-        if "Access is denied" in str(e) or "การสร้างไฟล์ PDF ล้มเหลว" in str(e):
-            pytest.skip(f"Environment sandbox blocks headless browser execution: {e}")
-        raise
+    pdf_bytes = export_pdf(sample_internal_doc)
+    assert pdf_bytes is not None
+    assert len(pdf_bytes) > 20000
+    assert pdf_bytes.startswith(b"%PDF-")
 
 
-@pytest.mark.skipif(not _has_headless_browser(), reason="No headless browser (Edge/Chrome) installed")
-def test_pdf_with_signature_embedding(sample_external_doc, dummy_signature_file):
+@pytest.mark.requires_browser
+def test_pdf_with_signature_embedding(sample_external_doc, dummy_signature_file, export_pdf):
     """ทดสอบการฝังลายมือชื่อดิจิทัลลงใน PDF"""
     sample_external_doc.signature_image_path = dummy_signature_file
     html_code = generate_govdoc_html(sample_external_doc)
@@ -87,14 +72,9 @@ def test_pdf_with_signature_embedding(sample_external_doc, dummy_signature_file)
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_out:
         out_path = tmp_out.name
     try:
-        try:
-            exported_path = export_govdoc_to_pdf(sample_external_doc, out_path)
-            assert os.path.exists(exported_path)
-            assert os.path.getsize(exported_path) > 20000
-        except RuntimeError as e:
-            if "Access is denied" in str(e) or "การสร้างไฟล์ PDF ล้มเหลว" in str(e):
-                pytest.skip(f"Environment sandbox blocks headless browser execution: {e}")
-            raise
+        exported_path = export_pdf(sample_external_doc, out_path)
+        assert os.path.exists(exported_path)
+        assert os.path.getsize(exported_path) > 20000
     finally:
         if os.path.exists(out_path):
             os.remove(out_path)

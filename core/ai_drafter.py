@@ -168,7 +168,11 @@ def draft_from_context_rule_based(ctx: SourceDocumentContext,
 
     memo_facts = paragraph_details if doc_type == DocType.INTERNAL else None
     if doc_type == DocType.INTERNAL and getattr(ctx, "source_case", None) and ctx.source_case.requested_items:
-        items_bullets = "\n".join([f"๑.{i} {req}" for i, req in enumerate(ctx.source_case.requested_items, 1)])
+        # เลขลำดับข้อเป็นเลขไทยล้วน (๑. ๒. ๓.) ไม่ผสมเลขอารบิก
+        items_bullets = "\n".join([
+            f"{to_thai_numerals(str(i))}. {req}"
+            for i, req in enumerate(ctx.source_case.requested_items, 1)
+        ])
         if memo_facts:
             memo_facts = f"{memo_facts}\nโดยมีประเด็นคำขอดังนี้\n{items_bullets}"
         else:

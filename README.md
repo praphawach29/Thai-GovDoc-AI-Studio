@@ -54,9 +54,11 @@
 ├── PROMPT_ENGINEERING.md   # Prompts & AI Drafting Schemas
 ├── EXPORT_ENGINE.md        # รายละเอียด Export (Typst + Word)
 ├── Dockerfile.tesseract    # Docker Container สำหรับ Local Thai OCR
+├── requirements.txt        # Python dependencies (เวอร์ชันที่ทดสอบแล้ว)
 │
 ├── core/                   # ระบบแกนหลัก (Core Business Logic)
-│   ├── models.py           # Data Models (GovDoc, UserProfile, SourceContext)
+│   ├── models.py           # Data Models (GovDoc, UserProfile, SourceContext, SourceCase)
+│   ├── case_dossier.py     # ตัวประมวลผลแฟ้มเรื่องและสายเกษียนสั่งการ (Phase 8)
 │   ├── profile_manager.py  # ระบบจัดการโปรไฟล์หน่วยงานของผู้ใช้
 │   ├── extractor.py        # Multi-Engine OCR (Gemini + Docker) & Fail-Safe Ingestion
 │   ├── ocr_preprocessor.py # ตัวประมวลผลภาพ (Deskew, CLAHE, Binarize)
@@ -64,7 +66,9 @@
 │   ├── linter.py           # Automated Sarabun Linter (ตรวจระเบียบและชื่อไฟล์ดิบ)
 │   ├── memo_layout.py      # ตัวจัดหน้าบันทึกข้อความ กทม. (Indentation 2.5/3.5/4.5 ซม.)
 │   ├── word_exporter.py    # ตัวสร้างไฟล์ Word (.docx) พร้อมตัดคำ ZWSP ชิดขอบ
-│   ├── typst_exporter.py   # ตัวคอมไพล์ PDF เวกเตอร์ด้วย Typst
+│   ├── typst_exporter.py   # ตัวคอมไพล์ PDF เวกเตอร์ด้วย Typst (CLI หรือ Python binding)
+│   ├── pdf_exporter.py     # ตัวเรนเดอร์ PDF ผ่าน HTML + headless browser
+│   ├── api.py              # Enterprise REST API Gateway (FastAPI)
 │   ├── audit.py            # ประวัติเวอร์ชันและระบบ Diff Engine
 │   ├── copilot.py          # AI Copilot ขัดเกลาภาษาเฉพาะจุด
 │   ├── registry.py         # ทะเบียนคุมสารบรรณและออกเลขที่หนังสือ
@@ -81,9 +85,9 @@
 │
 ├── assets/                 # ทรัพยากรภาพและฟอนต์
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
-│   └── fonts/              # ฟอนต์ TH Sarabun New
+│   └── fonts/              # TH Sarabun PSK 4 น้ำหนัก (Regular/Bold/Italic/BoldItalic)
 │
-├── tests/                  # ชุดทดสอบอัตโนมัติ (84 Passed, 100%)
+├── tests/                  # ชุดทดสอบ 93 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
 └── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
     └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
 ```
@@ -93,9 +97,10 @@
 ## 🚀 แผนการเริ่มต้นและพัฒนาต่อ (Getting Started)
 
 ### 1. ความต้องการของระบบ (Prerequisites)
-- **Python 3.10+** (ติดตั้งแพ็กเกจ `fastapi`, `uvicorn`, `python-docx`, `pdfplumber`, `streamlit`, `pythainlp`)
-- **Typst CLI** (สำหรับส่งออก PDF คุณภาพสูง: ดาวน์โหลดจาก [github.com/typst/typst](https://github.com/typst/typst))
-- **ฟอนต์ TH Sarabun New** (ติดตั้งในเครื่อง หรือวางในโฟลเดอร์ `assets/fonts`)
+- **Python 3.10+** — ติดตั้ง dependencies ทั้งหมดด้วย `python -m pip install -r requirements.txt`
+- **Typst** — ใช้ได้ทั้ง Typst CLI หรือ Python binding `typst` (ติดตั้งจาก `requirements.txt` และฝัง compiler ไว้ในตัว)
+- **ฟอนต์** — โปรเจกต์แนบ **TH Sarabun PSK** ครบ 4 น้ำหนัก (Regular/Bold/Italic/BoldItalic) ไว้ใน `assets/fonts` สำหรับเรนเดอร์ PDF (ระเบียบงานสารบรรณอนุญาตให้ใช้ TH Sarabun New หรือ TH Sarabun PSK)
+- **Docker (ทางเลือก)** — สำหรับ OCR ออฟไลน์ด้วย image `tha-tesseract:latest` (ดู `Dockerfile.tesseract`)
 
 ### 2. ขั้นตอนการทำงานแบบย่อ
 1. **แนบไฟล์:** ผู้ใช้อัปโหลดไฟล์ต้นเรื่องผ่านหน้าเว็บ (รองรับ PDF ดิจิทัล, สแกน, รูปภาพ, Word)
@@ -107,7 +112,8 @@
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
 
-- **สถานะชุดทดสอบ:** ผ่านการทดสอบทั้งหมด **84/84 Tests (100% Pass)**
+- **สถานะชุดทดสอบ:** **93 tests — ผ่าน 88 / ข้าม 5 / ล้มเหลว 0**
+  - เทส PDF (headless browser) และ OCR จะ **ข้ามอัตโนมัติ** เมื่อเครื่องไม่มี browser/API key/Docker โดยใช้ marker กลางใน `tests/conftest.py` (ไม่ถูกนับเป็น fail)
 - **ระยะการพัฒนาที่แล้วเสร็จ:**
   - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
   - ✅ **Phase 2:** OpenCV Ingestion, Contrast, Deskew, DOCX & PDF Plumber Parser
@@ -116,8 +122,8 @@
   - ✅ **Phase 5:** Digital Signature Embedding, 8 Preset Categories & AI Fallback
   - ✅ **Phase 6:** Standard BMA Memo Structure (4 ส่วนตามแบบ กทม.) & Hierarchy Routing
   - ✅ **Phase 7:** Multi-Engine OCR (Docker Tesseract + Gemini Vision), Fail-Safe Ingestion, `RULE_FILENAME_IN_METADATA` & Persistent User Organization Profile
+  - ✅ **Phase 8:** Multi-Document Case Dossier Modeling (แฟ้มเรื่อง, สายเกษียนสั่งการ และการสังเคราะห์ย่อหน้า "ต้นเรื่อง")
 - **แผนงานระยะถัดไป (Roadmap):**
-  - 🚩 **Phase 8:** Multi-Document Case Dossier Modeling (แฟ้มเรื่องและสายการสั่งการ)
   - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
   - 🚩 **Phase 10:** Hierarchical Approval Workflow & E-Office Integration
 

@@ -13,7 +13,7 @@ import pytest
 
 from core.models import DocType
 from core.templates_library import PRESET_TEMPLATES
-from core.typst_exporter import generate_typst_content
+from core.typst_exporter import find_typst_binary, generate_typst_content
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCKER_IMAGE = "ghcr.io/typst/typst:latest"
@@ -29,14 +29,19 @@ def _docker_ready() -> bool:
 
 
 def _compile_cmd(workdir: Path, main: str):
-    if shutil.which("typst"):
-        return [shutil.which("typst"), "compile", str(workdir / main), str(workdir / "out.pdf")], None
+    typst_bin = find_typst_binary()
+    if typst_bin:
+        return [typst_bin, "compile", str(workdir / main), str(workdir / "out.pdf")], None
     if _docker_ready():
-        return ["docker", "run", "--rm", "-v", f"{workdir}:/work", "-w", "/work",
-                DOCKER_IMAGE, "compile", main, "out.pdf"], None
+        return ["docker", "run", "--rm",
+                "-v", f"{workdir}:/work",
+                "-v", f"{ROOT / 'assets' / 'fonts'}:/fonts:ro",
+                "-w", "/work",
+                DOCKER_IMAGE, "compile", "--font-path", "/fonts", main, "out.pdf"], None
     return None, "ไม่มี typst CLI หรือ Docker"
 
 
+@pytest.mark.requires_typst
 @pytest.mark.parametrize("template_id, style", [
     ("bma_cohost_request", "bma"),
     ("bma_general_memo", "numbered"),
@@ -59,8 +64,17 @@ def test_typst_compiles(tmp_path, template_id, style):
 
     cmd, reason = _compile_cmd(tmp_path, "main.typ")
     if cmd is None:
-        pytest.skip(reason)
-    res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=180)
-    assert res.returncode == 0, res.stderr
+        # ไม่มี CLI/Docker: ใช้ Python binding (pip install typst) ตัวเดียวกับที่ production ใช้
+        from core.typst_exporter import compile_typst_to_pdf
+
+        ok, message = compile_typst_to_pdf(
+            str(tmp_path / "main.typ"), str(tmp_path / "out.pdf")
+        )
+        assert ok, message
+    else:
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=180)
+        assert res.returncode == 0, res.stderr
     pdf = tmp_path / "out.pdf"
     assert pdf.exists() and pdf.read_bytes().startswith(b"%PDF-")
+    # ต้องฝังฟอนต์ตระกูล Sarabun จาก assets/fonts ไม่ใช่ fallback ภาษาอังกฤษ
+    assert b"Sarabun" in pdf.read_bytes()

@@ -1,0 +1,36 @@
+# Thai GovDoc AI Studio - Python dependencies (verified on Python 3.12 / Windows)
+#
+# Install project-local (recommended):
+#   python -m venv .venv --system-site-packages
+#   .venv\Scripts\python -m pip install -r requirements.txt
+#   .venv\Scripts\python -m pytest
+#
+# Notes:
+# - `typst` is the Python binding with the compiler embedded; it is used when
+#   the Typst CLI is not on PATH (see core/typst_exporter.py).
+# - `google-genai` / `openai` are only needed when API keys are configured.
+# - Offline OCR requires Docker image `tha-tesseract:latest` (see Dockerfile.tesseract).
+
+# --- Core / Web ---
+streamlit==1.52.0
+fastapi==0.138.0
+uvicorn==0.49.0
+python-multipart==0.0.32
+pydantic==2.12.5
+
+# --- Thai NLP & Documents ---
+pythainlp==5.4.0
+python-docx==1.2.0
+pdfplumber==0.11.10
+opencv-python==5.0.0.93
+pillow==12.3.0
+
+# --- Rendering ---
+typst==0.15.2
+
+# --- AI providers (optional) ---
+google-genai==2.10.0
+openai==2.48.0
+
+# --- Testing ---
+pytest==9.1.1
