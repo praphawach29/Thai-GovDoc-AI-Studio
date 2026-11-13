@@ -1,7 +1,7 @@
 # 📑 แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบ (Development Plan & Architecture Specification)
 ## Thai GovDoc AI Studio — ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ
 **เวอร์ชันเอกสาร:** 2.2 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
-**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.9 (136 tests: ผ่าน 131 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
+**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.11 (153 tests: ผ่าน 148 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
 **อ้างอิงกฎหมายและระเบียบ:** ระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม, ระเบียบกรุงเทพมหานครว่าด้วยงานสารบรรณ
 
 ---
@@ -71,9 +71,9 @@ flowchart TD
 
 ---
 
-## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.9)
+## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.11)
 
-ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะ รวม **136 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
+ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะหลัก (1–8.11) รวม **153 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
 
 | ระยะการพัฒนา (Phase) | ขอบเขตงานสำคัญ | ไฟล์และโมดูลที่เกี่ยวข้อง | สถานะ |
 | :--- | :--- | :--- | :---: |
@@ -94,6 +94,10 @@ flowchart TD
 | **Phase 8.7: Flexible Sections** | • หัวข้อเอกสาร 12 ส่วนแบบเพิ่ม/ลบ/แก้ไข/สลับลำดับได้<br/>• `sections` เป็นแหล่งความจริง + sync กลับฟิลด์เดิม<br/>• Word/Preview เรนเดอร์ตามลำดับหัวข้อจริง | `core/sections.py`<br/>`core/models.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8.8: Header Fit & Blank Number** | • บีบตัวอักษร (w:w) ให้บรรทัดส่วนราชการอยู่ในบรรทัดเดียว<br/>• เลขที่หนังสือแบบเว้นช่อง ......../พ.ศ. ให้เขียนเลขเอง<br/>• Checkbox แสดง/ซ่อนแต่ละหัวข้อ และซ่อนอัตโนมัติเมื่อเนื้อหาว่าง | `core/models.py`<br/>`core/thai_date.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8.9: Edit Status & Save** | • สถานะ ฉบับร่าง/กำลังแก้ไข/บันทึกแล้ว<br/>• ปุ่มบันทึกทั้งหมด + Audit Trail ทุกครั้ง<br/>• เขียนสถานะลง DOCX core properties | `core/models.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
+| **Phase 8.10: Grounding & Secret Enforcement (Step 0)** | • ลบข้อเท็จจริง/ข้อกฎหมายที่ rule-based และแม่แบบแต่งเอง<br/>• บังคับ `secret`/`allow_cloud` ที่ backend (extractor/API/UI) แบบ fail-closed<br/>• เลขที่หนังสือ `......../พ.ศ.` และไม่จองเลขระหว่างร่าง | `core/ai_drafter.py`<br/>`core/security.py`<br/>`core/extractor.py`<br/>`core/api.py`<br/>`core/templates_library.py`<br/>`web/app.py` | ✅ สำเร็จ |
+| **Phase 8.11: Intake & Legal Library (Step 1)** | • สกัด entity (ชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กำหนดการ/แนบ) พร้อมหลักฐาน<br/>• ถามข้อมูลที่ขาดแบบ deterministic + เลือกหัวข้อ กฎหมาย/อ้างถึง/แนบ<br/>• คลังข้อกฎหมาย JSON + UI เพิ่ม/แก้ไข/ยืนยันแหล่ง<br/>• แม่แบบทั่วไปแบบ placeholder 3 ระดับ | `core/models.py`<br/>`core/entity_extractor.py`<br/>`core/intake.py`<br/>`core/legal_sources.py`<br/>`data/legal_references.json`<br/>`web/app.py` | ✅ สำเร็จ |
+
+> **ถัดไป:** Step 2 — ตรวจร่างเทียบต้นเรื่อง (ชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กำหนดการ/สิ่งที่ส่งมาด้วย) พร้อมหลักฐานและ accept/reject ยังไม่เริ่ม
 
 ---
 
@@ -189,6 +193,13 @@ class SourceCase(BaseModel):
    - ระดับกอง $\rightarrow$ สำนัก: *"จึงเรียนมาเพื่อโปรดพิจารณาลงนามหนังสือเรียนปลัดกรุงเทพมหานครที่แนบ"*
    - ระดับกลุ่มงาน $\rightarrow$ กอง: *"จึงเรียนมาเพื่อโปรดพิจารณานำเรียนผู้อำนวยการกองลงนามในหนังสือที่แนบ"*
 
+### 5.5. โมเดล Intake / หลักฐาน / คลังข้อกฎหมาย (Step 1)
+- **`EvidenceRef`**: field, value, source_quote, start/end, confidence, method (`regex`/`ocr`/`vlm`/`manual`/`profile`), needs_review
+- **`UnclearSpan`**: ช่วงข้อความที่อ่านไม่ชัด + เหตุผล
+- **`ExtractedEntity`**: kind (`person`/`agency`/`date`/`doc_no`/`amount`/`number`/`deadline`/`attachment`), value, normalized, evidence
+- **`IntakeQuestion` / `IntakeAssessment`**: คำถามที่ขาด + `ready` gate ก่อนร่าง
+- **`LegalReference`**: title, section (มาตรา/ข้อ), quote, url, effective_date, verified, recorded_by, recorded_at (เก็บใน `data/legal_references.json`)
+
 ---
 
 ## 6. ทะเบียนความเสี่ยงและมาตรการควบคุม (Risk Register & Mitigations)
@@ -276,7 +287,10 @@ class SourceCase(BaseModel):
 │   ├── memo_layout.py          # ตัวจัดหน้าบันทึกข้อความ กทม. และระบบ Indentation
 │   ├── layout_profile.py     # โปรไฟล์การจัดหน้าต่อแม่แบบ (ขอบ/ฟอนต์/เลขหน้า)
 │   ├── hierarchy.py         # สร้างชุดบันทึกตามลำดับชั้น (P3)
-│   ├── security.py          # นโยบายบล็อก AI ภายนอกสำหรับข้อมูลชั้นลับ
+│   ├── security.py          # นโยบายบล็อก AI ภายนอกสำหรับข้อมูลชั้นลับ (fail-closed)
+│   ├── entity_extractor.py  # สกัด entity + หลักฐาน + จุดอ่านไม่ชัด
+│   ├── intake.py            # ตรวจข้อมูลขาด + คำถามก่อนร่าง (deterministic)
+│   ├── legal_sources.py     # คลังข้อกฎหมาย JSON + สถานะตรวจยืนยัน
 │   ├── classifier.py        # จำแนกหนังสือ 6 ชนิด/แบบ 1–11 + การ์ดยืนยัน
 │   ├── special_drafter.py   # generator เอกสารชนิดพิเศษ 4 ชนิด
 │   ├── sections.py          # หัวข้อเอกสารอิสระ (เพิ่ม/ลบ/สลับ/ซิงก์ฟิลด์)
@@ -292,11 +306,12 @@ class SourceCase(BaseModel):
 ├── data/                       # ข้อมูลถาวรของระบบ
 │   ├── user_profile.json       # ข้อมูลการตั้งค่าหน่วยงานของผู้ใช้
 │   ├── audit.db                # ฐานข้อมูลประวัติการแก้ไขและเวอร์ชัน
-│   └── edocument.db            # ฐานข้อมูลสมุดทะเบียนคุมสารบรรณ
+│   ├── edocument.db            # ฐานข้อมูลสมุดทะเบียนคุมสารบรรณ
+│   └── legal_references.json   # คลังข้อกฎหมาย/ระเบียบที่ผู้ใช้เพิ่มและยืนยันแหล่ง
 │
 ├── uploads/                    # โฟลเดอร์จัดเก็บไฟล์ต้นเรื่องที่แนบเข้ามา
 ├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun New/IT9/PSK 4 น้ำหนัก
-├── tests/                      # ชุดทดสอบ 136 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
+├── tests/                      # ชุดทดสอบ 153 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
 └── web/                        # ระบบหน้าบ้าน (Web UI)
     └── app.py                  # แอปพลิเคชัน Streamlit หน้าจอ 3 แท็บ (ร่าง, ทะเบียน, ตั้งค่า)
 ```
@@ -308,7 +323,7 @@ class SourceCase(BaseModel):
 | รายการ | สเปก / ค่ามาตรฐาน |
 | :--- | :--- |
 | **สภาพแวดล้อม (OS & Runtime)** | Windows 10/11, Python 3.12.0 x64 |
-| **เว็บเฟรมเวิร์ก (Web Framework)** | Streamlit 1.52.0 (รันบนพอร์ต 8501 แบบ Headless) |
+| **เว็บเฟรมเวิร์ก (Web Framework)** | Streamlit 1.52.0 (รันบนพอร์ต 8502 แบบ Headless — 8501 ถูกกันในสภาพแวดล้อมนี้) |
 | **เกตเวย์องค์กร (API Gateway)** | FastAPI + Uvicorn ASGI (`core/api.py`) |
 | **เครื่องมือเรนเดอร์ PDF** | Typst 0.15 (CLI หรือ Python binding `typst` ที่ฝัง compiler) — คอมไพล์ A4 Vector PDF ในเวลา 50-100 ms |
 | **ฟอนต์สำหรับ PDF** | TH Sarabun New / IT9 / PSK ครบ 4 น้ำหนัก ใน `assets/fonts` (ระเบียบอนุญาต TH Sarabun New หรือ TH Sarabun PSK) |
@@ -316,7 +331,7 @@ class SourceCase(BaseModel):
 | **เครื่องมือ OCR ท้องถิ่น** | Docker Engine + Image `tha-tesseract:latest` (Alpine + Tesseract 5.5.2 ภาษา `tha+eng`) |
 | **เครื่องมือ Cloud AI** | Google Gemini API (`gemini-2.5-flash`) ผ่านไลบรารี `google-genai` |
 | **ฐานข้อมูล (Database)** | SQLite 3 (ไฟล์ `audit.db` และ `edocument.db`) |
-| **สถานะชุดทดสอบ** | 136 tests: 131 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
+| **สถานะชุดทดสอบ** | 153 tests: 148 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
 
 ### ข้อจำกัดที่ทราบ (Known Limitations)
 

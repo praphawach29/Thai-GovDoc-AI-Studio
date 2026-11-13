@@ -42,6 +42,8 @@
 | PDF/DOCX | Typst/Word exporter | Worker + PDF/A + digital signature |
 | Observability | print/log | Metrics, tracing, alerting |
 
+> **อัปเดตล่าสุด (Step 0–1, ยังไม่ deploy):** เพิ่ม grounding/ไม่แต่งข้อเท็จจริง, บังคับ `secret`/`allow_cloud` ที่ backend แบบ fail-closed, intake/คำถามข้อมูลขาด, entity + หลักฐาน, และคลังข้อกฎหมาย JSON พร้อม UI ยืนยันแหล่งแล้ว — แต่ยังไม่มี auth/PostgreSQL/object storage/worker ตามแผน production นี้
+
 ---
 
 ## 3. เป้าหมายการให้บริการ (SLA)
