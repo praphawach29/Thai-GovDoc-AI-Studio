@@ -12,3 +12,17 @@ tools/
 .tmp_*
 .edge-test/
 
+
+# Temp build/audit scripts and screenshots from workspace iterations
+build_full_app.py
+build_stage1.py
+capture_state2.py
+check_anchors.py
+check_lines.py
+check_preview_lines.py
+test_read.py
+test_slices.py
+update_css.py
+web/app.py.bak
+screenshot.png
+ui_state*.png

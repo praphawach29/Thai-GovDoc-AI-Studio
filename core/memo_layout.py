@@ -64,6 +64,7 @@ class MemoBlock:
     lead_style: str = ""       # "underline" | "bold" | ""
     space_before_pt: float = 0.0
     kind: str = "body"         # "heading" | "body" | "request"
+    section_key: str = ""      # "intro" | "facts" | "law" | "consideration"
 
 
 def line_indent_cm(line: str) -> float:
@@ -139,34 +140,49 @@ def build_memo_blocks(sections: List[Tuple[str, str, str]], request: str,
         if run_in:
             # หัวข้อแบบ run-in ต้องชิดขอบซ้าย (ไม่ย่อหน้า) เพื่อให้ตรงกับแบบบันทึกต้นฉบับ
             blocks.append(MemoBlock(text=lines[0], indent_cm=0.0, lead=title,
-                                    lead_style=lead_style, space_before_pt=gap))
+                                    lead_style=lead_style, space_before_pt=gap, kind="body",
+                                    section_key=key))
             lines = lines[1:]
         else:
             # หัวข้อบรรทัดเดี่ยวชิดขอบซ้าย ส่วนเนื้อความบรรทัดถัดไปยังย่อหน้า 2.5 ซม.
             blocks.append(MemoBlock(text="", indent_cm=0.0, lead=title, lead_style=lead_style,
-                                    space_before_pt=gap, kind="heading"))
+                                    space_before_pt=gap, kind="heading", section_key=key))
         for ln in lines:
-            blocks.append(MemoBlock(text=ln, indent_cm=line_indent_cm(ln)))
+            blocks.append(MemoBlock(text=ln, indent_cm=line_indent_cm(ln), section_key=key))
 
     for i, ln in enumerate([x.strip() for x in (request or "").splitlines() if x.strip()]):
         blocks.append(MemoBlock(text=ln, indent_cm=BASE_INDENT_CM,
-                                space_before_pt=12.0 if i == 0 else 0.0, kind="request"))
+                                space_before_pt=12.0 if i == 0 else 0.0, kind="request",
+                                section_key="consideration"))
     return blocks
 
 
 def render_memo_blocks_html(blocks: List[MemoBlock],
                             transform: Optional[Callable[[str], str]] = None,
-                            indent_unit: str = "cm", indent_scale: float = 1.0) -> str:
+                            indent_unit: str = "cm", indent_scale: float = 1.0,
+                            include_pencils: bool = False) -> str:
     """
     เรนเดอร์บล็อกเป็น HTML (<p>) — ใช้ทั้งใน PDF และ Live Preview
     transform: ฟังก์ชันแปลงข้อความหลัง escape (เช่น แปลงเลขไทย / ไฮไลต์ placeholder)
+    include_pencils: แสดงปุ่มดินสอแบบคลิกได้สำหรับเปิดป็อปอัปแก้ไขเรียลไทม์ (เฉพาะ Live Preview)
     """
     tf = transform or (lambda s: s)
     parts = []
+    seen_pencil_keys = set()
+
     for b in blocks:
         style = (f"text-indent: {b.indent_cm * indent_scale:.2f}{indent_unit}; "
                  f"margin-top: {b.space_before_pt:.0f}pt; margin-bottom: 0;")
         lead_html = ""
+        pencil_link = ""
+        sec_key = getattr(b, "section_key", "")
+
+        # ปักหมุดปุ่มดินสอหัวข้อแรกของแต่ละกลุ่มเนื้อหา
+        if include_pencils and sec_key and sec_key not in seen_pencil_keys and (b.lead or b.kind in ("heading", "request") or b.space_before_pt > 0):
+            seen_pencil_keys.add(sec_key)
+            tip_name = b.lead or SECTION_TITLES.get(sec_key, sec_key)
+            pencil_link = f'<a href="?edit={sec_key}" target="_self" class="doc-pencil-btn" title="คลิกเพื่อแก้ไข{tip_name} (ป็อปอัปเรียลไทม์)">✏️</a>'
+
         if b.lead:
             lead_txt = tf(html.escape(b.lead, quote=False))
             if b.lead_style == "underline":
@@ -175,8 +191,16 @@ def render_memo_blocks_html(blocks: List[MemoBlock],
                 lead_html = f'<strong class="memo-lead">{lead_txt}</strong>'
             else:
                 lead_html = lead_txt
+            if pencil_link:
+                lead_html += f"&nbsp;{pencil_link}"
             if b.text:
                 lead_html += "&nbsp;&nbsp;"
+        elif pencil_link:
+            lead_html = f"{pencil_link}&nbsp;"
+
         body_html = tf(html.escape(b.text, quote=False)) if b.text else ""
+        if include_pencils and b.kind == "request" and pencil_link:
+            body_html += f"&nbsp;{pencil_link}"
+
         parts.append(f'<p class="memo-{b.kind}" style="{style}">{lead_html}{body_html}</p>')
     return "\n".join(parts)
