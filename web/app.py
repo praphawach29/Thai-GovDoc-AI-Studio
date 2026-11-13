@@ -43,7 +43,6 @@ from core.pdf_exporter import get_pdf_bytes, export_govdoc_to_pdf
 from core.copilot import (
     make_formal_tone,
     make_concise,
-    insert_legal_reference,
     convert_doc_type,
     toggle_doc_numerals,
     copilot_refine_paragraph
@@ -52,8 +51,12 @@ from core.audit import AuditManager, compute_doc_diff
 from core.word_exporter import export_govdoc_to_docx
 from core.typst_exporter import export_govdoc_to_typst, generate_typst_content
 from core.linter import lint_gov_document
+from core.security import cloud_ai_allowed
+from core.intake import assess_intake
+from core.legal_sources import LegalLibrary, LegalReference, format_legal_citation
 from core.registry import DocumentRegistry, OutgoingRecord
 from core.thai_segmenter import to_thai_numerals, to_arabic_numerals
+from core.thai_date import blank_doc_number, format_thai_date
 from core.memo_layout import render_memo_blocks_html, split_consideration_and_request, SECTION_ORDER
 
 
@@ -352,6 +355,11 @@ registry = DocumentRegistry()
 audit_mgr = AuditManager()
 uploads_dir = root_dir / "uploads"
 uploads_dir.mkdir(exist_ok=True)
+
+
+def compact_html(html: str) -> str:
+    """ตัด indent ต้นบรรทัดของ HTML เพื่อไม่ให้ Streamlit ตีความเป็น code block"""
+    return "\n".join(line.lstrip() for line in html.splitlines()).strip()
 
 
 def highlight_placeholders_html(text: str) -> str:
@@ -728,20 +736,20 @@ if "doc_data" not in st.session_state:
         urgency=UrgencyLevel.NORMAL,
         secret=SecretLevel.NORMAL,
         use_thai_numerals=False,
-        doc_number="๑๒๓/๒๕๖๙",
+        doc_number=blank_doc_number(use_thai_numerals=False),
         dept_name=current_profile.department_full,
-        doc_date="๑๕ มีนาคม ๒๕๖๙",
-        subject="รายงานการพิจารณาคำขอความอนุเคราะห์จัดการแข่งขันกีฬา",
+        doc_date=format_thai_date(use_thai_numerals=False),
+        subject="[✏️ ระบุเรื่อง]",
         salutation="เรียน  ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว",
-        references=["หนังสือสมาคมกีฬา ที่ สวปท. ๑๕/๒๕๖๙ ลงวันที่ ๒๓ กันยายน ๒๕๖๙"],
-        attachments=["สรุปผลการพิจารณา จำนวน ๑ ฉบับ"],
-        paragraph_reason="ตามที่ สมาคมกีฬา ได้มีหนังสือที่อ้างถึง ขอความอนุเคราะห์จัดการแข่งขันกีฬา ความละเอียดแจ้งแล้ว นั้น",
-        paragraph_details="จากการตรวจสอบข้อเท็จจริงพบว่า กิจกรรมดังกล่าวเป็นประโยชน์ต่อการพัฒนาเยาวชนและส่งเสริมกีฬาในกรุงเทพมหานคร",
-        paragraph_purpose="จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดลงนามในหนังสือที่แนบมาพร้อมนี้",
-        memo_intro="ตามที่ สมาคมกีฬา ได้มีหนังสือที่อ้างถึง ขอความอนุเคราะห์จัดการแข่งขันกีฬา ความละเอียดแจ้งแล้ว นั้น",
-        memo_facts="๑. จากการตรวจสอบข้อเท็จจริง กิจกรรมดังกล่าวเป็นประโยชน์ต่อเยาวชนในพื้นที่กรุงเทพมหานคร\n๒. รายการคำขอประกอบด้วยการใช้อาคารกีฬา และการอำนวยความสะดวกด้านอุปกรณ์",
-        memo_law="๑. ระเบียบกรุงเทพมหานครว่าด้วยการใช้สถานที่และศูนย์กีฬา พ.ศ. ๒๕๕๕",
-        memo_consideration="เห็นควรให้การสนับสนุนและอำนวยความสะดวกในการจัดกิจกรรมดังกล่าว",
+        references=None,
+        attachments=None,
+        paragraph_reason="[✏️ ระบุต้นเรื่อง/ภาคเหตุ]",
+        paragraph_details="[✏️ ระบุข้อเท็จจริงและข้อพิจารณา]",
+        paragraph_purpose="[✏️ ระบุภาคความประสงค์]",
+        memo_intro="[✏️ ระบุต้นเรื่อง]",
+        memo_facts="[✏️ ระบุข้อเท็จจริง]",
+        memo_law=None,
+        memo_consideration="[✏️ ระบุข้อพิจารณาและเสนอแนะ]",
         memo_request="จึงเรียนมาเพื่อโปรดพิจารณาลงนามหนังสือเรียนปลัดกรุงเทพมหานครที่แนบ",
         memo_hierarchy_level=MemoHierarchyLevel.DIV_TO_DEPT,
         closing="",
@@ -761,6 +769,22 @@ if "source_context" not in st.session_state:
 
 if "last_uploaded_file" not in st.session_state:
     st.session_state.last_uploaded_file = None
+
+if "doc_secret_level" not in st.session_state:
+    st.session_state.doc_secret_level = SecretLevel.NORMAL
+
+if "include_law" not in st.session_state:
+    st.session_state.include_law = False
+if "include_references" not in st.session_state:
+    st.session_state.include_references = False
+if "include_attachments" not in st.session_state:
+    st.session_state.include_attachments = False
+if "intake_answers" not in st.session_state:
+    st.session_state.intake_answers = {}
+if "intake_ready" not in st.session_state:
+    st.session_state.intake_ready = True
+if "selected_law_id" not in st.session_state:
+    st.session_state.selected_law_id = None
 
 
 # ส่วนหัวหน้าเว็บแบบ Compact Modern Top Bar
@@ -803,6 +827,11 @@ with tab_main:
 
         if source_mode == "📂 แนบไฟล์ต้นเรื่อง (Source Document)":
             st.subheader("📂 แนบไฟล์ต้นเรื่อง (Source Document)")
+            st.session_state.doc_secret_level = st.selectbox(
+                "ชั้นความลับของเอกสารนี้ (ชั้นลับจะไม่ส่งให้ AI ภายนอก)",
+                options=[SecretLevel.NORMAL, SecretLevel.SECRET, SecretLevel.VERY_SECRET, SecretLevel.TOP_SECRET],
+                format_func=lambda x: x.to_thai(),
+            )
             uploaded_file = st.file_uploader(
                 "อัปโหลดหนังสือเดิม / คำร้อง (PDF, DOCX, TXT, รูปภาพ)",
                 type=["pdf", "docx", "txt", "png", "jpg", "jpeg"],
@@ -817,7 +846,7 @@ with tab_main:
                 # สกัดข้อความอัตโนมัติเมื่อมีการอัปโหลดไฟล์ใหม่
                 if st.session_state.last_uploaded_file != uploaded_file.name:
                     with st.spinner("กำลังอ่านและสกัดข้อความจากเอกสารต้นเรื่อง (Multi-Engine OCR)..."):
-                        ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"), allow_cloud=st.session_state.get("allow_cloud_ai", True))
+                        ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"), allow_cloud=st.session_state.get("allow_cloud_ai", True), secret=st.session_state.doc_secret_level)
                         st.session_state.source_context = ctx
                         st.session_state.last_uploaded_file = uploaded_file.name
                         if not ctx.extraction_failed:
@@ -846,6 +875,101 @@ with tab_main:
                 else:
                     eng_badge = f" (สกัดผ่าน {st.session_state.source_context.ocr_engine_used})" if (st.session_state.source_context and st.session_state.source_context.ocr_engine_used) else ""
                     st.success(f"แนบและสกัดข้อมูลสำเร็จ: {uploaded_file.name}{eng_badge}")
+
+                # Step 1: เลือกองค์ประกอบเอกสาร + ตรวจข้อมูลขาด + ถามกลับ
+                _intake_ctx = st.session_state.source_context
+                if _intake_ctx and not _intake_ctx.extraction_failed:
+                    st.markdown("##### 🧩 เลือกองค์ประกอบเอกสารและเติมข้อมูลที่ขาด")
+                    st.session_state.include_law = st.checkbox(
+                        "มีข้อกฎหมาย/ระเบียบที่ต้องอ้างอิง",
+                        value=st.session_state.include_law,
+                        key="include_law_toggle",
+                    )
+                    st.session_state.include_references = st.checkbox(
+                        "มีหนังสือ/เรื่องที่อ้างถึง",
+                        value=st.session_state.include_references,
+                        key="include_references_toggle",
+                    )
+                    st.session_state.include_attachments = st.checkbox(
+                        "มีสิ่งที่ส่งมาด้วย",
+                        value=st.session_state.include_attachments,
+                        key="include_attachments_toggle",
+                    )
+
+                    _intake_kind = (
+                        st.session_state.get("classification").kind
+                        if st.session_state.get("classification")
+                        else DocumentKind.EXTERNAL_LETTER
+                    )
+                    _assessment = assess_intake(
+                        _intake_ctx,
+                        _intake_kind,
+                        include_law=st.session_state.include_law,
+                        include_references=st.session_state.include_references,
+                        include_attachments=st.session_state.include_attachments,
+                    )
+                    st.session_state.intake_assessment = _assessment
+                    st.session_state.intake_ready = _assessment.ready
+
+                    if getattr(_intake_ctx, "entities", None):
+                        with st.expander("🔍 ข้อมูลที่สกัดได้จากต้นเรื่อง", expanded=False):
+                            for _e in _intake_ctx.entities[:14]:
+                                _flag = " ⚠️ ควรตรวจ" if (_e.evidence and _e.evidence.needs_review) else ""
+                                st.caption(f"• {_e.kind}: {_e.value}{_flag}")
+                    if getattr(_intake_ctx, "unclear_spans", None):
+                        st.warning(
+                            f"⚠️ พบจุดที่อ่านไม่ชัดเจน {len(_intake_ctx.unclear_spans)} จุด "
+                            "— กรุณาตรวจในข้อความต้นเรื่อง"
+                        )
+
+                    _field_map = {
+                        "source_subject": "source_subject",
+                        "source_dept": "source_dept",
+                        "source_doc_no": "source_doc_no",
+                        "source_date": "source_date",
+                        "requested_action": "requested_action",
+                    }
+                    for _q in _assessment.questions:
+                        if _q.kind != "text":
+                            continue
+                        _val = st.text_input(
+                            _q.question,
+                            value=st.session_state.intake_answers.get(_q.field, ""),
+                            key=f"intake_{_q.field}",
+                            placeholder=_q.placeholder,
+                        )
+                        if _val.strip():
+                            st.session_state.intake_answers[_q.field] = _val
+                            if _q.field in _field_map:
+                                setattr(_intake_ctx, _field_map[_q.field], _val.strip())
+                            st.session_state.source_context = _intake_ctx
+
+                    if st.session_state.include_law:
+                        _law_lib = LegalLibrary()
+                        _law_list = _law_lib.list(verified_only=True)
+                        if not _law_list:
+                            st.warning(
+                                "ยังไม่มีข้อกฎหมายที่ยืนยันแล้วในคลัง — เพิ่มได้ที่แท็บ "
+                                "'⚙️ ตั้งค่าหน่วยงานของฉัน'"
+                            )
+                            st.session_state.selected_law_id = None
+                        else:
+                            _law_labels = {
+                                f"{r.title} {r.section or ''}".strip(): r.id for r in _law_list
+                            }
+                            _law_choice = st.selectbox(
+                                "เลือกข้อกฎหมายที่ยืนยันแล้ว",
+                                options=list(_law_labels.keys()),
+                                key="law_select",
+                            )
+                            st.session_state.selected_law_id = _law_labels[_law_choice]
+                    else:
+                        st.session_state.selected_law_id = None
+
+                    if not _assessment.ready:
+                        st.info("กรุณาตอบข้อมูลที่จำเป็น (เครื่องหมาย *) หรือพิมพ์ข้อความต้นเรื่องให้ครบก่อนยกร่าง")
+                    else:
+                        st.success("ข้อมูลครบถ้วน พร้อมยกร่าง")
 
                 # ชนิดหนังสือที่ตรวจพบ + ยืนยันก่อนร่าง
                 _cls = st.session_state.get("classification")
@@ -936,7 +1060,7 @@ with tab_main:
                     st.caption("💡 ใส่ Gemini API Key เพื่อให้ระบบอ่านลายมือเกษียนสั่งการและตรายางได้แม่นยำ 100%")
                     if st.button("🔄 รัน OCR ถอดข้อความใหม่อีกครั้ง", use_container_width=True):
                         with st.spinner("กำลังประมวลผล OCR อีกครั้งด้วย API Key/เครื่องมือที่ระบุ..."):
-                            re_ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"), allow_cloud=st.session_state.get("allow_cloud_ai", True))
+                            re_ctx = extract_source_document(str(saved_path), api_key=st.session_state.get("ai_api_key"), allow_cloud=st.session_state.get("allow_cloud_ai", True), secret=st.session_state.doc_secret_level)
                             st.session_state.source_context = re_ctx
                             if not re_ctx.extraction_failed:
                                 st.session_state.classification = classify_source_document(re_ctx)
@@ -948,9 +1072,13 @@ with tab_main:
                     _cls_now
                     and st.session_state.get("classification_confirmed")
                     and _cls_now.supported
+                    and st.session_state.get("intake_ready", True)
                 )
                 if not _can_draft:
-                    st.caption("กรุณาตรวจและยืนยันชนิดหนังสือด้านบนก่อนยกร่าง")
+                    if not st.session_state.get("intake_ready", True):
+                        st.warning("กรุณาตอบข้อมูลที่จำเป็นด้านบนให้ครบก่อนยกร่าง")
+                    else:
+                        st.caption("กรุณาตรวจและยืนยันชนิดหนังสือด้านบนก่อนยกร่าง")
                 if st.button(
                     "🚀 ให้ AI ยกร่างหนังสือตามต้นเรื่องนี้",
                     type="primary",
@@ -965,6 +1093,8 @@ with tab_main:
                             prov = "openai" if "OpenAI" in ai_prov else "gemini"
                             key = st.session_state.get("ai_api_key")
                             allow_cloud_now = st.session_state.get("allow_cloud_ai", True)
+                            secret_value = st.session_state.doc_secret_level
+                            use_cloud = bool(key) and bool(allow_cloud_now) and cloud_ai_allowed(secret_value)
                             if _cls_now and _cls_now.kind not in (
                                 DocumentKind.EXTERNAL_LETTER,
                                 DocumentKind.INTERNAL_MEMO,
@@ -976,14 +1106,33 @@ with tab_main:
                                     get_user_profile(),
                                 )
                                 draft_author = "Special template (local)"
-                            elif key and allow_cloud_now:
-                                draft = draft_from_context_llm(ctx, doc_type=target_doc_type, intent=intent_choice[0], provider=prov, api_key=key)
+                            elif use_cloud:
+                                draft = draft_from_context_llm(ctx, doc_type=target_doc_type, intent=intent_choice[0], provider=prov, api_key=key, secret=secret_value, allow_cloud=allow_cloud_now)
                                 draft_author = f"AI Studio ({prov.upper()})"
                             else:
                                 draft = draft_from_context_rule_based(ctx, doc_type=target_doc_type, intent=intent_choice[0])
                                 draft_author = "Rule-based (local)"
-                                if not allow_cloud_now:
+                                if not allow_cloud_now or not cloud_ai_allowed(secret_value):
                                     st.info("โหมดข้อมูลอ่อนไหว: ระบบใช้ Rule-based ภายในเครื่อง โดยไม่ส่งข้อมูลไป AI ภายนอก")
+                            draft.secret = secret_value
+
+                            # Step 1: ใส่ข้อกฎหมายที่ผู้ใช้เลือกจากคลังที่ยืนยันแล้ว
+                            if st.session_state.get("selected_law_id"):
+                                _law_lib = LegalLibrary()
+                                _law_ref = next(
+                                    (r for r in _law_lib.list() if r.id == st.session_state.selected_law_id),
+                                    None,
+                                )
+                                if _law_ref:
+                                    draft.memo_law = format_legal_citation(_law_ref)
+
+                            # Step 1: ใส่สิ่งที่ส่งมาด้วยจากคำตอบของผู้ใช้
+                            _att_text = st.session_state.intake_answers.get("attachments", "")
+                            if st.session_state.include_attachments and _att_text.strip():
+                                draft.attachments = [
+                                    line.strip() for line in _att_text.splitlines() if line.strip()
+                                ]
+
                             if draft.kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
                                 draft = ensure_sections(draft)
                             st.session_state.draft_uid = f"draft-{uuid.uuid4().hex[:8]}"
@@ -1093,10 +1242,8 @@ with tab_main:
                     st.session_state.doc_data.paragraph_details = make_concise(st.session_state.doc_data.paragraph_details)
                 st.success("ย่อเนื้อความให้กระชับเรียบร้อยแล้ว")
                 st.rerun()
-            elif "พัสดุ" in c_prompt or "ระเบียบ" in c_prompt:
-                st.session_state.doc_data = insert_legal_reference(st.session_state.doc_data, "procurement" if "พัสดุ" in c_prompt else "saraban")
-                st.success("แทรกข้อกฎหมายเรียบร้อยแล้ว")
-                st.rerun()
+            elif "พัสดุ" in c_prompt or "ระเบียบ" in c_prompt or "กฎหมาย" in c_prompt:
+                st.info("ยังไม่มีแหล่งยืนยันข้อกฎหมาย — ระบบจะเพิ่มคลังให้เลือกใน Step 1 (ตอนนี้ยังไม่ใส่ข้อกฎหมายอัตโนมัติ)")
             else:
                 st.info("AI ได้รับคำสั่งแล้ว: สามารถใช้ปุ่มลัดด้านล่างหรือเกลาข้อความในแบบฟอร์มได้ทันที")
 
@@ -1498,18 +1645,18 @@ with tab_main:
                     if _is_internal_preview
                     else f'<div style="text-align:center;margin-bottom:12px;"><img src="data:{garuda_mime};base64,{garuda_b64}" style="height:3.0cm;" /></div>'
                 )
-                st.markdown(f"""
+                st.markdown(compact_html(f"""
                 <div class="a4-paper">
                     {_header_html}
                     {''.join(_sec_html)}
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
             elif doc.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
                 _special_items = "".join(
                     f'<p class="a4-indent">{highlight_placeholders_html((to_thai_numerals(str(i)) if doc.use_thai_numerals else str(i)) + ".  " + item)}</p>'
                     for i, item in enumerate(doc.special_items or [], 1)
                 )
-                st.markdown(f"""
+                st.markdown(compact_html(f"""
                 <div class="a4-paper">
                     <div style="text-align: center; margin-bottom: 12px;">
                         <img src="data:{garuda_mime};base64,{garuda_b64}" style="height: 3.0cm; width: auto;" alt="ตราครุฑ 3 ซม." />
@@ -1533,9 +1680,9 @@ with tab_main:
                         <p style="margin: 0;">โทรศัพท์  {highlight_placeholders_html(doc.contact_tel or '')}</p>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
             elif doc.doc_type == DocType.EXTERNAL:
-                st.markdown(f"""
+                st.markdown(compact_html(f"""
                 <div class="a4-paper">
                     <div style="text-align: center; margin-bottom: 12px;">
                         <img src="data:{garuda_mime};base64,{garuda_b64}" style="height: 3.0cm; width: auto; display: inline-block;" alt="ตราครุฑ 3 ซม." />
@@ -1568,10 +1715,10 @@ with tab_main:
                         <p style="margin: 0; font-size: 12.5px !important;">ไปรษณีย์อิเล็กทรอนิกส์  {highlight_placeholders_html(doc.contact_email or '')}</p>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
             else:
                 dept_tel_str = f"  โทร. {highlight_placeholders_html(doc.contact_tel)}" if (doc.contact_tel and doc.contact_tel not in doc.dept_name) else ""
-                st.markdown(f"""
+                st.markdown(compact_html(f"""
                 <div class="a4-paper">
                     <div style="display: flex; align-items: flex-start; margin-bottom: 12px;">
                         <img src="data:{garuda_mime};base64,{garuda_b64}" style="height: 1.5cm; width: auto; margin-right: 18px;" alt="ตราครุฑ 1.5 ซม." />
@@ -1595,7 +1742,7 @@ with tab_main:
                         <p>{disp_sig_pos}</p>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
 
             # ----------------- กล่องแก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง -----------------
             st.markdown("##### ✏️ แก้ไขเนื้อหาและเกลาภาษาตามหัวข้อโดยตรง")
@@ -2316,6 +2463,55 @@ with tab_profile:
             st.session_state.user_profile = updated_profile
             st.success("บันทึกการตั้งค่าหน่วยงานสำเร็จ! ร่างหนังสือฉบับต่อไปจะใช้ข้อมูลชุดนี้โดยอัตโนมัติ")
             st.rerun()
+
+    st.markdown("---")
+    st.markdown("##### 📚 คลังข้อกฎหมาย/ระเบียบ (เพิ่ม/แก้ไข + สถานะตรวจยืนยัน)")
+    st.caption("รายการที่ยืนยันแล้วเท่านั้นจึงจะเลือกใช้ในการร่างได้ — ระบบจะไม่ใส่ข้อกฎหมายที่ไม่มีแหล่งยืนยัน")
+    _law_lib = LegalLibrary()
+    _law_items = _law_lib.list()
+    if _law_items:
+        for _r in _law_items:
+            _law_status = "✅ ยืนยันแล้ว" if _r.verified else "🕓 ยังไม่ยืนยัน"
+            with st.expander(f"{_r.title} {_r.section or ''} — {_law_status}", expanded=False):
+                st.caption(f"ข้อความ: {_r.quote or '-'}")
+                st.caption(f"แหล่ง: {_r.url or '-'} · วันที่มีผล: {_r.effective_date or '-'}")
+                st.caption(f"บันทึกโดย {_r.recorded_by or '-'} เมื่อ {_r.recorded_at or '-'}")
+                _c_verify, _c_del = st.columns(2)
+                with _c_verify:
+                    if st.button("✅/❌ สลับสถานะตรวจยืนยัน", key=f"law_verify_{_r.id}"):
+                        _law_lib.update(_r.id, verified=not _r.verified)
+                        st.rerun()
+                with _c_del:
+                    if st.button("🗑 ลบ", key=f"law_del_{_r.id}"):
+                        _law_lib.delete(_r.id)
+                        st.rerun()
+    else:
+        st.info("ยังไม่มีรายการข้อกฎหมายในคลัง")
+
+    with st.form("legal_ref_form"):
+        st.markdown("**➕ เพิ่มข้อกฎหมาย/ระเบียบใหม่**")
+        _lr_title = st.text_input("ชื่อกฎหมาย/ระเบียบ", key="lr_title")
+        _lr_section = st.text_input("มาตรา/ข้อ (ถ้ามี)", key="lr_section")
+        _lr_quote = st.text_area("ข้อความอ้างอิง (excerpt)", key="lr_quote", height=80)
+        _lr_url = st.text_input("URL/แหล่ง", key="lr_url")
+        _lr_eff = st.text_input("วันที่มีผล", key="lr_eff")
+        _lr_by = st.text_input("ผู้บันทึก", key="lr_by")
+        _lr_verified = st.checkbox("ยืนยันแหล่งแล้ว (verified)", key="lr_verified")
+        if st.form_submit_button("➕ บันทึกรายการข้อกฎหมาย"):
+            if _lr_title.strip():
+                _law_lib.add(LegalReference(
+                    title=_lr_title.strip(),
+                    section=_lr_section.strip() or None,
+                    quote=_lr_quote.strip(),
+                    url=_lr_url.strip() or None,
+                    effective_date=_lr_eff.strip() or None,
+                    verified=_lr_verified,
+                    recorded_by=_lr_by.strip(),
+                ))
+                st.success("บันทึกข้อกฎหมายเรียบร้อย")
+                st.rerun()
+            else:
+                st.warning("กรุณาระบุชื่อกฎหมาย/ระเบียบ")
 
     if st.button("🔄 รีเซ็ตเป็นค่าเริ่มต้นของกรุงเทพมหานคร (BMA Default)", use_container_width=True):
         res_prof = reset_to_default_profile()

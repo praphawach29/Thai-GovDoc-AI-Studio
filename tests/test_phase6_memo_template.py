@@ -61,7 +61,8 @@ def test_bma_section_order_matches_source_memo(bma_cohost_doc):
     """ลำดับหัวข้อต้องเป็น ต้นเรื่อง -> ข้อกฎหมาย -> ข้อเท็จจริง -> ข้อพิจารณาและเสนอแนะ ตามบันทึกต้นแบบ"""
     sections = bma_cohost_doc.get_memo_sections()
     assert [t for t, _ in sections] == BMA_ORDER
-    assert "พระราชบัญญัติเครื่องหมายราชการ" in sections[1][1]
+    # Step 0: ข้อกฎหมายเป็น placeholder จนกว่าจะเลือกจากคลังที่ยืนยันแหล่ง
+    assert "ระบุข้อกฎหมาย" in sections[1][1]
     assert bma_cohost_doc.get_memo_request().startswith("จึงเรียนมาเพื่อโปรดพิจารณา")
 
 
@@ -135,8 +136,9 @@ def test_bma_blocks_heading_and_run_in(bma_cohost_doc):
     assert run_ins == ["ข้อเท็จจริง", "ข้อพิจารณาและเสนอแนะ"]
     assert all(b.lead_style == "underline" for b in blocks if b.lead)
     assert blocks[-1].kind == "request"
-    # มาตรา / ข้อย่อย ๑.๑ เยื้องลึกกว่าข้อหลัก
-    assert any(b.text.startswith("มาตรา ๖") and b.indent_cm == 3.5 for b in blocks)
+    # Step 0: ข้อกฎหมายเป็น placeholder จนกว่าจะเลือกจากคลังที่ยืนยันแหล่ง
+    assert any("ระบุข้อกฎหมาย" in b.text for b in blocks)
+    # ข้อย่อย ๑.๑ เยื้องลึกกว่าข้อหลัก
     assert any(b.text.startswith("๑.๑") and b.indent_cm == 3.5 for b in blocks)
 
 
@@ -230,8 +232,8 @@ def test_ai_drafter_rule_based_memo():
     draft = draft_from_context_rule_based(ctx, doc_type=DocType.INTERNAL, intent=DraftingIntent.ACCEPT)
     assert draft.doc_type == DocType.INTERNAL
     assert draft.memo_intro and draft.memo_consideration is not None
-    # ข้อกฎหมายที่ระบบเติมให้ต้องเป็นกฎหมายที่มีอยู่จริง
-    assert "พระราชบัญญัติเครื่องหมายราชการ พุทธศักราช ๒๔๘๒" in draft.memo_law
+    # Step 0: ระบบต้องไม่เติมข้อกฎหมายจาก keyword — ต้องมาจากต้นเรื่อง + ผู้ใช้ยืนยันเท่านั้น
+    assert draft.memo_law is None
     assert draft.get_memo_sections()[0][0] == "ต้นเรื่อง"
 
 

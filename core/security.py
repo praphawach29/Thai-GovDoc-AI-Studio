@@ -8,9 +8,9 @@ class CloudAIBlocked(RuntimeError):
 
 
 def cloud_ai_allowed(secret: SecretLevel | str = SecretLevel.NORMAL) -> bool:
-    """อนุญาตเฉพาะเอกสารชั้นปกติเท่านั้น"""
+    """อนุญาตเฉพาะเอกสารชั้นปกติเท่านั้น — ค่าว่าง/ไม่ทราบชั้นข้อมูลถือว่าไม่อนุญาต (fail-closed)"""
     value = getattr(secret, "value", secret)
-    return str(value).lower() in {"normal", "ปกติ", ""}
+    return str(value).lower() in {"normal", "ปกติ"}
 
 
 def assert_cloud_ai_allowed(secret: SecretLevel | str = SecretLevel.NORMAL) -> None:

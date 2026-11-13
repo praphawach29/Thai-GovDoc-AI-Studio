@@ -13,6 +13,7 @@ memo_layout.py — ตัวจัดโครงสร้างเนื้อ�
 - "numbered" — แบบหัวข้อมีเลขกำกับตัวหนา: ๑. ต้นเรื่อง ๒. ข้อเท็จจริง ๓. ข้อกฎหมาย ๔. ข้อพิจารณาและเสนอแนะ
 
 การย่อหน้า (first-line indent, บรรทัดถัดไปชิดขอบซ้าย ตามแบบหนังสือราชการ)
+- หัวข้อ ต้นเรื่อง / ข้อกฎหมาย / ข้อเท็จจริง / ข้อพิจารณาและเสนอแนะ → ชิดขอบซ้าย (0 ซม.)
 - ย่อหน้าปกติ / ข้อระดับ ๑ (๑. ...)           → 2.5 ซม.
 - ข้อระดับ ๒ (๑.๑ ...) / มาตรา / ข้อ ของกฎหมาย → 3.5 ซม.
 - ข้อระดับ ๓ (๑.๑.๑ ...)                       → 4.5 ซม.
@@ -136,12 +137,13 @@ def build_memo_blocks(sections: List[Tuple[str, str, str]], request: str,
         run_in = style == "bma" and key in _BMA_RUN_IN and lines and not _RE_LEVEL1.match(lines[0])
 
         if run_in:
-            blocks.append(MemoBlock(text=lines[0], indent_cm=BASE_INDENT_CM, lead=title,
+            # หัวข้อแบบ run-in ต้องชิดขอบซ้าย (ไม่ย่อหน้า) เพื่อให้ตรงกับแบบบันทึกต้นฉบับ
+            blocks.append(MemoBlock(text=lines[0], indent_cm=0.0, lead=title,
                                     lead_style=lead_style, space_before_pt=gap))
             lines = lines[1:]
         else:
-            indent = BASE_INDENT_CM if style == "bma" else 0.0
-            blocks.append(MemoBlock(text="", indent_cm=indent, lead=title, lead_style=lead_style,
+            # หัวข้อบรรทัดเดี่ยวชิดขอบซ้าย ส่วนเนื้อความบรรทัดถัดไปยังย่อหน้า 2.5 ซม.
+            blocks.append(MemoBlock(text="", indent_cm=0.0, lead=title, lead_style=lead_style,
                                     space_before_pt=gap, kind="heading"))
         for ln in lines:
             blocks.append(MemoBlock(text=ln, indent_cm=line_indent_cm(ln)))

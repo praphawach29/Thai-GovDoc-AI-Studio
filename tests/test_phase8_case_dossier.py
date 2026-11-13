@@ -96,9 +96,8 @@ def test_ai_drafter_integrates_case_dossier():
     assert "ตามที่ สมาคมกีฬาวิ่งเปี้ยวแห่งประเทศไทย" in doc.memo_intro
     assert "เกษียนสั่งการ" in doc.memo_intro
     
-    # ข้อกฎหมายตราสัญลักษณ์ต้องมี (เพราะเรื่องมีตราสัญลักษณ์)
-    assert doc.memo_law is not None
-    assert "พระราชบัญญัติเครื่องหมายราชการ" in doc.memo_law
+    # Step 0: ระบบต้องไม่เติมข้อกฎหมายจาก keyword — ต้องมาจากต้นเรื่อง + ผู้ใช้ยืนยันเท่านั้น
+    assert doc.memo_law is None
 
     # ข้อเท็จจริงต้องบรรจุคำขอความอนุเคราะห์
     assert doc.memo_facts is not None

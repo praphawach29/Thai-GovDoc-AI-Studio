@@ -5,7 +5,7 @@ models.py — Data Schemas for Thai Official Government Documents
 
 import re
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -271,6 +271,59 @@ class SourceCase(BaseModel):
         return "\n\n".join(intro_parts)
 
 
+class EvidenceRef(BaseModel):
+    """หลักฐานอ้างอิงจากต้นเรื่อง (ข้อความ + ตำแหน่ง + ความมั่นใจตามวิธีที่ตรวจสอบได้)"""
+
+    field: str
+    value: str
+    source_quote: str
+    start: int
+    end: int
+    page: Optional[int] = None
+    confidence: float
+    method: Literal["regex", "ocr", "vlm", "manual", "profile"]
+    needs_review: bool = False
+
+
+class UnclearSpan(BaseModel):
+    """ช่วงข้อความที่ OCR/การสกัดอ่านไม่ชัดเจน"""
+
+    text: str
+    start: int
+    end: int
+    page: Optional[int] = None
+    reason: str
+
+
+class ExtractedEntity(BaseModel):
+    """ข้อมูลสำคัญที่สกัดได้จากต้นเรื่อง เช่น ชื่อ หน่วยงาน วันที่ จำนวนเงิน กำหนดการ"""
+
+    kind: Literal["person", "agency", "date", "doc_no", "amount", "number", "deadline", "attachment"]
+    value: str
+    normalized: Optional[str] = None
+    evidence: Optional[EvidenceRef] = None
+
+
+class IntakeQuestion(BaseModel):
+    """คำถามข้อมูลที่ขาด/ควรยืนยัน ก่อนเริ่มร่าง"""
+
+    field: str
+    question: str
+    required: bool = True
+    reason: str = ""
+    placeholder: str = ""
+    kind: Literal["text", "boolean", "choice"] = "text"
+    options: List[str] = Field(default_factory=list)
+
+
+class IntakeAssessment(BaseModel):
+    """ผลประเมินความครบถ้วนของข้อมูลก่อนร่าง"""
+
+    questions: List[IntakeQuestion] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+    ready: bool = False
+
+
 class SourceDocumentContext(BaseModel):
     """ข้อมูลที่สกัดได้จากเอกสารต้นเรื่อง (Source Document)"""
     source_filename: str = Field(..., description="ชื่อไฟล์ต้นเรื่องที่แนบ")
@@ -290,6 +343,10 @@ class SourceDocumentContext(BaseModel):
     extraction_error: Optional[str] = Field(default=None, description="ข้อความแจ้งเตือนข้อผิดพลาดในการสกัดข้อความ")
     ocr_engine_used: Optional[str] = Field(default=None, description="ชื่อ OCR Engine ที่ใช้ในการสกัด (Gemini/Docker/Local)")
     source_case: Optional[SourceCase] = Field(None, description="ข้อมูลสำนวนเรื่องแบบหลายฉบับ/สายเกษียนสั่งการ (Case Dossier)")
+    entities: List[ExtractedEntity] = Field(default_factory=list, description="ข้อมูลสำคัญที่สกัดได้พร้อมหลักฐาน")
+    unclear_spans: List[UnclearSpan] = Field(default_factory=list, description="ช่วงข้อความที่อ่านไม่ชัดเจน")
+    field_confidence: Dict[str, float] = Field(default_factory=dict, description="ความมั่นใจรายฟิลด์ตามวิธีที่ตรวจสอบได้")
+    missing_fields: List[str] = Field(default_factory=list, description="ฟิลด์สำคัญที่ยังขาด")
 
 
 class SectionKind(str, Enum):

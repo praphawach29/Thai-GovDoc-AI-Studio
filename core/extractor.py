@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 from PIL import Image
 
-from core.models import SourceDocumentContext
+from core.models import SecretLevel, SourceDocumentContext
+from core.security import cloud_ai_allowed
+from core.entity_extractor import extract_entities, find_unclear_spans
 from core.ocr_preprocessor import (
     render_pdf_to_images,
     deskew_image,
@@ -389,14 +391,25 @@ def parse_govdoc_metadata(raw_text: str) -> dict:
     }
 
 
-def extract_source_document(file_path: str, api_key: Optional[str] = None, allow_cloud: bool = True) -> SourceDocumentContext:
+def extract_source_document(
+    file_path: str,
+    api_key: Optional[str] = None,
+    allow_cloud: bool = True,
+    secret: SecretLevel = SecretLevel.NORMAL,
+) -> SourceDocumentContext:
     """
     ฟังก์ชันหลักสำหรับวิเคราะห์และสกัดข้อมูลจากไฟล์ต้นเรื่องทุกชนิด
     รองรับ Multi-Engine OCR และ Fail-Safe ป้องกันการนำชื่อไฟล์มาใช้เป็นเนื้อหา
+
+    secret: ชั้นความลับของเอกสาร — ถ้าไม่ใช่ normal จะบังคับให้ OCR ใช้เฉพาะเครื่องภายใน
+    allow_cloud: ถ้า False จะไม่เรียก Gemini Vision
     """
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
+
+    # บังคับนโยบายชั้นข้อมูลที่ backend: ไม่อนุญาตบริการภายนอกเมื่อเป็นชั้นลับ/ไม่ทราบชั้นข้อมูล
+    allow_cloud = bool(allow_cloud) and cloud_ai_allowed(secret)
 
     ext = path.suffix.lower()
     raw_text = ""
@@ -444,6 +457,10 @@ def extract_source_document(file_path: str, api_key: Optional[str] = None, allow
         except Exception:
             source_case = None
 
+    entity_method = "vlm" if ocr_engine_used == "Gemini Vision" else ("ocr" if is_scanned else "regex")
+    entities = extract_entities(raw_text, method=entity_method) if raw_text else []
+    unclear_spans = find_unclear_spans(raw_text) if raw_text else []
+
     return SourceDocumentContext(
         source_filename=path.name,
         source_dept=meta["dept"] or ("หน่วยงานต้นเรื่อง" if not extraction_failed else None),
@@ -461,7 +478,9 @@ def extract_source_document(file_path: str, api_key: Optional[str] = None, allow
         extraction_failed=extraction_failed,
         extraction_error=extraction_error,
         ocr_engine_used=ocr_engine_used,
-        source_case=source_case
+        source_case=source_case,
+        entities=entities,
+        unclear_spans=unclear_spans,
     )
 
 
@@ -482,6 +501,9 @@ def extract_from_raw_text(text: str, filename: str = "manual_input.txt") -> Sour
         except Exception:
             source_case = None
 
+    entities = extract_entities(clean_text, method="manual") if clean_text else []
+    unclear_spans = find_unclear_spans(clean_text) if clean_text else []
+
     return SourceDocumentContext(
         source_filename=filename,
         source_dept=meta["dept"] or "หน่วยงานต้นเรื่อง",
@@ -499,5 +521,7 @@ def extract_from_raw_text(text: str, filename: str = "manual_input.txt") -> Sour
         extraction_failed=len(clean_text) == 0,
         extraction_error="ข้อความว่างเปล่า" if len(clean_text) == 0 else None,
         ocr_engine_used="Manual Input",
-        source_case=source_case
+        source_case=source_case,
+        entities=entities,
+        unclear_spans=unclear_spans,
     )

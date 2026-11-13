@@ -14,9 +14,19 @@ from fastapi.responses import FileResponse, PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from core.models import GovDocumentSchema, SourceDocumentContext, DocType, UrgencyLevel, SecretLevel
+from core.models import (
+    GovDocumentSchema,
+    SourceDocumentContext,
+    DocType,
+    UrgencyLevel,
+    SecretLevel,
+    DocumentKind,
+    IntakeAssessment,
+)
 from core.extractor import extract_source_document
 from core.ai_drafter import draft_from_context_rule_based, draft_from_context_llm, DraftingIntent, copilot_refine_text
+from core.intake import assess_intake
+from core.legal_sources import LegalLibrary, LegalReference
 from core.word_exporter import export_govdoc_to_docx
 from core.typst_exporter import export_govdoc_to_typst, generate_typst_content, compile_typst_to_pdf
 from core.linter import lint_gov_document, LintResult
@@ -49,6 +59,16 @@ class DraftRequest(BaseModel):
     intent: DraftingIntent = DraftingIntent.ACCEPT
     use_llm: bool = False
     api_key: Optional[str] = None
+    secret: SecretLevel = SecretLevel.NORMAL
+    allow_cloud: bool = True
+
+
+class IntakeRequest(BaseModel):
+    context: SourceDocumentContext
+    kind: DocumentKind = DocumentKind.EXTERNAL_LETTER
+    include_law: bool = False
+    include_references: bool = False
+    include_attachments: bool = False
 
 
 class RefineRequest(BaseModel):
@@ -80,7 +100,11 @@ def health_check():
 # 2. Ingestion: สกัดข้อความและข้อมูลต้นเรื่อง
 # ---------------------------------------------------------------------
 @app.post("/api/v1/extract", response_model=SourceDocumentContext)
-async def extract_document(file: UploadFile = File(...)):
+async def extract_document(
+    file: UploadFile = File(...),
+    secret: SecretLevel = Form(SecretLevel.NORMAL),
+    allow_cloud: bool = Form(True),
+):
     """
     อัปโหลดไฟล์ต้นเรื่อง (PDF, Scan, Image, DOCX, TXT)
     เพื่อสกัดข้อความและ Metadata (ที่, วันที่, เรื่อง, เรียน, ส่วนราชการ)
@@ -95,7 +119,11 @@ async def extract_document(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        ctx = extract_source_document(str(target_path))
+        ctx = extract_source_document(
+            str(target_path),
+            allow_cloud=allow_cloud,
+            secret=secret,
+        )
         return ctx
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
@@ -111,8 +139,20 @@ def draft_document(req: DraftRequest):
     โดยสามารถเลือกเจตนา (ตอบรับ / ปฏิเสธ / ส่งต่อ / เสนออนุมัติ)
     """
     if req.use_llm:
-        return draft_from_context_llm(req.context, doc_type=req.doc_type, intent=req.intent, api_key=req.api_key)
-    return draft_from_context_rule_based(req.context, doc_type=req.doc_type, intent=req.intent)
+        return draft_from_context_llm(
+            req.context,
+            doc_type=req.doc_type,
+            intent=req.intent,
+            api_key=req.api_key,
+            secret=req.secret,
+            allow_cloud=req.allow_cloud,
+        )
+    return draft_from_context_rule_based(
+        req.context,
+        doc_type=req.doc_type,
+        intent=req.intent,
+        secret=req.secret,
+    )
 
 
 @app.post("/api/v1/copilot/refine")
@@ -147,6 +187,45 @@ def check_placeholders(doc: GovDocumentSchema):
         "has_placeholders": len(placeholders) > 0,
         "placeholders": placeholders
     }
+
+
+# ---------------------------------------------------------------------
+# 4.1 Intake: ตรวจข้อมูลขาดและสร้างคำถามก่อนร่าง (deterministic)
+# ---------------------------------------------------------------------
+@app.post("/api/v1/intake/questions", response_model=IntakeAssessment)
+def intake_questions(req: IntakeRequest):
+    return assess_intake(
+        req.context,
+        req.kind,
+        include_law=req.include_law,
+        include_references=req.include_references,
+        include_attachments=req.include_attachments,
+    )
+
+
+# ---------------------------------------------------------------------
+# 4.2 คลังข้อกฎหมาย/ระเบียบ (ผู้ใช้ดูแลเอง + สถานะตรวจยืนยัน)
+# ---------------------------------------------------------------------
+@app.get("/api/v1/legal/references")
+def list_legal_references(verified_only: bool = Query(False)):
+    lib = LegalLibrary()
+    return {"references": [ref.model_dump() for ref in lib.list(verified_only=verified_only)]}
+
+
+@app.post("/api/v1/legal/references")
+def add_legal_reference(ref: LegalReference):
+    lib = LegalLibrary()
+    saved = lib.add(ref)
+    return {"status": "created", "reference": saved.model_dump()}
+
+
+@app.put("/api/v1/legal/references/{ref_id}")
+def update_legal_reference(ref_id: str, ref: LegalReference):
+    lib = LegalLibrary()
+    updated = lib.update(ref_id, **{k: v for k, v in ref.model_dump().items() if k != "id"})
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Reference not found")
+    return {"status": "updated", "reference": updated.model_dump()}
 
 
 # ---------------------------------------------------------------------

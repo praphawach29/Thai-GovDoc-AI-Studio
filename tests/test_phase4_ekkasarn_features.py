@@ -94,8 +94,8 @@ def test_memo_review_intent(sample_context):
     assert "หนังสือที่อ้างถึง" in draft.paragraph_reason
     assert any("สวปท. ๑๑/๒๕๖๘" in ref for ref in draft.references)
     assert "ข้อพิจารณาและข้อเสนอ" in draft.paragraph_purpose
-    assert draft.attachments is not None
-    assert len(draft.attachments) > 0
+    # Step 0: สิ่งที่ส่งมาด้วยต้องมาจากต้นเรื่อง/ผู้ใช้ — ห้ามสร้างรายการแนบขึ้นเอง
+    assert draft.attachments is None
 
 
 def test_internal_doc_references_and_attachments_docx(tmp_path):
