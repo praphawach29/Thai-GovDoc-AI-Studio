@@ -76,6 +76,8 @@
 │   ├── layout_profile.py     # โปรไฟล์การจัดหน้าต่อแม่แบบ (ขอบ/ฟอนต์/เลขหน้า)
 │   ├── hierarchy.py         # สร้างชุดบันทึกตามลำดับชั้น (P3)
 │   ├── security.py          # นโยบายบล็อก AI ภายนอกสำหรับข้อมูลชั้นลับ (fail-closed)
+│   ├── verification.py     # ตรวจร่างเทียบต้นเรื่อง (พบ/ไม่พบ/ต้องยืนยัน)
+│   ├── text_checks.py      # ตรวจคำสะกดและความสอดคล้อง
 │   ├── entity_extractor.py  # สกัดชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กำหนดการ + หลักฐาน
 │   ├── intake.py            # ตรวจข้อมูลขาด + สร้างคำถามก่อนร่าง (deterministic)
 │   ├── legal_sources.py     # คลังข้อกฎหมาย JSON + สถานะตรวจยืนยัน
@@ -106,7 +108,7 @@
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
 │   └── fonts/              # TH Sarabun New / IT9 / PSK (ครบ 4 น้ำหนัก)
 │
-├── tests/                  # ชุดทดสอบ 153 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
+├── tests/                  # ชุดทดสอบ 164 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
 └── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
     └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
 ```
@@ -131,7 +133,7 @@
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
 
-- **สถานะชุดทดสอบ:** **153 tests — ผ่าน 148 / ข้าม 5 / ล้มเหลว 0**
+- **สถานะชุดทดสอบ:** **164 tests — ผ่าน 159 / ข้าม 5 / ล้มเหลว 0**
   - เทส PDF (headless browser) และ OCR จะ **ข้ามอัตโนมัติ** เมื่อเครื่องไม่มี browser/API key/Docker โดยใช้ marker กลางใน `tests/conftest.py` (ไม่ถูกนับเป็น fail)
 - **ระยะการพัฒนาที่แล้วเสร็จ:**
   - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
@@ -153,6 +155,8 @@
 - ✅ **Phase 8.9:** สถานะการแก้ไข (ร่าง/กำลังแก้ไข/บันทึกแล้ว), ปุ่มบันทึกทั้งหมด, Audit Trail และสถานะใน Word properties
 - ✅ **Phase 8.10 (Step 0):** Grounding — ไม่แต่งข้อเท็จจริง/ข้อกฎหมาย, บังคับชั้นความลับที่ backend แบบ fail-closed, เลขที่หนังสือ `......../พ.ศ.`
 - ✅ **Phase 8.11 (Step 1):** Intake — สกัด entity พร้อมหลักฐาน, ถามข้อมูลที่ขาด, เลือกหัวข้อ กฎหมาย/อ้างถึง/แนบ, คลังข้อกฎหมาย JSON + UI ยืนยันแหล่ง
+- ✅ **Phase 8.12 (Step 2):** Source Verification — ตรวจร่างเทียบต้นเรื่อง (ชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กฎหมาย) พร้อมหลักฐานและสถานะ พบ/ไม่พบ/ต้องยืนยัน
+- ✅ **Phase 8.13 (Step 3):** Text Checks — ตรวจคำสะกดและความสอดคล้อง แยก critical/warning/info โดยไม่แก้ข้อความอัตโนมัติ
 - **แผนงานระยะถัดไป (Roadmap):**
   - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
   - 🚩 **Phase 10:** Multi-Document Review, Hierarchical Approval & E-Office Integration

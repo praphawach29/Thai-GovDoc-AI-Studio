@@ -73,7 +73,7 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 | Organization/security | Profile and local workflow exist; enterprise account controls are not evidenced in this codebase review. | Before multi-user deployment, define access roles, retention/deletion, secret handling, and audit boundaries; do not infer Ekkasarn's controls beyond its public statements. |
 | Document model | Structured fields (`memo_intro`, `memo_facts`, ...) with validation. | Add a full-text projection and parser for Word round-trip while retaining the structured model for linting and rules. |
 
-## Applied from this benchmark (Sprint 1–11)
+## Applied from this benchmark (Sprint 1–13)
 
 - `core/models.py`: `ExportOptions` (layout profile, font: New/PSK/IT9, letterhead, divider, letter spacing, embed flag, private flag).
 - `core/layout_profile.py`: `LayoutProfile` + `standard_memo`, `standard_external`, `form_it9_2026` (margins/fonts/spacing/indent/header style/page numbers from the real memo).
@@ -96,7 +96,7 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 - `tests/test_step0_grounding.py` + `tests/test_step0_security.py`: 12 tests for no invented facts/laws and fail-closed secret/allow_cloud enforcement.
 - `tests/test_step1_intake.py`: five tests for intake questions, entity extraction/unclear spans, and the JSON legal library.
 
-Test suite after Sprint 1–11: **153 tests collected — 148 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
+Test suite after Sprint 1–13: **164 tests collected — 159 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
 
 ## Recommended application sequence
 

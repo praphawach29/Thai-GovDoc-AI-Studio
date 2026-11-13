@@ -1,7 +1,7 @@
 # 📑 แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบ (Development Plan & Architecture Specification)
 ## Thai GovDoc AI Studio — ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ
 **เวอร์ชันเอกสาร:** 2.2 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
-**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.11 (153 tests: ผ่าน 148 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
+**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.13 (164 tests: ผ่าน 159 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
 **อ้างอิงกฎหมายและระเบียบ:** ระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม, ระเบียบกรุงเทพมหานครว่าด้วยงานสารบรรณ
 
 ---
@@ -71,9 +71,9 @@ flowchart TD
 
 ---
 
-## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.11)
+## 4. สรุปผลการพัฒนาที่แล้วเสร็จ (Completed Development Phases: Phase 1 – 8.13)
 
-ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะหลัก (1–8.11) รวม **153 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
+ระบบผ่านการพัฒนาและทดสอบครบถ้วนทั้ง 8 ระยะหลัก (1–8.13) รวม **164 การทดสอบ (0 failed)** โดยเทสที่ต้องใช้ headless browser หรือ OCR จะ **skip อัตโนมัติ** เมื่อสภาพแวดล้อมไม่พร้อม (ดู `tests/conftest.py`) และจะถูกนับรวมเมื่อรันบนเครื่องที่มีเครื่องมือครบ:
 
 | ระยะการพัฒนา (Phase) | ขอบเขตงานสำคัญ | ไฟล์และโมดูลที่เกี่ยวข้อง | สถานะ |
 | :--- | :--- | :--- | :---: |
@@ -96,8 +96,10 @@ flowchart TD
 | **Phase 8.9: Edit Status & Save** | • สถานะ ฉบับร่าง/กำลังแก้ไข/บันทึกแล้ว<br/>• ปุ่มบันทึกทั้งหมด + Audit Trail ทุกครั้ง<br/>• เขียนสถานะลง DOCX core properties | `core/models.py`<br/>`core/word_exporter.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8.10: Grounding & Secret Enforcement (Step 0)** | • ลบข้อเท็จจริง/ข้อกฎหมายที่ rule-based และแม่แบบแต่งเอง<br/>• บังคับ `secret`/`allow_cloud` ที่ backend (extractor/API/UI) แบบ fail-closed<br/>• เลขที่หนังสือ `......../พ.ศ.` และไม่จองเลขระหว่างร่าง | `core/ai_drafter.py`<br/>`core/security.py`<br/>`core/extractor.py`<br/>`core/api.py`<br/>`core/templates_library.py`<br/>`web/app.py` | ✅ สำเร็จ |
 | **Phase 8.11: Intake & Legal Library (Step 1)** | • สกัด entity (ชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กำหนดการ/แนบ) พร้อมหลักฐาน<br/>• ถามข้อมูลที่ขาดแบบ deterministic + เลือกหัวข้อ กฎหมาย/อ้างถึง/แนบ<br/>• คลังข้อกฎหมาย JSON + UI เพิ่ม/แก้ไข/ยืนยันแหล่ง<br/>• แม่แบบทั่วไปแบบ placeholder 3 ระดับ | `core/models.py`<br/>`core/entity_extractor.py`<br/>`core/intake.py`<br/>`core/legal_sources.py`<br/>`data/legal_references.json`<br/>`web/app.py` | ✅ สำเร็จ |
+| **Phase 8.12: Source Verification (Step 2)** | • เทียบชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กำหนดการ/แนบ/กฎหมาย ระหว่างร่างกับต้นเรื่อง<br/>• สถานะ พบหลักฐาน/ไม่พบหลักฐาน/ต้องยืนยัน + หลักฐานอ้างอิง<br/>• ห้ามแสดง OCR % ที่ไม่มีแหล่ง | `core/verification.py`<br/>`web/app.py` | ✅ สำเร็จ |
+| **Phase 8.13: Text Checks (Step 3)** | • ตรวจคำสะกดที่พบบ่อย + ความสอดคล้องของชื่อ/หน่วยงาน/ตัวเลข<br/>• แยก critical/warning/info โดยไม่แก้ข้อความอัตโนมัติ | `core/text_checks.py`<br/>`web/app.py` | ✅ สำเร็จ |
 
-> **ถัดไป:** Step 2 — ตรวจร่างเทียบต้นเรื่อง (ชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กำหนดการ/สิ่งที่ส่งมาด้วย) พร้อมหลักฐานและ accept/reject ยังไม่เริ่ม
+> **ถัดไป:** Step 4 — ปรับ UI workflow สถานะครบวงจร (OCR → ขาดข้อมูล → ยืนยันชนิด → ร่าง → ตรวจ → บันทึก → ส่งออก) และรับรองผลตรวจในหน้าเว็บ (ชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กำหนดการ/สิ่งที่ส่งมาด้วย) พร้อมหลักฐานและ accept/reject ยังไม่เริ่ม
 
 ---
 
@@ -311,7 +313,7 @@ class SourceCase(BaseModel):
 │
 ├── uploads/                    # โฟลเดอร์จัดเก็บไฟล์ต้นเรื่องที่แนบเข้ามา
 ├── assets/                     # ตราครุฑเวกเตอร์ (garuda.svg) และฟอนต์ TH Sarabun New/IT9/PSK 4 น้ำหนัก
-├── tests/                      # ชุดทดสอบ 153 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
+├── tests/                      # ชุดทดสอบ 164 รายการ (0 failed; ข้าม browser/OCR ตามสภาพแวดล้อม)
 └── web/                        # ระบบหน้าบ้าน (Web UI)
     └── app.py                  # แอปพลิเคชัน Streamlit หน้าจอ 3 แท็บ (ร่าง, ทะเบียน, ตั้งค่า)
 ```
@@ -331,7 +333,7 @@ class SourceCase(BaseModel):
 | **เครื่องมือ OCR ท้องถิ่น** | Docker Engine + Image `tha-tesseract:latest` (Alpine + Tesseract 5.5.2 ภาษา `tha+eng`) |
 | **เครื่องมือ Cloud AI** | Google Gemini API (`gemini-2.5-flash`) ผ่านไลบรารี `google-genai` |
 | **ฐานข้อมูล (Database)** | SQLite 3 (ไฟล์ `audit.db` และ `edocument.db`) |
-| **สถานะชุดทดสอบ** | 153 tests: 148 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
+| **สถานะชุดทดสอบ** | 164 tests: 159 passed / 5 skipped / 0 failed (ด้วย `.venv` + `typst`) |
 
 ### ข้อจำกัดที่ทราบ (Known Limitations)
 
