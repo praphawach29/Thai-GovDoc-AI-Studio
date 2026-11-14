@@ -17,15 +17,38 @@ from core.thai_segmenter import to_thai_numerals
 from core.memo_layout import render_memo_blocks_html
 
 
+def _find_headless_shell() -> list:
+    """หา chrome-headless-shell (Playwright) ซึ่งเหมาะกับเซิร์ฟเวอร์/คลาวด์
+
+    Chrome/Chromium ตัวเต็มอาจค้างตอนสร้าง profile ใหม่ (--user-data-dir) บนเครื่อง
+    ที่ไม่มี dbus หรือออกอินเทอร์เน็ตไม่ได้ ส่วน headless shell ไม่มีปัญหานี้
+    """
+    found = [shutil.which("chrome-headless-shell")]
+    roots = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH"), str(Path.home() / ".cache" / "ms-playwright")]
+    for root in roots:
+        if root and os.path.isdir(root):
+            found.extend(sorted(
+                (str(p) for p in Path(root).glob("chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell")),
+                reverse=True,
+            ))
+    return found
+
+
 def _find_browser_executable() -> Optional[str]:
-    """ค้นหา Browser Executable สำหรับใช้ในการเรนเดอร์ PDF แบบ Headless"""
+    """ค้นหา Browser Executable สำหรับใช้ในการเรนเดอร์ PDF แบบ Headless
+
+    ลำดับ: ตัวแปร GOVDOC_PDF_BROWSER → Edge/Chrome บน Windows → chrome-headless-shell
+    → Edge/Chrome/Chromium บน Linux/Mac
+    """
     candidates = [
+        os.environ.get("GOVDOC_PDF_BROWSER"),
         # Microsoft Edge บน Windows
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
         r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
         # Google Chrome บน Windows
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        *_find_headless_shell(),
         # Linux / Mac fallbacks
         shutil.which("msedge"),
         shutil.which("google-chrome"),
@@ -36,6 +59,33 @@ def _find_browser_executable() -> Optional[str]:
         if c and os.path.exists(c):
             return c
     return None
+
+
+_FONT_FACES = [
+    ("THSarabunNew.ttf", "normal", "normal"),
+    ("THSarabunNew-Bold.ttf", "bold", "normal"),
+    ("THSarabunNew-Italic.ttf", "normal", "italic"),
+    ("THSarabunNew-BoldItalic.ttf", "bold", "italic"),
+]
+
+
+def _local_font_faces_css() -> str:
+    """ประกาศ @font-face ของ TH Sarabun New จาก assets/fonts (ไม่พึ่งอินเทอร์เน็ต)
+
+    เดิมใช้ Google Fonts ซึ่งทำให้ headless browser ค้างเมื่อเครื่องไม่มีอินเทอร์เน็ต
+    (on-prem / cloud sandbox) และเป็นฟอนต์ Sarabun ไม่ใช่ TH Sarabun New ตามระเบียบ
+    """
+    fonts_dir = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+    rules = []
+    for filename, weight, style in _FONT_FACES:
+        font_path = fonts_dir / filename
+        if font_path.exists():
+            rules.append(
+                "@font-face { font-family: 'TH Sarabun New'; "
+                f"src: url('{font_path.as_uri()}') format('truetype'); "
+                f"font-weight: {weight}; font-style: {style}; }}"
+            )
+    return "\n".join(rules)
 
 
 def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = None) -> str:
@@ -176,7 +226,7 @@ def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = N
 <head>
 <meta charset="utf-8">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+{_local_font_faces_css()}
 @page {{
     size: A4 portrait;
     margin: 25mm 20mm 20mm 30mm; /* บน 2.5 ซม. ขวา 2 ซม. ล่าง 2 ซม. ซ้าย 3 ซม. */

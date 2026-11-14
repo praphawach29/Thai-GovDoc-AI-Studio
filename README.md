@@ -121,6 +121,7 @@
 - **Python 3.10+** — ติดตั้ง dependencies ทั้งหมดด้วย `python -m pip install -r requirements.txt`
 - **Typst** — ใช้ได้ทั้ง Typst CLI หรือ Python binding `typst` (ติดตั้งจาก `requirements.txt` และฝัง compiler ไว้ในตัว)
 - **ฟอนต์** — โปรเจกต์แนบ **TH Sarabun New, IT9 และ PSK** ครบ 4 น้ำหนัก (Regular/Bold/Italic/BoldItalic) ไว้ใน `assets/fonts` สำหรับเรนเดอร์ PDF (ระเบียบงานสารบรรณอนุญาตให้ใช้ TH Sarabun New หรือ TH Sarabun PSK)
+- **Headless browser (สำหรับ PDF แบบ HTML)** — Edge/Chrome หรือ `chrome-headless-shell` (Playwright) ซึ่งแนะนำบนเซิร์ฟเวอร์/คลาวด์ เพราะ Chrome ตัวเต็มอาจค้างเมื่อสร้าง profile ใหม่ในเครื่องที่ไม่มี dbus/อินเทอร์เน็ต; กำหนดเองได้ด้วยตัวแปร `GOVDOC_PDF_BROWSER`
 - **Docker (ทางเลือก)** — สำหรับ OCR ออฟไลน์ด้วย image `tha-tesseract:latest` (ดู `Dockerfile.tesseract`)
 
 ### 2. ขั้นตอนการทำงานแบบย่อ
