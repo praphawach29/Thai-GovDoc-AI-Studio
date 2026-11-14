@@ -163,6 +163,13 @@
 ห้ามตั้ง service_role / secret key: เซิร์ฟเวอร์เรียก Supabase ด้วย token ของผู้ใช้ที่ล็อกอิน สิทธิ์จึงถูกคุมด้วย RLS ในฐานข้อมูล
 ฐานข้อมูลติดตั้งจาก `supabase/migrations/` ตามลำดับ (ทดสอบบนเครื่องด้วย `bash supabase/tests/run_local.sh`)
 
+### 5. Deploy บน Vercel
+1. vercel.com → Add New → Project → Import repo นี้ (Framework Preset: **FastAPI** ตรวจเจอเองจาก `app.py`)
+2. Environment Variables (เลือกทั้ง Production และ Preview): `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`
+3. Deploy — ค่าตั้งอยู่ใน `vercel.json` (ภูมิภาค `sin1`, 60 วินาที) และ `.vercelignore`
+
+บน Vercel ถ้าไม่ได้ตั้ง 2 ตัวแปรนี้ API จะปฏิเสธทุกคำขอ (ไม่เปิดใช้แบบไม่มีล็อกอิน)
+
 ---
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
