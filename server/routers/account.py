@@ -15,6 +15,13 @@ def public_config(settings: Settings = Depends(get_settings)):
     return {
         "auth_required": enabled,
         "misconfigured": settings.require_auth and not enabled,
+        # บอกเฉพาะ "ชื่อ" ตัวแปรที่ยังไม่ได้ตั้ง (ไม่เปิดเผยค่า) ให้ผู้ดูแลแก้ได้ตรงจุด
+        "missing_settings": [
+            name for name, value in (
+                ("SUPABASE_URL", settings.supabase_url),
+                ("SUPABASE_PUBLISHABLE_KEY", settings.supabase_publishable_key),
+            ) if not value
+        ],
         "supabase_url": settings.supabase_url if enabled else None,
         "supabase_publishable_key": settings.supabase_publishable_key if enabled else None,
         "source_bucket": settings.source_bucket,

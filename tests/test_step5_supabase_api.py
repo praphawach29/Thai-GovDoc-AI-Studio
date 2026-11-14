@@ -245,3 +245,18 @@ def test_cloud_without_supabase_fails_closed(tmp_path, client):
     assert client.post("/api/v1/export/typst", json=_doc()).status_code == 503
     assert client.get("/api/v1/health").status_code == 200
     assert client.get("/api/v1/config").json()["misconfigured"] is True
+
+
+def test_settings_accept_supabase_connect_names_and_report_missing(monkeypatch, client, tmp_path):
+    for name in ("SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_ANON_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NEXT_PUBLIC_SUPABASE_URL", " https://x.supabase.co/ ")
+    monkeypatch.setenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY", "sb_publishable_x")
+    s = Settings(upload_dir=tmp_path / "u", registry_db_path=tmp_path / "r.db")
+    assert s.supabase_url == "https://x.supabase.co" and s.supabase_publishable_key == "sb_publishable_x"
+
+    monkeypatch.delenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY")
+    half = Settings(upload_dir=tmp_path / "u", registry_db_path=tmp_path / "r.db", require_auth=True)
+    app.dependency_overrides[get_settings] = lambda: half
+    body = client.get("/api/v1/config").json()
+    assert body["misconfigured"] is True and body["missing_settings"] == ["SUPABASE_PUBLISHABLE_KEY"]

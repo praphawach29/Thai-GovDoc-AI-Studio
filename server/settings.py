@@ -13,6 +13,26 @@ _ON_SERVERLESS = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUN
 _WRITABLE_ROOT = Path("/tmp/govdoc") if _ON_SERVERLESS else ROOT_DIR
 
 
+# ชื่อที่ยอมรับ (ตัวแรกคือชื่อหลัก) — หน้า "Connect" ของ Supabase และ Vercel Integration
+# มักให้ชื่อแบบ NEXT_PUBLIC_* จึงรับไว้ด้วย กันตั้งค่าผิดชื่อแล้วระบบปิดตัวเองโดยไม่รู้สาเหตุ
+SUPABASE_URL_ENV = ("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL")
+SUPABASE_KEY_ENV = (
+    "SUPABASE_PUBLISHABLE_KEY",
+    "SUPABASE_ANON_KEY",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+)
+
+
+def _first_env(names) -> str:
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _split_csv(value: str) -> List[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
@@ -39,11 +59,8 @@ class Settings:
     # และเก็บข้อมูลใน Supabase; ไม่ตั้ง = โหมดเครื่องเดียว (SQLite + localStorage, ไม่มีล็อกอิน)
     # publishable key (เดิมเรียก anon key) เปิดเผยในหน้าเว็บได้ สิทธิ์ถูกคุมด้วย RLS
     # ห้ามใส่ service_role / secret key ที่นี่ — API เรียก Supabase ด้วย token ของผู้ใช้เท่านั้น
-    supabase_url: str = field(default_factory=lambda: os.environ.get("SUPABASE_URL", "").rstrip("/"))
-    supabase_publishable_key: str = field(
-        default_factory=lambda: os.environ.get("SUPABASE_PUBLISHABLE_KEY")
-        or os.environ.get("SUPABASE_ANON_KEY", "")
-    )
+    supabase_url: str = field(default_factory=lambda: _first_env(SUPABASE_URL_ENV).rstrip("/"))
+    supabase_publishable_key: str = field(default_factory=lambda: _first_env(SUPABASE_KEY_ENV))
     source_bucket: str = "sources"
     # บนคลาวด์ต้องมีล็อกอินเสมอ: ถ้าลืมตั้ง Supabase ระบบจะปฏิเสธ API แทนการเปิดใช้แบบไม่มีล็อกอิน
     # (บนเครื่องตัวเองไม่บังคับ; ตั้ง GOVDOC_REQUIRE_AUTH=1 เพื่อบังคับเองได้)
