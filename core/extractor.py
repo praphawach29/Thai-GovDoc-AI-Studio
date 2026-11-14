@@ -18,7 +18,8 @@ from core.entity_extractor import extract_entities, find_unclear_spans
 from core.ocr_preprocessor import (
     render_pdf_to_images,
     deskew_image,
-    enhance_document_contrast
+    enhance_document_contrast,
+    opencv_available,
 )
 
 
@@ -265,10 +266,13 @@ def extract_text_from_image_file(
     2. บันทึกภาพที่ปรับแต่งแล้ว
     3. ส่งเข้า OCR Multi-Engine
     """
-    import cv2
-    img_cv = cv2.imread(image_path)
     preview_path = image_path
+    img_cv = None
+    if opencv_available():
+        import cv2
+        img_cv = cv2.imread(image_path)
 
+    # ไม่มี OpenCV (เช่นบนคลาวด์) = ส่งภาพต้นฉบับเข้า OCR โดยไม่ปรับภาพ
     if img_cv is not None:
         deskewed, _ = deskew_image(img_cv)
         enhanced = enhance_document_contrast(deskewed)

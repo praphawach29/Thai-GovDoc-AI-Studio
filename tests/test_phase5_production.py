@@ -15,7 +15,7 @@ from PIL import Image
 
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext
 from core.templates_library import PRESET_TEMPLATES
-from core.pdf_exporter import generate_govdoc_html
+from legacy.pdf_exporter import generate_govdoc_html
 from core.word_exporter import export_govdoc_to_docx
 from core.typst_exporter import generate_typst_content
 from core.ai_drafter import draft_from_context_llm, DraftingIntent

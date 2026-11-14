@@ -5,8 +5,14 @@ test_phase2.py — ชุดทดสอบการทำงานของร�
 import os
 from pathlib import Path
 import pytest
-import numpy as np
-import cv2
+
+try:  # OpenCV เป็นของเครื่อง local เท่านั้น (requirements-dev.txt) — บนคลาวด์ไม่ติดตั้ง
+    import cv2
+    import numpy as np
+except ImportError:
+    cv2 = np = None
+
+needs_opencv = pytest.mark.skipif(cv2 is None, reason="ต้องติดตั้ง opencv-python (requirements-dev.txt)")
 
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext
 from core.ocr_preprocessor import deskew_image, enhance_document_contrast, binarize_adaptive, render_pdf_to_images
@@ -18,6 +24,7 @@ from core.registry import DocumentRegistry, OutgoingRecord, IncomingRecord
 # -------------------------------------------------------------
 # 1. ทดสอบ OCR Preprocessor
 # -------------------------------------------------------------
+@needs_opencv
 def test_deskew_image():
     # สร้างภาพจำลองที่มีเส้นข้อความเอียง 5 องศา
     img = np.ones((300, 400), dtype=np.uint8) * 255
@@ -33,6 +40,7 @@ def test_deskew_image():
     assert abs(angle) > 0.1
 
 
+@needs_opencv
 def test_enhance_contrast_and_binarize():
     img = np.ones((200, 200, 3), dtype=np.uint8) * 200
     cv2.putText(img, "TEST", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (50, 50, 50), 2)

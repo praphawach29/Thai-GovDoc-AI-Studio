@@ -62,7 +62,15 @@
 ├── PROMPT_ENGINEERING.md   # Prompts & AI Drafting Schemas
 ├── EXPORT_ENGINE.md        # รายละเอียด Export (Typst + Word)
 ├── Dockerfile.tesseract    # Docker Container สำหรับ Local Thai OCR
-├── requirements.txt        # Python dependencies (เวอร์ชันที่ทดสอบแล้ว)
+├── ARCHITECTURE.md         # สถาปัตยกรรมเป้าหมาย (Vercel + Supabase) และลำดับงาน
+├── requirements.txt        # dependencies ตอนรันเซิร์ฟเวอร์ (สิ่งที่ deploy ขึ้นคลาวด์)
+├── requirements-dev.txt    # + uvicorn, Streamlit, OpenCV, pytest สำหรับเครื่องพัฒนา
+│
+├── server/                 # ชั้นบริการ HTTP (FastAPI) — งานที่แตะไฟล์/ฐานข้อมูล/env อยู่ที่นี่
+│   ├── main.py             # ประกอบแอป: CORS, router, เสิร์ฟหน้าเว็บ  (uvicorn server.main:app)
+│   ├── settings.py         # ค่าตั้งจากตัวแปรสภาพแวดล้อม (โดเมนที่อนุญาต, โฟลเดอร์อัปโหลด, ขนาดไฟล์)
+│   ├── deps.py             # ทะเบียน, การรับไฟล์อัปโหลด, การกรอง path จากผู้เรียก
+│   └── routers/            # health, sources, drafting, legal, export, registry, studio
 │
 ├── core/                   # ระบบแกนหลัก (Core Business Logic)
 │   ├── models.py           # Data Models (GovDoc, UserProfile, SourceContext, SourceCase)
@@ -87,8 +95,6 @@
 │   ├── thai_date.py         # วันที่ไทย พ.ศ. (ไม่สร้างเลขที่/วันที่เอง)
 │   ├── word_exporter.py    # ตัวสร้างไฟล์ Word (.docx) พร้อมตัดคำ ZWSP ชิดขอบ
 │   ├── typst_exporter.py   # ตัวคอมไพล์ PDF เวกเตอร์ด้วย Typst (CLI หรือ Python binding)
-│   ├── pdf_exporter.py     # ตัวเรนเดอร์ PDF ผ่าน HTML + headless browser
-│   ├── api.py              # Enterprise REST API Gateway (FastAPI)
 │   ├── audit.py            # ประวัติเวอร์ชันและระบบ Diff Engine
 │   ├── copilot.py          # AI Copilot ขัดเกลาภาษาเฉพาะจุด
 │   ├── registry.py         # ทะเบียนคุมสารบรรณและออกเลขที่หนังสือ
@@ -102,15 +108,16 @@
 │
 ├── templates/              # แม่แบบเอกสาร
 │   ├── typst/              # external.typ, internal.typ
-│   └── docx/               # default_template.docx
 │
 ├── assets/                 # ทรัพยากรภาพและฟอนต์
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
 │   └── fonts/              # TH Sarabun New / IT9 / PSK (ครบ 4 น้ำหนัก)
 │
-├── tests/                  # ชุดทดสอบ 164 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
-└── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
-    └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
+├── tests/                  # ชุดทดสอบ 192 รายการ (ข้ามเทสที่ต้องใช้ OCR key/OpenCV/Streamlit ตามสภาพแวดล้อม)
+├── web/studio/             # หน้าเว็บหลัก GovDoc Studio (HTML + Tailwind) เสิร์ฟจาก FastAPI
+└── legacy/                 # ใช้บนเครื่อง local เท่านั้น ไม่ deploy
+    ├── streamlit_app.py    # หน้าจอ Streamlit เดิม (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
+    └── pdf_exporter.py     # PDF ผ่าน HTML + Edge/Chrome (บนคลาวด์ใช้ Typst)
 ```
 
 ---
@@ -118,10 +125,10 @@
 ## 🚀 แผนการเริ่มต้นและพัฒนาต่อ (Getting Started)
 
 ### 1. ความต้องการของระบบ (Prerequisites)
-- **Python 3.10+** — ติดตั้ง dependencies ทั้งหมดด้วย `python -m pip install -r requirements.txt`
+- **Python 3.10+** — บนเครื่องพัฒนาติดตั้งด้วย `python -m pip install -r requirements-dev.txt` (`requirements.txt` เป็นชุดเล็กสำหรับ deploy ไม่มี Streamlit/OpenCV)
 - **Typst** — ใช้ได้ทั้ง Typst CLI หรือ Python binding `typst` (ติดตั้งจาก `requirements.txt` และฝัง compiler ไว้ในตัว)
 - **ฟอนต์** — โปรเจกต์แนบ **TH Sarabun New, IT9 และ PSK** ครบ 4 น้ำหนัก (Regular/Bold/Italic/BoldItalic) ไว้ใน `assets/fonts` สำหรับเรนเดอร์ PDF (ระเบียบงานสารบรรณอนุญาตให้ใช้ TH Sarabun New หรือ TH Sarabun PSK)
-- **Headless browser (สำหรับ PDF แบบ HTML)** — Edge/Chrome หรือ `chrome-headless-shell` (Playwright) ซึ่งแนะนำบนเซิร์ฟเวอร์/คลาวด์ เพราะ Chrome ตัวเต็มอาจค้างเมื่อสร้าง profile ใหม่ในเครื่องที่ไม่มี dbus/อินเทอร์เน็ต; กำหนดเองได้ด้วยตัวแปร `GOVDOC_PDF_BROWSER`
+- **Headless browser (เฉพาะ `legacy/pdf_exporter.py`)** — Edge/Chrome หรือ `chrome-headless-shell` (Playwright) ซึ่งแนะนำบนเซิร์ฟเวอร์/คลาวด์ เพราะ Chrome ตัวเต็มอาจค้างเมื่อสร้าง profile ใหม่ในเครื่องที่ไม่มี dbus/อินเทอร์เน็ต; กำหนดเองได้ด้วยตัวแปร `GOVDOC_PDF_BROWSER`
 - **Docker (ทางเลือก)** — สำหรับ OCR ออฟไลน์ด้วย image `tha-tesseract:latest` (ดู `Dockerfile.tesseract`)
 
 ### 2. ขั้นตอนการทำงานแบบย่อ
@@ -134,10 +141,16 @@
 หน้าเว็บใหม่ตามดีไซน์ใน `stitch_official_document_generator_homepage_2/` อยู่ที่ `web/studio/` (HTML + Tailwind) เสิร์ฟจาก FastAPI ตัวเดียวกับ API:
 
 ```bash
-.venv\Scripts\python -m uvicorn core.api:app --port 8600
+.venv\Scripts\python -m uvicorn server.main:app --port 8600
 ```
 
-เปิด `http://localhost:8600/` → หน้าแรก (พิมพ์คำสั่ง/แนบไฟล์) → หน้าแก้ไขเอกสาร (`/studio/editor.html`) ร่างที่แก้ไขจะเก็บใน localStorage ของเบราว์เซอร์ (ยังไม่มีฐานข้อมูลกลาง) ส่วนหน้าจอ Streamlit (`web/app.py`) ยังใช้งานได้ตามเดิม
+เปิด `http://localhost:8600/` → หน้าแรก (พิมพ์คำสั่ง/แนบไฟล์) → หน้าแก้ไขเอกสาร (`/studio/editor.html`) ร่างที่แก้ไขจะเก็บใน localStorage ของเบราว์เซอร์ (ยังไม่มีฐานข้อมูลกลาง) ส่วนหน้าจอ Streamlit เดิมย้ายไปที่ `legacy/` รันด้วย:
+
+```bash
+.venv\Scripts\python -m streamlit run legacy/streamlit_app.py
+```
+
+ตัวแปรสภาพแวดล้อมของเซิร์ฟเวอร์ (ไม่ตั้งก็ได้ค่าเริ่มต้น): `GOVDOC_ALLOWED_ORIGINS` (โดเมนที่เรียก API ได้, คั่นด้วยจุลภาค), `GOVDOC_UPLOAD_DIR`, `GOVDOC_REGISTRY_DB`, `GOVDOC_MAX_UPLOAD_MB` (ค่าเริ่มต้น 50)
 
 ---
 

@@ -219,6 +219,16 @@ $$;
 
 ## 11. ลำดับการทำงาน
 
+**สถานะ (14 พ.ย. 2569):** ขั้น 1 และ 2 เสร็จแล้ว
+
+ผลวัดของขั้น 2 ที่ใช้ต่อในขั้น 6 (deploy):
+- ติดตั้ง `requirements.txt` ใหม่ทั้งหมดได้ **246 MB** (ไม่รวม pip/`__pycache__`) — ชิดเพดาน ~250 MB ของ Vercel
+- ส่วนที่ใหญ่: `typst` 81 MB (ตัด compiler ไม่ได้), `pythainlp/corpus` 63 MB, `openai` 20 MB, `google-genai` + `cryptography` ~30 MB
+- `newmm` ของ PyThaiNLP ใช้แค่ `corpus/words_th.txt` และ `corpus/stopwords_th.txt` (ทดสอบแล้ว: ลบไฟล์ corpus อื่นทั้งหมด เทสต์ยังผ่าน 184 ข้อ) → ตอน deploy ใช้ `excludeFiles` ตัด corpus อื่นออกได้ราว 60 MB
+- เซิร์ฟเวอร์ import ได้โดยไม่มี OpenCV/Streamlit (ทดสอบใน venv ที่มีเฉพาะ `requirements.txt`)
+- ยังไม่ได้ย้ายส่วนเก็บข้อมูล (`core/registry.py`, `audit.py`, `legal_sources.py`, `profile_manager.py`) ออกจาก `core/` เพราะขั้น 3 จะแทนด้วย Supabase อยู่แล้ว — บน Vercel ส่วนที่เขียนไฟล์ (เพิ่มข้อกฎหมาย, ทะเบียน SQLite ใน `/tmp`) จะไม่ถาวรจนกว่าขั้น 3 เสร็จ
+
+
 1. **แก้บั๊กกลุ่มเร่งด่วน** ในโค้ดเดิม พร้อมเทสต์ (path traversal ของ `/extract`, escape HTML, เวลา Asia/Bangkok, ชั้นความเร็ว 32 pt) และ**แก้ตำแหน่งในเทมเพลต Typst ตามข้อ 9.1** พร้อมเทสต์วัดพิกัด
 2. **ปรับโครงสร้าง:** แยก `server/` ออกจาก `core/`, ย้าย Streamlit ไป `legacy/`, แยก requirements, ทำให้ `core/` ไม่มี I/O
 3. **Supabase:** สร้างโปรเจกต์ (Singapore), เขียน migrations (ตาราง + `issue_reg_no` + RLS + audit trigger), ปิด signup, สร้างบัญชีทดสอบ

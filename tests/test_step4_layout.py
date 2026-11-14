@@ -10,7 +10,7 @@ import pdfplumber
 import pytest
 from fastapi.testclient import TestClient
 
-from core import api
+from server.main import app
 from core.models import ExportOptions, SecretLevel, UrgencyLevel
 from core.templates_library import PRESET_TEMPLATES
 from core.typst_exporter import generate_typst_content
@@ -34,7 +34,7 @@ def _external_doc(**changes):
 
 
 def _pdf_page(doc):
-    res = TestClient(api.app).post("/api/v1/export/pdf", json=doc.model_dump(mode="json"))
+    res = TestClient(app).post("/api/v1/export/pdf", json=doc.model_dump(mode="json"))
     assert res.status_code == 200, res.text
     return pdfplumber.open(io.BytesIO(res.content)).pages[0]
 

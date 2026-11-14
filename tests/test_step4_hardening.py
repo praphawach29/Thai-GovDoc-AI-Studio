@@ -9,22 +9,21 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from core import api, thai_date
-from core.pdf_exporter import generate_govdoc_html
+from core import thai_date
+from server.main import app
+from legacy.pdf_exporter import generate_govdoc_html
 from core.registry import DocumentRegistry, DuplicateRegistryEntry, OutgoingRecord
 from core.templates_library import PRESET_TEMPLATES
 
 
 @pytest.fixture
 def client():
-    return TestClient(api.app)
+    return TestClient(app)
 
 
 # ---------------------------------------------------------------- อัปโหลดไฟล์
-def test_extract_ignores_client_filename_path(client, tmp_path, monkeypatch):
-    tmp_path = tmp_path / "uploads"
-    tmp_path.mkdir()
-    monkeypatch.setattr(api, "uploads_dir", tmp_path)
+def test_extract_ignores_client_filename_path(client, test_settings):
+    tmp_path = test_settings.upload_dir
     res = client.post(
         "/api/v1/extract",
         files={"file": ("../../evil.txt", "ด้วยกรมทดสอบขอเชิญประชุม".encode("utf-8"), "text/plain")},
@@ -37,12 +36,15 @@ def test_extract_ignores_client_filename_path(client, tmp_path, monkeypatch):
     assert res.json()["source_filename"] == "evil.txt"
 
 
-def test_extract_rejects_unknown_type_and_oversize(client, tmp_path, monkeypatch):
-    tmp_path = tmp_path / "uploads"
-    tmp_path.mkdir()
-    monkeypatch.setattr(api, "uploads_dir", tmp_path)
+def test_extract_rejects_unknown_type_and_oversize(client, test_settings):
+    from dataclasses import replace
+
+    from server.settings import get_settings
+
+    tmp_path = test_settings.upload_dir
+    tmp_path.mkdir(parents=True, exist_ok=True)
     assert client.post("/api/v1/extract", files={"file": ("x.exe", b"MZ", "application/octet-stream")}).status_code == 400
-    monkeypatch.setattr(api, "_MAX_UPLOAD_BYTES", 10)
+    app.dependency_overrides[get_settings] = lambda: replace(test_settings, max_upload_bytes=10)
     assert client.post("/api/v1/extract", files={"file": ("x.txt", b"a" * 11, "text/plain")}).status_code == 413
     assert list(tmp_path.iterdir()) == []
 

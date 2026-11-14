@@ -4,20 +4,10 @@ test_api.py — ชุดทดสอบ REST API ของ Thai GovDoc AI Studi
 """
 
 import pytest
-from core.api import (
-    health_check,
-    draft_document,
-    copilot_refine,
-    validate_document,
-    export_typst,
-    get_next_number,
-    reserve_number,
-    list_outgoing,
-    create_outgoing,
-    DraftRequest,
-    RefineRequest,
-    ReserveRequest
-)
+from server.routers.health import health_check
+from server.routers.drafting import draft_document, copilot_refine, validate_document, DraftRequest, RefineRequest
+from server.routers.export import export_typst
+from server.routers.registry import get_next_number, reserve_number, list_outgoing, create_outgoing, ReserveRequest
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext
 from core.registry import OutgoingRecord
 from core.ai_drafter import DraftingIntent
@@ -118,9 +108,9 @@ def test_api_export_typst(sample_doc):
 # ---------------------------------------------------------------------
 # 5. ทดสอบ Registry Endpoints
 # ---------------------------------------------------------------------
-def test_api_registry_workflow():
+def test_api_registry_workflow(test_registry):
     # 1. ขอเลขถัดไป
-    res_num = get_next_number(prefix="กค ๐๔๐๖/", is_circular=False)
+    res_num = get_next_number(prefix="กค ๐๔๐๖/", is_circular=False, registry=test_registry)
     assert "กค ๐๔๐๖/" in res_num["doc_number"]
 
     # 2. จองเลข
@@ -129,7 +119,7 @@ def test_api_registry_workflow():
         subject="จองเลขโครงการ API",
         reserved_by="นายสมชาย"
     )
-    res_reserve = reserve_number(req_reserve)
+    res_reserve = reserve_number(req_reserve, registry=test_registry)
     assert res_reserve["status"] == "success"
     assert "reserved_number" in res_reserve
 
@@ -142,8 +132,8 @@ def test_api_registry_workflow():
         doc_date="๑๕ มีนาคม ๒๕๖๙",
         status="sent"
     )
-    res_out = create_outgoing(record)
+    res_out = create_outgoing(record, registry=test_registry)
     assert res_out["status"] == "registered"
 
-    res_list = list_outgoing(limit=10)
+    res_list = list_outgoing(limit=10, registry=test_registry)
     assert len(res_list) > 0

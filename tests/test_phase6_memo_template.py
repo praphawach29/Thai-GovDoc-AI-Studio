@@ -14,7 +14,7 @@ import docx
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel
 from core.templates_library import PRESET_TEMPLATES
 from core.word_exporter import export_govdoc_to_docx
-from core.pdf_exporter import generate_govdoc_html
+from legacy.pdf_exporter import generate_govdoc_html
 from core.typst_exporter import generate_typst_content
 from core.ai_drafter import draft_from_context_rule_based, DraftingIntent
 from core.memo_layout import line_indent_cm, split_consideration_and_request

@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from core.api import app, uploads_dir
+from server.main import app
 
 client = TestClient(app)
 
@@ -37,7 +37,9 @@ def test_draft_requires_prompt_or_file():
     assert client.post("/api/v1/studio/draft", data={"prompt": "   "}).status_code == 400
 
 
-def test_upload_uses_generated_filename(tmp_path):
+def test_upload_uses_generated_filename(test_settings):
+    uploads_dir = test_settings.upload_dir
+    uploads_dir.mkdir(parents=True, exist_ok=True)
     before = set(uploads_dir.iterdir())
     res = client.post(
         "/api/v1/studio/draft",

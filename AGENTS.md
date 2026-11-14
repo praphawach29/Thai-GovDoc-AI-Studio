@@ -68,8 +68,10 @@ Agent **ห้ามละเมิด** กฎต่อไปนี้ในก
   - สระลอยและวรรณยุกต์ (ห้ามแยกสระกับพยัญชนะ)
   - การแทรก `\u200b` (ZWSP) เพื่อการตัดคำใน DOCX
 - การเรียก Typst CLI ให้ใช้ `subprocess` หรือ Python binding ที่ปลอดภัย ไม่เกิด Command Injection
+- **แบ่งชั้นโค้ด:** `core/` คือตรรกะหนังสือราชการ ห้ามอ่านตัวแปรสภาพแวดล้อมหรือผูกกับ HTTP; งานที่แตะ HTTP, ไฟล์อัปโหลด, ฐานข้อมูล, env อยู่ใน `server/` (endpoint ใหม่ใส่ใน `server/routers/`) ส่วน `legacy/` ใช้บนเครื่อง local เท่านั้น ห้าม import จาก `server/` หรือ `core/`
+- **ขนาดที่ deploy:** `requirements.txt` คือสิ่งที่ขึ้นคลาวด์ (Vercel จำกัด function ~250 MB) — ไลบรารีที่ใช้เฉพาะเครื่อง local ให้ใส่ `requirements-dev.txt` และ import แบบไม่บังคับ (ดู `core/ocr_preprocessor.py`)
 
-### Frontend (Next.js / React / Streamlit)
+### Frontend (`web/studio/` — HTML/JS + Tailwind; Streamlit เดิมอยู่ใน `legacy/`)
 - แยกหน้าจอแบบ 2 คอลัมน์ (Split-screen Workspace):
   - คอลัมน์ซ้าย: Source Document Viewer (รองรับ PDF Viewer พร้อมค้นหาและไฮไลต์ข้อความ)
   - คอลัมน์ขวา: Form & Rich-Text Editor พร้อมแท็บ Live Preview หน้าเอกสาร A4
@@ -87,6 +89,10 @@ Agent **ห้ามละเมิด** กฎต่อไปนี้ในก
 ├── PROMPT_ENGINEERING.md   # Prompts และ Few-shot templates สำหรับ AI
 ├── EXPORT_ENGINE.md        # รายละเอียดการ Export (Typst PDF & Word DOCX)
 ├── README.md               # คู่มือการติดตั้งและการใช้งาน
+├── ARCHITECTURE.md         # สถาปัตยกรรมเป้าหมาย (Vercel + Supabase)
+├── requirements.txt        # dependencies ที่ deploy / requirements-dev.txt สำหรับเครื่องพัฒนา
+│
+├── server/                 # FastAPI: main.py, settings.py, deps.py, routers/
 │
 ├── core/                   # แกนหลักของการประมวลผล (Business Logic)
 │   ├── models.py           # Pydantic Schemas (GovDocExternal, GovDocInternal)
@@ -97,16 +103,15 @@ Agent **ห้ามละเมิด** กฎต่อไปนี้ในก
 │   └── registry.py         # ทะเบียนรับ-ส่ง และออกเลขที่หนังสือ
 │
 ├── templates/              # เทมเพลตสำหรับส่งออกเอกสาร
-│   ├── typst/              # ไฟล์ .typ (external.typ, internal.typ)
-│   └── docx/               # ไฟล์ .docx ต้นแบบ (มี Styles และ Margins)
+│   └── typst/              # ไฟล์ .typ (external.typ, internal.typ)
 │
 ├── assets/                 # ภาพและฟอนต์
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์
 │   ├── garuda.png          # ตราครุฑบิตแมป
 │   └── fonts/              # TH Sarabun New (.ttf)
 │
-└── web/                    # เว็บแอปพลิเคชันสำหรับผู้ใช้งาน
-    └── app.py              # หน้าจอ Workspace สำหรับแนบไฟล์ ตรวจแก้ และส่งออก
+├── web/studio/             # หน้าเว็บหลัก (หน้าแรก + หน้าแก้ไขเอกสาร)
+└── legacy/                 # ใช้บนเครื่อง local เท่านั้น: streamlit_app.py, pdf_exporter.py (HTML→Chrome)
 ```
 
 ---
