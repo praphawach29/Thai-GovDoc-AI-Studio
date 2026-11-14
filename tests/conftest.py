@@ -116,3 +116,12 @@ def export_pdf():
             raise
 
     return _export
+
+
+@pytest.fixture(autouse=True)
+def _isolated_registry(tmp_path, monkeypatch):
+    """ให้ทุกเทสต์ใช้ทะเบียนชั่วคราว ไม่เขียนลง data/edocument.db ของจริง"""
+    from core import api
+    from core.registry import DocumentRegistry
+
+    monkeypatch.setattr(api, "registry", DocumentRegistry(db_path=str(tmp_path / "edocument.db")))

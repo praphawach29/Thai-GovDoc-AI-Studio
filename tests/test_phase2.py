@@ -116,16 +116,18 @@ def test_document_registry(tmp_path):
     # 1. ทดสอบการรันเลขที่หนังสืออัตโนมัติ
     no1 = reg.get_next_doc_number(prefix="กค ๐๔๐๖/")
     no2 = reg.get_next_doc_number(prefix="กค ๐๔๐๖/")
-    assert no1 == "กค ๐๔๐๖/1"
-    assert no2 == "กค ๐๔๐๖/2"
+    # รหัสหน่วยงานเป็นเลขไทย เลขลำดับต้องเป็นเลขไทยด้วย (ไม่ผสมสองแบบ)
+    assert no1 == "กค ๐๔๐๖/๑"
+    assert no2 == "กค ๐๔๐๖/๒"
+    assert reg.get_next_doc_number(prefix="ABC/") == "ABC/1"
 
-    # 2. ทดสอบการรันเลขหนังสือเวียน (มี ว.)
+    # 2. หนังสือเวียนมีเลขชุดของตัวเอง เริ่มที่ ๑ ไม่ต่อจากหนังสือส่งปกติ
     no_cir = reg.get_next_doc_number(prefix="กค ๐๔๐๖/", is_circular=True)
-    assert no_cir == "กค ๐๔๐๖/ว 3"
+    assert no_cir == "กค ๐๔๐๖/ว ๑"
 
     # 3. ทดสอบการจองเลขหนังสือ
     res_no = reg.reserve_doc_number(prefix="กค ๐๔๐๖/", subject="จองเลขโครงการ AI", reserved_by="นายสมชาย")
-    assert "กค ๐๔๐๖/4" in res_no
+    assert res_no == "กค ๐๔๐๖/๓"
 
     # 4. ทดสอบบันทึกทะเบียนส่ง
     rec = OutgoingRecord(

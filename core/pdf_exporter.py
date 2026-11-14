@@ -4,6 +4,7 @@ pdf_exporter.py — ตัวสร้างไฟล์ PDF เวกเตอ�
 เพื่อสร้างไฟล์ PDF คมชัดระดับ Vector พร้อมฝังฟอนต์ Sarabun และตราครุฑจริง
 """
 
+import html
 import os
 import shutil
 import base64
@@ -88,6 +89,20 @@ def _local_font_faces_css() -> str:
     return "\n".join(rules)
 
 
+def _html_escaped_copy(data: GovDocumentSchema) -> GovDocumentSchema:
+    """สำเนาเอกสารที่ escape ข้อความทุกช่อง (str และ list ของ str) สำหรับใส่ใน HTML"""
+    updates = {}
+    for name in type(data).model_fields:
+        if name == "signature_image_path":
+            continue
+        value = getattr(data, name)
+        if isinstance(value, str):
+            updates[name] = html.escape(value, quote=True)
+        elif isinstance(value, list) and all(isinstance(v, str) for v in value):
+            updates[name] = [html.escape(v, quote=True) for v in value]
+    return data.model_copy(update=updates)
+
+
 def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = None) -> str:
     """สร้างโค้ด HTML มาตรฐาน A4 สำหรับแปลงเป็น PDF"""
     root_dir = Path(__file__).resolve().parent.parent
@@ -114,6 +129,11 @@ def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = N
         with open(data.signature_image_path, "rb") as f:
             sig_b64 = base64.b64encode(f.read()).decode("utf-8")
         sig_html = f'<div style="text-align: center; margin: 4px 0;"><img src="data:image/png;base64,{sig_b64}" style="height: 38px; width: auto;" alt="ลายมือชื่อ" /></div>'
+
+    # ข้อความทุกช่องมาจากผู้ใช้/AI ต้อง escape ก่อนใส่ใน HTML
+    # มิฉะนั้นข้อความอย่าง <iframe src="file:///etc/passwd"> จะถูก Chrome เรนเดอร์ลง PDF
+    raw = data
+    data = _html_escaped_copy(data)
 
     fmt_date = to_thai_numerals(data.doc_date) if data.use_thai_numerals else data.doc_date
     fmt_number = to_thai_numerals(data.doc_number) if data.use_thai_numerals else data.doc_number
@@ -183,7 +203,8 @@ def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = N
     else:
         # บันทึกข้อความ (หนังสือภายใน) — โครงสร้างตาม core.memo_layout
         num = (lambda t: to_thai_numerals(t)) if data.use_thai_numerals else (lambda t: t)
-        memo_sections_rendered = render_memo_blocks_html(data.get_memo_blocks(), transform=num)
+        # memo_layout escape ข้อความเองแล้ว จึงส่งข้อมูลดิบ (กันการ escape ซ้ำ)
+        memo_sections_rendered = render_memo_blocks_html(raw.get_memo_blocks(), transform=num)
 
         dept_value = data.dept_name
         if data.contact_tel and data.contact_tel not in dept_value:

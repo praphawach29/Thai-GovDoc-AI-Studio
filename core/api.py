@@ -3,15 +3,18 @@ api.py — REST API Backend สำหรับ Thai GovDoc AI Studio (FastAPI)
 รองรับการเชื่อมต่อกับระบบ e-Office, สารบรรณอิเล็กทรอนิกส์, และ Web / Mobile Services
 """
 
+import logging
 import os
 import shutil
 import tempfile
+from uuid import uuid4
 from pathlib import Path
 from typing import Optional, List
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Response
 from fastapi.responses import FileResponse, PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.background import BackgroundTask
 from pydantic import BaseModel
 
 from core.models import (
@@ -30,7 +33,7 @@ from core.legal_sources import LegalLibrary, LegalReference
 from core.word_exporter import export_govdoc_to_docx
 from core.typst_exporter import export_govdoc_to_typst, generate_typst_content, compile_typst_to_pdf
 from core.linter import lint_gov_document, LintResult
-from core.registry import DocumentRegistry, OutgoingRecord, IncomingRecord
+from core.registry import DocumentRegistry, DuplicateRegistryEntry, OutgoingRecord, IncomingRecord
 
 
 app = FastAPI(
@@ -40,17 +43,57 @@ app = FastAPI(
 )
 
 # อนุญาต CORS สำหรับการเรียกใช้งานข้ามโดเมน
+# อนุญาตเฉพาะโดเมนที่กำหนด (คั่นด้วยจุลภาคใน GOVDOC_ALLOWED_ORIGINS)
+# ค่าเริ่มต้นคือเครื่องตัวเอง; ห้ามใช้ "*" คู่กับ credentials
+_allowed_origins = [
+    o.strip()
+    for o in os.environ.get(
+        "GOVDOC_ALLOWED_ORIGINS", "http://localhost:8600,http://127.0.0.1:8600"
+    ).split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 registry = DocumentRegistry()
 uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
 uploads_dir.mkdir(exist_ok=True)
+logger = logging.getLogger("govdoc.api")
+
+_ALLOWED_SOURCE_SUFFIXES = {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+async def _save_upload(file: UploadFile) -> Path:
+    """ตรวจชนิด/ขนาดไฟล์ แล้วบันทึกด้วยชื่อที่ระบบสร้างเอง
+
+    ห้ามใช้ชื่อไฟล์จากผู้ใช้เป็น path (เช่น "../core/api.py" จะเขียนทับไฟล์นอก uploads/)
+    """
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in _ALLOWED_SOURCE_SUFFIXES:
+        raise HTTPException(status_code=400, detail=f"ไม่รองรับไฟล์ชนิด {suffix or '(ไม่มีนามสกุล)'}")
+    data = await file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="ไฟล์ใหญ่เกิน 50 MB")
+    target = uploads_dir / f"{uuid4().hex}{suffix}"
+    target.write_bytes(data)
+    return target
+
+
+def _without_server_paths(doc: GovDocumentSchema) -> GovDocumentSchema:
+    """ไม่ให้ผู้เรียก API ชี้ไฟล์บนเซิร์ฟเวอร์ผ่าน signature_image_path
+
+    มิฉะนั้นใครก็ฝังลายมือชื่อ/ไฟล์ภาพใดก็ได้บนเครื่องลงในเอกสาร
+    การแนบลายมือชื่อจะทำผ่านระบบผู้ใช้/Storage ในขั้นถัดไป
+    """
+    if doc.signature_image_path:
+        return doc.model_copy(update={"signature_image_path": None})
+    return doc
 
 
 class DraftRequest(BaseModel):
@@ -109,24 +152,18 @@ async def extract_document(
     อัปโหลดไฟล์ต้นเรื่อง (PDF, Scan, Image, DOCX, TXT)
     เพื่อสกัดข้อความและ Metadata (ที่, วันที่, เรื่อง, เรียน, ส่วนราชการ)
     """
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in [".pdf", ".docx", ".doc", ".txt", ".png", ".jpg", ".jpeg", ".tiff"]:
-        raise HTTPException(status_code=400, detail=f"Unsupported file type: {suffix}")
-
-    # บันทึกไฟล์ลง uploads
-    target_path = uploads_dir / file.filename
-    with open(target_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
+    target_path = await _save_upload(file)
     try:
         ctx = extract_source_document(
             str(target_path),
             allow_cloud=allow_cloud,
             secret=secret,
         )
-        return ctx
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
+    except Exception:
+        logger.exception("extract failed for %s", target_path.name)
+        raise HTTPException(status_code=500, detail="สกัดข้อความจากไฟล์ไม่สำเร็จ")
+    ctx.source_filename = Path(file.filename or "").name
+    return ctx
 
 
 # ---------------------------------------------------------------------
@@ -237,6 +274,7 @@ def export_docx(doc: GovDocumentSchema):
     ส่งออกหนังสือราชการเป็นไฟล์ Microsoft Word (.docx)
     พร้อมการตัดคำภาษาไทยด้วย Zero-Width Space และ OpenXML Thai Distributed
     """
+    doc = _without_server_paths(doc)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
         tmp_path = tmp.name
 
@@ -245,7 +283,9 @@ def export_docx(doc: GovDocumentSchema):
     return FileResponse(
         tmp_path,
         filename=filename,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        # ลบไฟล์ชั่วคราวหลังส่งเสร็จ ไม่ให้สะสมบนเซิร์ฟเวอร์
+        background=BackgroundTask(os.remove, tmp_path),
     )
 
 
@@ -254,7 +294,7 @@ def export_typst(doc: GovDocumentSchema):
     """
     สร้างโค้ด Typst (.typ) สำหรับหนังสือราชการ
     """
-    return generate_typst_content(doc)
+    return generate_typst_content(_without_server_paths(doc))
 
 
 # ---------------------------------------------------------------------
@@ -265,7 +305,8 @@ def get_next_number(prefix: str = Query("ดพร ๐๑๐๒/"), is_circular:
     """
     ขอรับเลขที่หนังสือราชการลำดับถัดไป (Auto-increment)
     """
-    next_no = registry.get_next_doc_number(prefix=prefix, is_circular=is_circular)
+    # GET ต้องไม่เปลี่ยนข้อมูล: แค่ดูเลขถัดไป ไม่กินเลข (ออกเลขจริงผ่าน POST /registry/reserve)
+    next_no = registry.peek_next_doc_number(prefix=prefix, is_circular=is_circular)
     return {"prefix": prefix, "is_circular": is_circular, "doc_number": next_no}
 
 
@@ -296,7 +337,10 @@ def create_outgoing(record: OutgoingRecord):
     """
     บันทึกหนังสือราชการลงสมุดทะเบียนส่ง
     """
-    row_id = registry.register_outgoing(record)
+    try:
+        row_id = registry.register_outgoing(record)
+    except DuplicateRegistryEntry as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     return {"status": "registered", "registry_id": row_id, "doc_number": record.doc_number}
 
 
@@ -313,7 +357,10 @@ def create_incoming(record: IncomingRecord):
     """
     บันทึกหนังสือราชการลงสมุดทะเบียนรับ
     """
-    row_id = registry.register_incoming(record)
+    try:
+        row_id = registry.register_incoming(record)
+    except DuplicateRegistryEntry as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     return {"status": "registered", "registry_id": row_id, "receive_number": record.receive_number}
 
 
@@ -321,8 +368,6 @@ def create_incoming(record: IncomingRecord):
 # ---------------------------------------------------------------------
 # 7. GovDoc Studio (web/studio): หน้าแรก + หน้าแก้ไขเอกสาร
 # ---------------------------------------------------------------------
-from uuid import uuid4
-
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -337,10 +382,6 @@ from core.studio import (
 )
 
 _ROOT_DIR = Path(__file__).resolve().parent.parent
-_ALLOWED_SOURCE_SUFFIXES = {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
-_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
-
-
 class BlankRequest(BaseModel):
     doc_type: DocType = DocType.INTERNAL
 
@@ -362,15 +403,7 @@ async def studio_draft(
     """เริ่มร่างจากคำสั่งที่พิมพ์และ/หรือไฟล์ต้นเรื่อง (สกัด → จำแนก → ร่าง → ตรวจ)"""
     saved_path: Optional[Path] = None
     if file is not None and file.filename:
-        suffix = Path(file.filename).suffix.lower()
-        if suffix not in _ALLOWED_SOURCE_SUFFIXES:
-            raise HTTPException(status_code=400, detail=f"ไม่รองรับไฟล์ชนิด {suffix}")
-        data = await file.read()
-        if len(data) > _MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="ไฟล์ใหญ่เกิน 50 MB")
-        # ใช้ชื่อไฟล์ที่ระบบสร้างเอง ป้องกัน path traversal จากชื่อไฟล์ที่ผู้ใช้ส่งมา
-        saved_path = uploads_dir / f"{uuid4().hex}{suffix}"
-        saved_path.write_bytes(data)
+        saved_path = await _save_upload(file)
     elif not prompt.strip():
         raise HTTPException(status_code=400, detail="พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องก่อนเริ่มร่าง")
 
@@ -430,10 +463,12 @@ def export_pdf(doc: GovDocumentSchema):
         shutil.copytree(_ROOT_DIR / "templates" / "typst", tmp / "templates" / "typst")
         (tmp / "assets").mkdir()
         shutil.copy(_ROOT_DIR / "assets" / "garuda.svg", tmp / "assets" / "garuda.svg")
-        typ_path.write_text(generate_typst_content(doc), encoding="utf-8")
+        typ_path.write_text(generate_typst_content(_without_server_paths(doc)), encoding="utf-8")
         ok, message = compile_typst_to_pdf(str(typ_path), str(pdf_path))
         if not ok or not pdf_path.exists():
-            raise HTTPException(status_code=500, detail=message)
+            # ข้อความจาก Typst มี path ภายในเซิร์ฟเวอร์ — เก็บใน log ไม่ส่งให้ผู้ใช้
+            logger.error("typst compile failed: %s", message)
+            raise HTTPException(status_code=500, detail="สร้าง PDF ไม่สำเร็จ")
         pdf_bytes = pdf_path.read_bytes()
     return Response(content=pdf_bytes, media_type="application/pdf")
 
