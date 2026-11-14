@@ -42,6 +42,7 @@ class FakeSupabase:
         self.storage: Dict[str, bytes] = {}
         self.rpc_errors: Dict[str, Dict[str, str]] = {}
         self.legacy_tokens: Dict[str, Dict[str, Any]] = {}
+        self.password = "correct-password"
 
     # ---------------------------------------------------------------- tokens
     def token(self, sub: str = USER_ID, **overrides) -> str:
@@ -85,6 +86,17 @@ class FakeSupabase:
 
         if path == "/auth/v1/.well-known/jwks.json":
             return self._json(200, self.jwks())
+        if path == "/auth/v1/token" and query.get("grant_type") == "password":
+            body = json.loads(request.content or b"{}")
+            if body.get("password") != self.password:
+                return self._json(400, {"error": "invalid_grant", "error_description": "Invalid login credentials"})
+            return self._json(200, {
+                "access_token": self.token(), "token_type": "bearer", "expires_in": 3600,
+                "expires_at": int(time.time()) + 3600, "refresh_token": "refresh-" + uuid.uuid4().hex,
+                "user": {"id": USER_ID, "aud": "authenticated", "role": "authenticated", "email": body.get("email")},
+            })
+        if path == "/auth/v1/logout":
+            return httpx.Response(204)
         if path == "/auth/v1/user":
             tok = request.headers.get("authorization", "").partition(" ")[2]
             if tok in self.legacy_tokens:
@@ -163,6 +175,11 @@ class FakeSupabase:
 
     # ---------------------------------------------------------------- Storage
     def _storage(self, request: httpx.Request, path: str) -> httpx.Response:
+        if path.startswith("/storage/v1/object/upload/sign/") and request.method == "PUT":
+            # เบราว์เซอร์อัปโหลดด้วย URL ที่เซ็นแล้ว (multipart แบบ supabase-js หรือไฟล์ดิบ)
+            obj = path[len("/storage/v1/object/upload/sign/"):]
+            self.storage[obj] = _file_from_body(request)
+            return self._json(200, {"Key": obj})
         if path.startswith("/storage/v1/object/upload/sign/"):
             obj = path[len("/storage/v1/object/upload/sign/"):]
             return self._json(200, {"url": f"/object/upload/sign/{obj}?token=signed-token"})
@@ -175,3 +192,15 @@ class FakeSupabase:
             self.storage[path[len("/storage/v1/object/"):]] = request.content
             return self._json(200, {"Key": path})
         return self._json(404, {"message": "not found"})
+
+
+def _file_from_body(request: httpx.Request) -> bytes:
+    ctype = request.headers.get("content-type", "")
+    if not ctype.startswith("multipart/form-data"):
+        return request.content
+    import email
+    msg = email.message_from_bytes(b"Content-Type: " + ctype.encode() + b"\r\n\r\n" + request.content)
+    for part in msg.get_payload():
+        if part.get_filename() is not None or part.get_param("name", header="content-disposition") == "":
+            return part.get_payload(decode=True)
+    return b""

@@ -1,9 +1,15 @@
-// studio.js — ส่วนกลางของหน้าเว็บ GovDoc Studio: เรียก API, เก็บร่างในเครื่อง, ตัวช่วยข้อความไทย
+// studio.js — ส่วนกลางของหน้าเว็บ GovDoc Studio: เรียก API, เก็บร่าง, ตัวช่วยข้อความไทย
+// ต้องโหลด auth.js ก่อนไฟล์นี้
 (function () {
   const API = '/api/v1';
+  const auth = window.GovDocAuth;
 
   async function request(path, options = {}) {
-    const res = await fetch(API + path, options);
+    const token = await auth.token();
+    const headers = { ...(options.headers || {}) };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(API + path, { ...options, headers });
+    if (res.status === 401 && token !== null) { auth.signOut(); throw new Error('หมดเวลาเข้าสู่ระบบ'); }
     if (!res.ok) {
       let detail = res.statusText;
       try { detail = (await res.json()).detail || detail; } catch (_) { /* ไม่ใช่ JSON */ }
@@ -11,9 +17,10 @@
     }
     return res;
   }
-  const postJSON = (path, body) => request(path, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  const sendJSON = (method, path, body) => request(path, {
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
+  const postJSON = (path, body) => sendJSON('POST', path, body);
 
   const api = {
     profile: () => request('/studio/profile').then(r => r.json()),
@@ -23,9 +30,28 @@
     refine: (text, command) => postJSON('/copilot/refine', { text, command }).then(r => r.json()),
     exportDocx: (doc) => postJSON('/export/docx', doc).then(r => r.blob()),
     exportPdf: (doc) => postJSON('/export/pdf', doc).then(r => r.blob()),
+    templates: () => request('/studio/templates').then(r => r.json()),
+    template: (id) => request('/studio/templates/' + encodeURIComponent(id)).then(r => r.json()),
+    legal: () => request('/legal/references').then(r => r.json()),
+    health: () => fetch(API + '/health').then(r => r.ok),
+    me: () => request('/me').then(r => r.json()),
+    // โหมดเซิร์ฟเวอร์: อัปโหลดไฟล์ต้นเรื่องตรงเข้า Supabase Storage (ไม่ผ่าน API ซึ่งรับไฟล์ใหญ่ไม่ได้)
+    async uploadSource(file) {
+      const { path, upload_url } = await postJSON('/sources/upload-url', { filename: file.name, size_bytes: file.size }).then(r => r.json());
+      const body = new FormData();
+      body.append('cacheControl', '3600');
+      body.append('', file);
+      // ส่ง apikey (publishable key ซึ่งเปิดเผยได้) แบบเดียวกับ supabase-js; สิทธิ์อัปโหลดมาจาก token ใน URL
+      const { supabase_publishable_key: apikey } = await auth.config();
+      const res = await fetch(upload_url, { method: 'PUT', body, headers: { 'x-upsert': 'false', apikey } });
+      if (!res.ok) throw new Error('อัปโหลดไฟล์ต้นเรื่องไม่สำเร็จ');
+      return path;
+    },
   };
 
-  // ---------- ร่างที่เก็บในเบราว์เซอร์นี้ (ยังไม่มีฐานข้อมูลกลาง) ----------
+  // ---------- ที่เก็บร่าง ----------
+  // โหมดเครื่องเดียว: localStorage ของเบราว์เซอร์นี้
+  // โหมดเซิร์ฟเวอร์ (Supabase): ร่างที่กำลังแก้เก็บที่ documents.workspace, จุดบันทึกที่ document_versions
   const KEY = 'govdoc.studio.docs.v1';
   function readAll() {
     try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (_) { return []; }
@@ -33,17 +59,62 @@
   function writeAll(list) {
     try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, 30))); return true; } catch (_) { return false; }
   }
-  const store = {
-    list: () => readAll().sort((a, b) => (b.updated || '').localeCompare(a.updated || '')),
-    get: (id) => readAll().find(x => x.id === id) || null,
-    save(entry) {
+  const localStore = {
+    async list() { return readAll().sort((a, b) => (b.updated || '').localeCompare(a.updated || '')); },
+    async get(id) { return readAll().find(x => x.id === id) || null; },
+    async save(entry) {
       const list = readAll().filter(x => x.id !== entry.id);
       entry.updated = new Date().toISOString();
       list.unshift(entry);
       return writeAll(list);
     },
-    remove(id) { writeAll(readAll().filter(x => x.id !== id)); },
-    newId: () => 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    async create(entry) {
+      entry.id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      if (!(await localStore.save(entry))) throw new Error('พื้นที่เก็บในเบราว์เซอร์เต็ม — ลบเอกสารเก่าก่อน');
+      return entry.id;
+    },
+    async snapshot() { /* โหมดเครื่องเดียวเก็บประวัติใน entry.versions อยู่แล้ว */ },
+    where: 'ในเครื่องนี้',
+  };
+  const split = (entry) => {
+    const { id, title, updated, doc, ...workspace } = entry;
+    return { doc, workspace };
+  };
+  const serverStore = {
+    async list() {
+      const rows = await request('/documents?limit=50').then(r => r.json());
+      return rows.map(r => ({ id: r.id, title: r.subject, updated: r.updated_at, doc: { urgency: r.urgency }, docNumber: r.doc_number, status: r.status }));
+    },
+    async get(id) {
+      try {
+        const r = await request('/documents/' + encodeURIComponent(id)).then(x => x.json());
+        return { ...(r.workspace || {}), id: r.id, title: r.subject, updated: r.updated_at, status: r.status };
+      } catch (_) { return null; }
+    },
+    async save(entry) {
+      const r = await sendJSON('PATCH', '/documents/' + encodeURIComponent(entry.id), split(entry)).then(x => x.json());
+      entry.updated = r.updated_at || new Date().toISOString();
+      return true;
+    },
+    async create(entry) {
+      const r = await postJSON('/documents', split(entry)).then(x => x.json());
+      entry.id = r.id;
+      return r.id;
+    },
+    async snapshot(id, doc, note) {
+      await postJSON('/documents/' + encodeURIComponent(id) + '/versions', { doc, note });
+    },
+    where: 'บนเซิร์ฟเวอร์',
+  };
+  // เลือกที่เก็บตามโหมดของเซิร์ฟเวอร์ (รู้หลังโหลด /config)
+  const pick = async () => ((await auth.serverMode()) ? serverStore : localStore);
+  const store = {
+    list: async () => (await pick()).list(),
+    get: async (id) => (await pick()).get(id),
+    save: async (entry) => (await pick()).save(entry),
+    create: async (entry) => (await pick()).create(entry),
+    snapshot: async (id, doc, note) => (await pick()).snapshot(id, doc, note),
+    where: async () => (await pick()).where,
   };
 
   // ---------- ตัวช่วยข้อความ ----------
@@ -90,9 +161,5 @@
     top_secret: { label: 'ลับที่สุด', cls: 'bg-rose-600 text-white border-rose-600' },
   };
 
-  window.GovDoc = { api, store, toThai, esc, PH_RE, hasPlaceholder, relTime, download, toast, DOC_TYPE_LABEL, URGENCY, SECRET };
+  window.GovDoc = { api, store, auth, toThai, esc, PH_RE, hasPlaceholder, relTime, download, toast, DOC_TYPE_LABEL, URGENCY, SECRET };
 })();
-GovDoc.api.templates = () => fetch('/api/v1/studio/templates').then(r => r.json());
-GovDoc.api.template = (id) => fetch('/api/v1/studio/templates/' + encodeURIComponent(id)).then(r => { if (!r.ok) throw new Error('ไม่พบแม่แบบ'); return r.json(); });
-GovDoc.api.legal = () => fetch('/api/v1/legal/references').then(r => r.json());
-GovDoc.api.health = () => fetch('/api/v1/health').then(r => r.ok);

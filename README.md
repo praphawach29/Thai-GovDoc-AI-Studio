@@ -152,6 +152,17 @@
 
 ตัวแปรสภาพแวดล้อมของเซิร์ฟเวอร์ (ไม่ตั้งก็ได้ค่าเริ่มต้น): `GOVDOC_ALLOWED_ORIGINS` (โดเมนที่เรียก API ได้, คั่นด้วยจุลภาค), `GOVDOC_UPLOAD_DIR`, `GOVDOC_REGISTRY_DB`, `GOVDOC_MAX_UPLOAD_MB` (ค่าเริ่มต้น 50)
 
+### 4. โหมด Supabase (ล็อกอิน + เก็บข้อมูลบนเซิร์ฟเวอร์)
+ตั้ง 2 ตัวแปรนี้แล้วระบบจะบังคับล็อกอินทุก API และเก็บเอกสาร/ทะเบียน/ไฟล์ต้นเรื่องใน Supabase (ไม่ตั้ง = โหมดเครื่องเดียวแบบเดิม):
+
+| ตัวแปร | ค่า |
+|---|---|
+| `SUPABASE_URL` | เช่น `https://<project-ref>.supabase.co` |
+| `SUPABASE_PUBLISHABLE_KEY` | Publishable key (เดิมชื่อ anon key) จาก Settings → API Keys — เปิดเผยในหน้าเว็บได้ |
+
+ห้ามตั้ง service_role / secret key: เซิร์ฟเวอร์เรียก Supabase ด้วย token ของผู้ใช้ที่ล็อกอิน สิทธิ์จึงถูกคุมด้วย RLS ในฐานข้อมูล
+ฐานข้อมูลติดตั้งจาก `supabase/migrations/` ตามลำดับ (ทดสอบบนเครื่องด้วย `bash supabase/tests/run_local.sh`)
+
 ---
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)

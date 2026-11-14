@@ -1,14 +1,19 @@
 // editor.js — หน้าแก้ไขเอกสาร: กระดาษ A4 แก้ไขได้โดยตรง + บทสนทนา/ต้นเรื่อง/ผลตรวจ + ส่งออก
-(function () {
+(async function () {
   const { api, store, esc, toThai, PH_RE, hasPlaceholder, relTime, download, toast, URGENCY, SECRET, DOC_TYPE_LABEL } = window.GovDoc;
   const $ = (id) => document.getElementById(id);
 
+  await window.GovDoc.auth.ready;
   const id = new URLSearchParams(location.search).get('id');
-  const entry = id && store.get(id);
+  const entry = id && await store.get(id);
   if (!entry) {
-    document.body.innerHTML = `<div class="m-auto text-center p-8"><p class="text-slate-700 mb-3">ไม่พบเอกสารนี้ในเบราว์เซอร์</p><a href="./" class="text-emerald-700 underline">กลับหน้าแรก</a></div>`;
+    document.body.innerHTML = `<div class="m-auto text-center p-8"><p class="text-slate-700 mb-3">ไม่พบเอกสารนี้ หรือไม่มีสิทธิ์เปิด</p><a href="./" class="text-emerald-700 underline">กลับหน้าแรก</a></div>`;
     return;
   }
+  const storeWhere = await store.where();
+  // เก็บจุดบันทึก (เวอร์ชัน) บนเซิร์ฟเวอร์ — โหมดเครื่องเดียวไม่ทำอะไร
+  const snapshot = (note) => store.snapshot(entry.id, st.doc, note)
+    .catch(err => toast('เก็บเวอร์ชันบนเซิร์ฟเวอร์ไม่สำเร็จ: ' + err.message, 'warn'));
 
   const st = {
     doc: entry.doc,
@@ -25,12 +30,19 @@
 
   // ---------- บันทึก ----------
   let saveTimer = null, checkTimer = null;
-  function persist() {
+  // บันทึกทีละครั้ง: ถ้ามีการแก้ระหว่างกำลังบันทึก จะบันทึกซ้ำอีกรอบหลังเสร็จ (เครือข่ายช้าก็ไม่ทับกัน)
+  let saving = false, savePending = false;
+  async function persist() {
+    if (saving) { savePending = true; return; }
+    saving = true;
     entry.doc = st.doc; entry.check = st.check; entry.versions = st.versions.slice(-20);
     entry.title = st.doc.subject;
-    const ok = store.save(entry);
-    st.savedAt = entry.updated;
+    let ok = false;
+    try { ok = await store.save(entry); } catch (err) { st.saveError = err.message; }
+    if (ok) st.savedAt = entry.updated;
+    saving = false;
     renderSaveState(ok ? 'saved' : 'error');
+    if (savePending) { savePending = false; persist(); }
   }
   function scheduleSave() {
     renderSaveState('saving');
@@ -40,8 +52,8 @@
   function renderSaveState(state) {
     const el = $('save-indicator');
     el.innerHTML = state === 'saving' ? '<i class="fa-solid fa-circle-notch fa-spin text-slate-400"></i><span>กำลังบันทึก...</span>'
-      : state === 'error' ? '<i class="fa-solid fa-triangle-exclamation text-rose-600"></i><span>บันทึกไม่สำเร็จ (พื้นที่เต็ม)</span>'
-      : '<i class="fa-solid fa-check text-emerald-600"></i><span>บันทึกอัตโนมัติในเครื่องนี้แล้ว</span>';
+      : state === 'error' ? `<i class="fa-solid fa-triangle-exclamation text-rose-600"></i><span>บันทึกไม่สำเร็จ${st.saveError ? ' — ' + esc(st.saveError) : ' (พื้นที่เต็ม)'}</span>`
+      : `<i class="fa-solid fa-check text-emerald-600"></i><span>บันทึกอัตโนมัติ${storeWhere}แล้ว</span>`;
     $('footer-saved').textContent = st.savedAt ? 'บันทึกล่าสุด' + relTime(st.savedAt) : '';
   }
 
@@ -542,6 +554,7 @@
       const blob = kind === 'pdf' ? await api.exportPdf(st.doc) : await api.exportDocx(st.doc);
       download(blob, `${safeName()}.${kind}`);
       st.doc.edit_status = 'saved'; persist();
+      snapshot(kind === 'pdf' ? 'ส่งออก PDF' : 'ส่งออก Word');
     } catch (err) { toast('ส่งออกไม่สำเร็จ: ' + err.message, 'error'); }
     finally { btn.disabled = false; btn.innerHTML = html; }
   }
@@ -565,6 +578,7 @@
       const res = await api.draft(fd);
       if (!res.document) throw new Error(res.steps.find(s => !s.ok)?.detail || 'ร่างไม่สำเร็จ');
       st.versions.push({ at: new Date().toISOString(), doc: st.doc, note: 'ก่อนร่างใหม่' });
+      snapshot('ก่อนร่างใหม่');
       st.undo = []; st.redo = [];
       st.doc = res.document; st.check = res.check;
       entry.steps = res.steps; entry.context = res.context;
@@ -597,6 +611,7 @@
     const v = st.versions[idx];
     st.versions.splice(idx, 1);
     st.versions.push({ at: new Date().toISOString(), doc: st.doc, note: 'ก่อนกู้คืน' });
+    snapshot('ก่อนกู้คืน');
     commit(d => Object.assign(d, JSON.parse(JSON.stringify(v.doc))));
     vModal.hidden = true;
     toast('กู้คืนเวอร์ชันแล้ว');

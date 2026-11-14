@@ -1,6 +1,6 @@
 // home.js — หน้าแรก: รับคำสั่ง/ไฟล์ต้นเรื่อง → เรียก /studio/draft → เปิดหน้าแก้ไขเอกสาร
 (function () {
-  const { api, store, esc, toThai, relTime, toast, URGENCY, SECRET, DOC_TYPE_LABEL } = window.GovDoc;
+  const { api, store, auth, esc, toThai, relTime, toast, URGENCY, SECRET, DOC_TYPE_LABEL } = window.GovDoc;
   const $ = (id) => document.getElementById(id);
 
   const state = { file: null, urgency: 'normal', secret: 'normal', busy: false };
@@ -12,7 +12,16 @@
   backdrop.addEventListener('click', () => setSidebar(false));
 
   // ---------- โปรไฟล์ + สถานะระบบ ----------
-  api.profile().then((p) => {
+  auth.ready.then(async (cfg) => {
+    if (!cfg.auth_required) return;
+    $('btn-signout').hidden = false;
+    $('btn-signout').addEventListener('click', () => auth.signOut());
+    try {
+      const me = await api.me();
+      $('user-position').textContent = [me.position, me.organization?.name].filter(Boolean).join(' · ');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  auth.ready.then(() => api.profile()).then((p) => {
     const full = String(p.signatory_name || '').replace(/[()]/g, '').trim();
     const bare = full.replace(/^(นางสาว|นาง|นาย|ดร\.|ว่าที่ร้อยตรี)\s*/, '');
     const first = bare.split(/\s+/)[0] || '';
@@ -34,9 +43,14 @@
 
   // ---------- งานล่าสุด ----------
   const DOT = { normal: 'bg-sky-500', urgent: 'bg-amber-500', very_urgent: 'bg-rose-500', most_urgent: 'bg-rose-700' };
+  let recent = [];
+  async function loadRecent() {
+    try { recent = await store.list(); } catch (err) { recent = []; toast('โหลดรายการเอกสารไม่สำเร็จ: ' + err.message, 'error'); }
+    renderRecent();
+  }
   function renderRecent() {
     const q = $('recent-search').value.trim();
-    const items = store.list().filter(e => !q || (e.title || '').includes(q));
+    const items = recent.filter(e => !q || (e.title || '').includes(q));
     $('recent-list').innerHTML = items.length ? items.slice(0, 12).map(e => `
       <li>
         <a href="editor.html?id=${encodeURIComponent(e.id)}" class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors" title="${esc(e.title)}">
@@ -48,7 +62,7 @@
       : `<li class="px-2.5 py-2 text-slate-400">${q ? 'ไม่พบเอกสาร' : 'ยังไม่มีเอกสาร — เริ่มร่างฉบับแรกได้เลย'}</li>`;
   }
   $('recent-search').addEventListener('input', renderRecent);
-  renderRecent();
+  auth.ready.then(loadRecent);
 
   // ---------- ไฟล์แนบ ----------
   const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
@@ -153,11 +167,11 @@
     }).join('');
   }
 
-  function openInEditor(payload) {
-    const id = store.newId();
-    const ok = store.save({ id, title: payload.doc.subject, ...payload });
-    if (!ok) { toast('พื้นที่เก็บในเบราว์เซอร์เต็ม — ลบเอกสารเก่าก่อน', 'error'); return; }
-    location.href = `editor.html?id=${encodeURIComponent(id)}`;
+  async function openInEditor(payload) {
+    try {
+      const id = await store.create({ title: payload.doc.subject, ...payload });
+      location.href = `editor.html?id=${encodeURIComponent(id)}`;
+    } catch (err) { toast('บันทึกเอกสารไม่สำเร็จ: ' + err.message, 'error'); }
   }
 
   async function submit() {
@@ -175,9 +189,14 @@
     if ($('doc-type').value) fd.append('doc_type', $('doc-type').value);
     fd.append('urgency', state.urgency);
     fd.append('secret', state.secret);
-    if (state.file) fd.append('file', state.file);
-
     try {
+      if (state.file && (await auth.serverMode())) {
+        // โหมดเซิร์ฟเวอร์: ส่งไฟล์ตรงเข้า Storage ก่อน แล้วให้ API อ่านจากที่นั่น (รองรับไฟล์ถึง 50 MB)
+        fd.append('source_path', await api.uploadSource(state.file));
+        fd.append('source_name', state.file.name);
+      } else if (state.file) {
+        fd.append('file', state.file);
+      }
       const res = await api.draft(fd);
       renderProgress(res.steps, false);
       if (!res.document) {
@@ -186,10 +205,10 @@
         $('error-box').hidden = false;
         return;
       }
-      openInEditor({
+      await openInEditor({
         doc: res.document, context: res.context, classification: res.classification,
         check: res.check, steps: res.steps, prompt, cloudBlocked: res.cloud_ai_blocked,
-        sourceName: state.file?.name || null,
+        sourceName: state.file?.name || null, sourceFileId: res.source_file_id || null,
       });
     } catch (err) {
       $('progress').hidden = true;
@@ -219,7 +238,7 @@
       const doc = await api.blank(type);
       doc.urgency = state.urgency; doc.secret = state.secret;
       const check = await api.check(doc);
-      openInEditor({ doc, check, steps: [{ key: 'blank', label: `เปิด${DOC_TYPE_LABEL[type]}เปล่า`, ok: true, detail: 'ข้อมูลหน่วยงานจากโปรไฟล์' }] });
+      await openInEditor({ doc, check, steps: [{ key: 'blank', label: `เปิด${DOC_TYPE_LABEL[type]}เปล่า`, ok: true, detail: 'ข้อมูลหน่วยงานจากโปรไฟล์' }] });
     } catch (err) { toast(err.message, 'error'); }
   }
   document.querySelectorAll('[data-blank]').forEach(b => b.addEventListener('click', () => openBlank(b.dataset.blank)));
@@ -228,7 +247,7 @@
     try {
       const doc = await api.template(id);
       const check = await api.check(doc);
-      openInEditor({ doc, check, steps: [{ key: 'template', label: 'เปิดจากคลังแม่แบบ', ok: true, detail: title }] });
+      await openInEditor({ doc, check, steps: [{ key: 'template', label: 'เปิดจากคลังแม่แบบ', ok: true, detail: title }] });
     } catch (err) { toast(err.message, 'error'); }
   }
 
