@@ -316,3 +316,132 @@ def create_incoming(record: IncomingRecord):
     row_id = registry.register_incoming(record)
     return {"status": "registered", "registry_id": row_id, "receive_number": record.receive_number}
 
+
+
+# ---------------------------------------------------------------------
+# 7. GovDoc Studio (web/studio): หน้าแรก + หน้าแก้ไขเอกสาร
+# ---------------------------------------------------------------------
+from uuid import uuid4
+
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
+from core.profile_manager import get_user_profile
+from core.studio import (
+    StudioCheck,
+    StudioDraftResult,
+    check_document,
+    create_blank_document,
+    normalize_for_editor,
+    start_draft,
+)
+
+_ROOT_DIR = Path(__file__).resolve().parent.parent
+_ALLOWED_SOURCE_SUFFIXES = {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+class BlankRequest(BaseModel):
+    doc_type: DocType = DocType.INTERNAL
+
+
+@app.get("/api/v1/studio/profile")
+def studio_profile():
+    """โปรไฟล์หน่วยงาน/ผู้ลงนาม สำหรับแสดงบนหน้าแรก"""
+    return get_user_profile()
+
+
+@app.post("/api/v1/studio/draft", response_model=StudioDraftResult)
+async def studio_draft(
+    prompt: str = Form(""),
+    doc_type: Optional[DocType] = Form(None),
+    urgency: UrgencyLevel = Form(UrgencyLevel.NORMAL),
+    secret: SecretLevel = Form(SecretLevel.NORMAL),
+    file: Optional[UploadFile] = File(None),
+):
+    """เริ่มร่างจากคำสั่งที่พิมพ์และ/หรือไฟล์ต้นเรื่อง (สกัด → จำแนก → ร่าง → ตรวจ)"""
+    saved_path: Optional[Path] = None
+    if file is not None and file.filename:
+        suffix = Path(file.filename).suffix.lower()
+        if suffix not in _ALLOWED_SOURCE_SUFFIXES:
+            raise HTTPException(status_code=400, detail=f"ไม่รองรับไฟล์ชนิด {suffix}")
+        data = await file.read()
+        if len(data) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="ไฟล์ใหญ่เกิน 50 MB")
+        # ใช้ชื่อไฟล์ที่ระบบสร้างเอง ป้องกัน path traversal จากชื่อไฟล์ที่ผู้ใช้ส่งมา
+        saved_path = uploads_dir / f"{uuid4().hex}{suffix}"
+        saved_path.write_bytes(data)
+    elif not prompt.strip():
+        raise HTTPException(status_code=400, detail="พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องก่อนเริ่มร่าง")
+
+    result = start_draft(
+        prompt=prompt,
+        file_path=str(saved_path) if saved_path else None,
+        doc_type_hint=doc_type,
+        urgency=urgency,
+        secret=secret,
+    )
+    if result.context is not None and file is not None and file.filename:
+        result.context.source_filename = Path(file.filename).name
+    return result
+
+
+@app.post("/api/v1/studio/blank", response_model=GovDocumentSchema)
+def studio_blank(req: BlankRequest):
+    """เอกสารเปล่า (บันทึกข้อความ / หนังสือภายนอก) พร้อม placeholder"""
+    return normalize_for_editor(create_blank_document(req.doc_type))
+
+
+@app.get("/api/v1/studio/templates")
+def studio_templates():
+    """รายการแม่แบบมาตรฐาน (ไม่รวมเนื้อหา)"""
+    from core.templates_library import list_preset_templates
+
+    return [
+        {"id": t.template_id, "title": t.title, "category": t.category, "doc_type": t.doc_type.value}
+        for t in list_preset_templates()
+    ]
+
+
+@app.get("/api/v1/studio/templates/{template_id}", response_model=GovDocumentSchema)
+def studio_template(template_id: str):
+    from core.templates_library import get_preset_template
+
+    t = get_preset_template(template_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="ไม่พบแม่แบบ")
+    return normalize_for_editor(t.schema.model_copy(deep=True))
+
+
+@app.post("/api/v1/studio/check", response_model=StudioCheck)
+def studio_check(doc: GovDocumentSchema):
+    """ตรวจ placeholder ที่ค้าง + ระเบียบสารบรรณ ในครั้งเดียว"""
+    return check_document(doc)
+
+
+@app.post("/api/v1/export/pdf")
+def export_pdf(doc: GovDocumentSchema):
+    """ส่งออก PDF คุณภาพเวกเตอร์ผ่าน Typst"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        typ_path = Path(tmp_dir) / "document.typ"
+        pdf_path = Path(tmp_dir) / "document.pdf"
+        # Typst อ่านไฟล์ได้เฉพาะภายใต้ root (โฟลเดอร์ชั่วคราว) จึงจำลองโครงสร้าง templates/ + assets/
+        tmp = Path(tmp_dir)
+        shutil.copytree(_ROOT_DIR / "templates" / "typst", tmp / "templates" / "typst")
+        (tmp / "assets").mkdir()
+        shutil.copy(_ROOT_DIR / "assets" / "garuda.svg", tmp / "assets" / "garuda.svg")
+        typ_path.write_text(generate_typst_content(doc), encoding="utf-8")
+        ok, message = compile_typst_to_pdf(str(typ_path), str(pdf_path))
+        if not ok or not pdf_path.exists():
+            raise HTTPException(status_code=500, detail=message)
+        pdf_bytes = pdf_path.read_bytes()
+    return Response(content=pdf_bytes, media_type="application/pdf")
+
+
+app.mount("/studio", StaticFiles(directory=_ROOT_DIR / "web" / "studio", html=True), name="studio")
+app.mount("/assets", StaticFiles(directory=_ROOT_DIR / "assets"), name="assets")
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    return RedirectResponse(url="/studio/")

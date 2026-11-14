@@ -26,3 +26,7 @@ update_css.py
 web/app.py.bak
 screenshot.png
 ui_state*.png
+
+# Test/export artifacts
+pytest-of-*/
+/tmp*.docx

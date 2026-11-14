@@ -129,6 +129,15 @@
 3. **ตรวจทานเคียงข้าง:** ผู้ใช้ตรวจสอบผ่านหน้าจอเทียบต้นฉบับ ปรับแต่งข้อความ และใช้ AI Copilot ช่วยเกลา
 4. **ส่งออกจริง:** กดดาวน์โหลดเป็นไฟล์ Vector PDF (Typst) หรือ Editable Word (.docx) พร้อมลงทะเบียนคุมสารบรรณ
 
+### 3. หน้าเว็บ GovDoc Studio (หน้าแรก + หน้าแก้ไขเอกสาร)
+หน้าเว็บใหม่ตามดีไซน์ใน `stitch_official_document_generator_homepage_2/` อยู่ที่ `web/studio/` (HTML + Tailwind) เสิร์ฟจาก FastAPI ตัวเดียวกับ API:
+
+```bash
+.venv\Scripts\python -m uvicorn core.api:app --port 8600
+```
+
+เปิด `http://localhost:8600/` → หน้าแรก (พิมพ์คำสั่ง/แนบไฟล์) → หน้าแก้ไขเอกสาร (`/studio/editor.html`) ร่างที่แก้ไขจะเก็บใน localStorage ของเบราว์เซอร์ (ยังไม่มีฐานข้อมูลกลาง) ส่วนหน้าจอ Streamlit (`web/app.py`) ยังใช้งานได้ตามเดิม
+
 ---
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)

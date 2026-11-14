@@ -1,0 +1,362 @@
+<!DOCTYPE html><html class="h-full bg-slate-50" lang="th"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>GovDoc Studio - ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ</title>
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts: Sarabun & Prompt for Official Thai Document Aesthetics -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Sarabun:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;display=swap" rel="stylesheet">
+<!-- FontAwesome Icons -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+<script data-purpose="tailwind-config">
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Sarabun', 'sans-serif'],
+            display: ['Prompt', 'sans-serif'],
+          },
+          colors: {
+            gov: {
+              50: '#f0fdf9',
+              100: '#ccfbef',
+              200: '#99f6e0',
+              600: '#0d9488',
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e48',
+              dark: '#0a2e36',
+              navy: '#0b192c',
+            }
+          }
+        }
+      }
+    };
+  </script>
+<style data-purpose="custom-scrollbars">
+    /* Custom clean scrollbar styling for sidebar and main area */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="h-full flex overflow-hidden text-slate-800 antialiased selection:bg-emerald-100 selection:text-emerald-900">
+<!-- BEGIN: Sidebar -->
+<aside class="w-72 bg-white border-r border-slate-200/80 flex flex-col h-full shrink-0 select-none z-20" data-purpose="main-sidebar">
+<!-- Top Branding Header -->
+<div class="px-5 py-4 flex items-center gap-3.5 border-b border-slate-100" data-purpose="sidebar-brand">
+<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-800 flex items-center justify-center text-white shadow-sm shadow-emerald-700/20 shrink-0">
+<i class="fa-solid fa-landmark text-lg"></i>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-display font-bold text-slate-900 tracking-tight text-base flex items-center gap-1.5">
+          GovDoc Studio
+        </span>
+<span class="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded w-fit mt-0.5 tracking-tight">
+          ระเบียบสารบรรณ พ.ศ. ๒๕๒๖
+        </span>
+</div>
+</div>
+<!-- New Chat Primary Action Button -->
+<div class="p-4 pb-2" data-purpose="action-new-chat">
+<button class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm flex items-center justify-between shadow-sm transition-all duration-150 group" type="button">
+<span class="flex items-center gap-2">
+<i class="fa-solid fa-plus text-xs group-hover:rotate-90 transition-transform duration-200"></i>
+<span>แชทใหม่</span>
+</span>
+<span class="text-[10px] font-normal text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700/50">
+          ตรวจประเภทอัตโนมัติ
+        </span>
+</button>
+</div>
+<!-- Sidebar Navigation Scroll Container -->
+<div class="flex-1 overflow-y-auto px-3 py-2 space-y-4 text-sm" data-purpose="sidebar-navigation">
+<!-- Main Work Navigation Links -->
+<nav aria-label="เมนูหลัก" class="space-y-1">
+<!-- Active Nav Item -->
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-emerald-50/80 text-emerald-800 font-medium border border-emerald-100 transition-colors" href="#">
+<i class="fa-solid fa-file-pen text-emerald-600 text-base w-5 text-center"></i>
+<span class="truncate">ร่างหนังสือ</span>
+<span class="ml-auto w-2 h-2 rounded-full bg-emerald-500"></span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 font-normal transition-colors group" href="#">
+<i class="fa-regular fa-folder-open text-slate-400 group-hover:text-slate-600 text-base w-5 text-center"></i>
+<span class="truncate">คลังแม่แบบ</span>
+<i class="fa-solid fa-arrow-up-right-from-square text-[10px] text-slate-300 ml-auto group-hover:text-slate-400"></i>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 font-normal transition-colors group" href="#">
+<i class="fa-solid fa-scale-balanced text-slate-400 group-hover:text-slate-600 text-base w-5 text-center"></i>
+<span class="truncate">คลังกฎหมาย</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 font-normal transition-colors group" href="#">
+<i class="fa-solid fa-book-bookmark text-slate-400 group-hover:text-slate-600 text-base w-5 text-center"></i>
+<span class="truncate">สมุดทะเบียนรับ-ส่ง</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 font-normal transition-colors group" href="#">
+<i class="fa-solid fa-shield-halved text-slate-400 group-hover:text-slate-600 text-base w-5 text-center"></i>
+<span class="truncate">เครื่องมือ PDF &amp; ตรวจสอบ</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 font-normal transition-colors group" href="#">
+<i class="fa-solid fa-gear text-slate-400 group-hover:text-slate-600 text-base w-5 text-center"></i>
+<span class="truncate">ตั้งค่าหน่วยงาน</span>
+</a>
+</nav>
+<!-- Document Search Input Inside Sidebar -->
+<div class="pt-1" data-purpose="sidebar-search">
+<div class="relative">
+<i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+<input class="w-full text-xs pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all" placeholder="ค้นหาตัวอย่างเอกสารหรือแชทเดิม..." type="text">
+</div>
+</div>
+<!-- Recent / Examples Section -->
+<div class="pt-2" data-purpose="recent-documents">
+<div class="px-1 mb-2 flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider">
+<span>ตัวอย่างงานล่าสุด</span>
+<span class="text-[11px] font-normal text-emerald-600 hover:underline cursor-pointer">ดูทั้งหมด</span>
+</div>
+<ul class="space-y-1 text-xs">
+<li>
+<a class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-slate-700 hover:bg-slate-100 group transition-colors" href="#">
+<span class="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
+<span class="truncate font-medium">ขอสถานที่ เวสน์ ๑</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-slate-700 hover:bg-slate-100 group transition-colors" href="#">
+<span class="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+<span class="truncate">งานวิ่งเวียง-2569</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-slate-700 hover:bg-slate-100 group transition-colors" href="#">
+<span class="w-2 h-2 rounded-full bg-purple-500 shrink-0"></span>
+<span class="truncate">ทวงถามเงินยืมทดรอง</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-slate-700 hover:bg-slate-100 group transition-colors" href="#">
+<span class="w-2 h-2 rounded-full bg-sky-500 shrink-0"></span>
+<span class="truncate">หนังสือขอเป็นเจ้าภาพร่วม</span>
+</a>
+</li>
+</ul>
+</div>
+</div>
+<!-- User Profile Footer Section -->
+<div class="p-3 border-t border-slate-200/80 bg-slate-50/50" data-purpose="sidebar-user-footer">
+<div class="flex items-center gap-3 p-2 rounded-xl bg-white border border-slate-200/70 shadow-xs">
+<!-- User Avatar Circle -->
+<div class="w-9 h-9 rounded-full bg-teal-700 text-white font-display font-semibold flex items-center justify-center text-xs shrink-0 shadow-sm">
+          สถ
+        </div>
+<div class="min-w-0 flex-1">
+<div class="flex items-center gap-1.5">
+<p class="text-xs font-semibold text-slate-900 truncate">นายสิงห์ ลิ้มพิพัฒน์</p>
+</div>
+<p class="text-[11px] text-slate-500 truncate">ผอ.สำนักบริหารกลาง</p>
+</div>
+<!-- Plan Badge & Action -->
+<div class="flex items-center gap-1 shrink-0">
+<span class="text-[10px] font-semibold text-emerald-700 bg-emerald-100/70 border border-emerald-200 px-1.5 py-0.5 rounded leading-none">
+            Gov Pro
+          </span>
+<button class="text-slate-400 hover:text-slate-600 p-1" title="ตั้งค่าโปรไฟล์" type="button">
+<i class="fa-solid fa-ellipsis-vertical text-xs"></i>
+</button>
+</div>
+</div>
+</div>
+</aside>
+<!-- END: Sidebar -->
+<!-- BEGIN: MainContent -->
+<main class="flex-1 flex flex-col h-full bg-white overflow-y-auto relative" data-purpose="main-content">
+<!-- Top Utility Bar -->
+<header class="h-14 border-b border-slate-100 px-8 flex items-center justify-between shrink-0 select-none bg-white/70 backdrop-blur-sm sticky top-0 z-10" data-purpose="top-utility-header">
+<div class="flex items-center gap-2 text-xs text-slate-400 font-medium">
+<span>ร่างหนังสือราชการ</span>
+<i class="fa-solid fa-chevron-right text-[9px] text-slate-300"></i>
+<span class="text-slate-700 font-normal">เอกสารใหม่</span>
+</div>
+<div class="flex items-center gap-3 text-xs">
+<span class="flex items-center gap-1.5 text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-md">
+<i class="fa-solid fa-cloud text-emerald-600"></i>
+<span>พร้อมใช้งาน (มาตรฐาน ๒๕๒๖)</span>
+</span>
+<button class="w-8 h-8 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition-colors" type="button">
+<i class="fa-regular fa-bell"></i>
+</button>
+</div>
+</header>
+<!-- Center Hero & Prompting Workspace Container -->
+<div class="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 py-8 max-w-4xl mx-auto w-full" data-purpose="central-workspace">
+<!-- Hero Header Section -->
+<section class="text-center mb-8 flex flex-col items-center" data-purpose="welcome-banner">
+<!-- Floating Document Emblem Icon -->
+<div class="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 text-2xl shadow-sm mb-5 relative group">
+<i class="fa-solid fa-file-invoice leading-none"></i>
+<span class="absolute -top-1 -right-1 flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+</span>
+</div>
+<h1 class="text-3xl sm:text-4xl font-display font-bold text-slate-900 tracking-tight leading-snug">
+          สวัสดี คุณสิงห์
+        </h1>
+<p class="mt-2 text-sm sm:text-base text-slate-500 font-normal max-w-lg">
+          วันนี้มีอะไรให้ช่วยร่างครับ? พิมพ์คำสั่ง วางข้อความ หรือแนบไฟล์ต้นเรื่องได้เลย
+        </p>
+</section>
+<!-- Main Central Prompt Box (Interactive AI Interface) -->
+<section class="w-full mb-6" data-purpose="prompt-container">
+<div class="bg-white rounded-2xl border border-slate-300/80 shadow-md shadow-slate-100 hover:border-slate-400 focus-within:border-emerald-600 focus-within:ring-4 focus-within:ring-emerald-500/10 transition-all duration-200">
+<!-- Text Input Area -->
+<div class="p-4 pb-2">
+<textarea class="w-full border-0 focus:ring-0 p-0 text-slate-800 placeholder:text-slate-400 text-sm sm:text-base resize-none bg-transparent leading-relaxed" placeholder="พิมพ์คำสั่งหรือวางเนื้อหาต้นเรื่อง เช่น เขียนหนังสือขอความอนุเคราะห์ใช้อาคารกีฬาเวสน์ ๑ วันที่ ๑๕ มกราคม ๒๕๖๘ ถึงผู้ว่าราชการกรุงเทพมหานคร..." rows="4"></textarea>
+</div>
+<!-- Bottom Action Bar inside Prompt Box -->
+<div class="border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
+  <!-- Attached File Chip Preview Banner -->
+  <div class="px-4 pt-2.5 pb-1 flex flex-wrap items-center gap-2" id="attached-files-bar">
+    <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200/80 text-xs text-slate-700 shadow-xs animate-fadeIn group">
+      <i class="fa-regular fa-file-pdf text-emerald-600 text-sm"></i>
+      <span class="font-medium text-slate-800 text-[12px]">หนังสือขอความอนุเคราะห์_เวสน์1.pdf</span>
+      <span class="text-[10px] text-slate-400">(2.4 MB)</span>
+      <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-emerald-600 text-white leading-tight shadow-xs">
+        OCR ครุฑพร้อม
+      </span>
+      <button type="button" class="text-slate-400 hover:text-rose-500 ml-1 p-0.5 transition-colors" title="ลบไฟล์แนบ" onclick="this.closest('div').remove()">
+        <i class="fa-solid fa-plus rotate-45 text-xs"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Controls & Action Bar -->
+  <div class="px-3.5 py-2 flex items-center justify-between gap-2">
+    <!-- Left Utilities: Attachment Menu + Secrecy/Urgency + Subtle Standard Badge -->
+    <div class="flex items-center gap-1.5 min-w-0">
+      <!-- Compact Attachment Button with Dropdown -->
+      <div class="relative shrink-0">
+        <button id="attach-btn" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:border-emerald-500 hover:bg-emerald-50/50 text-slate-700 hover:text-emerald-700 text-xs font-medium shadow-xs transition-all duration-150" type="button" onclick="document.getElementById('attach-menu').classList.toggle('hidden')">
+          <i class="fa-solid fa-paperclip text-xs text-emerald-700"></i>
+          <span>แนบไฟล์</span>
+          <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[9px]">1</span>
+        </button>
+
+        <!-- Interactive Attachment Dropdown Menu -->
+        <div id="attach-menu" class="hidden absolute bottom-full left-0 mb-2 w-72 bg-white rounded-xl shadow-md border border-slate-200 p-1.5 z-20 space-y-1 text-xs">
+          <div class="px-2 py-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
+            <span>ตัวเลือกแนบเอกสาร</span>
+            <span class="text-emerald-600 font-normal">รองรับสูงสุด 50MB</span>
+          </div>
+          <button type="button" class="w-full flex items-start gap-2.5 p-2 rounded-lg hover:bg-emerald-50/80 text-left transition-colors group">
+            <i class="fa-solid fa-file-pdf text-emerald-600 text-sm mt-0.5"></i>
+            <div class="min-w-0 flex-1">
+              <div class="font-medium text-slate-800 group-hover:text-emerald-800">เอกสาร / สแกน (PDF, Word, ภาพ)</div>
+              <div class="text-[10px] text-slate-400">แยกข้อความจากภาพถ่ายและเอกสารราชการ</div>
+            </div>
+          </button>
+          <button type="button" class="w-full flex items-start gap-2.5 p-2 rounded-lg hover:bg-emerald-50/80 text-left transition-colors group">
+            <i class="fa-solid fa-shield-halved text-teal-600 text-sm mt-0.5"></i>
+            <div class="min-w-0 flex-1">
+              <div class="font-medium text-slate-800 group-hover:text-emerald-800">สแกนด้วย OCR อัจฉริยะ (TH Sarabun)</div>
+              <div class="text-[10px] text-slate-400">สกัดตราครุฑ เลขที่หนังสือ และโครงสร้าง ๓ ภาค</div>
+            </div>
+          </button>
+          <button type="button" class="w-full flex items-start gap-2.5 p-2 rounded-lg hover:bg-emerald-50/80 text-left transition-colors group">
+            <i class="fa-solid fa-building-columns text-slate-600 text-sm mt-0.5"></i>
+            <div class="min-w-0 flex-1">
+              <div class="font-medium text-slate-800 group-hover:text-emerald-800">ดึงจากระบบ e-Document ภาครัฐ</div>
+              <div class="text-[10px] text-slate-400">เชื่อมโยงเลขที่รับส่ง หรือ URL ทะเบียนกลาง</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Compact Secrecy / Urgency Config Button -->
+      <button id="open-classification-btn" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-200 bg-white hover:border-emerald-500 hover:bg-emerald-50/50 text-slate-700 hover:text-emerald-700 text-xs font-medium shadow-xs transition-all duration-150 shrink-0" title="ตั้งค่าชั้นความลับและชั้นความเร็ว" type="button" onclick="document.getElementById('security-urgency-modal').classList.remove('hidden')">
+        <i class="fa-solid fa-shield-halved text-xs text-emerald-700"></i>
+        <span>ความลับ/ความเร็ว:</span>
+        <span class="inline-flex items-center gap-1">
+          <span class="px-1 py-0.2 rounded text-[10px] font-semibold bg-rose-50 text-rose-600 border border-rose-200/80 leading-none">ด่วนมาก</span>
+          <span class="px-1 py-0.2 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200 leading-none">ปกติ</span>
+        </span>
+      </button>
+
+      <!-- Streamlined subtle regulatory badge -->
+      <span class="text-slate-300 hidden md:inline select-none">|</span>
+      <span class="text-[11px] text-slate-400 hidden lg:inline truncate">
+        ระเบียบสารบรรณ ๒๕๒๖ อัตโนมัติ
+      </span>
+    </div>
+
+    <!-- Right Action: Compact Shortcut Badge + Sleek Start Drafting Button -->
+    <div class="flex items-center gap-2 shrink-0">
+      <span class="text-[10px] text-slate-400 bg-slate-100/70 border border-slate-200/80 px-1.5 py-0.5 rounded font-normal hidden sm:inline" title="กด Ctrl + Enter เพื่อส่งคำสั่ง">
+        Ctrl+↵
+      </span>
+      <button aria-label="เริ่มร่างหนังสือราชการ" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-medium text-xs shadow-xs active:scale-95 transition-all duration-150 group" type="button">
+        <span>เริ่มร่าง</span>
+        <i class="fa-solid fa-arrow-up text-[10px] text-emerald-400 group-hover:text-white transition-transform group-hover:-translate-y-0.5 duration-150"></i>
+      </button>
+    </div>
+  </div>
+</div>
+</div>
+</section>
+<!-- Quick Access Category Pill Buttons -->
+<section class="w-full flex flex-wrap items-center justify-center gap-2 mb-8" data-purpose="quick-actions">
+<!-- Quick Action 1: บันทึกข้อความ -->
+<button class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-xs hover:border-slate-300 transition-colors" type="button">
+<i class="fa-regular fa-note-sticky text-teal-600"></i>
+<span>บันทึกข้อความ</span>
+</button>
+<!-- Quick Action 2: หนังสือภายนอก -->
+<button class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-xs hover:border-slate-300 transition-colors" type="button">
+<i class="fa-solid fa-building-columns text-emerald-600"></i>
+<span>หนังสือภายนอก</span>
+</button>
+<!-- Quick Action 3: คลังแม่แบบ -->
+<button class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-xs hover:border-slate-300 transition-colors" type="button">
+<i class="fa-regular fa-clone text-amber-600"></i>
+<span>คลังแม่แบบ</span>
+</button>
+<!-- Quick Action 4: คลังกฎหมาย -->
+<button class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-xs hover:border-slate-300 transition-colors" type="button">
+<i class="fa-solid fa-gavel text-rose-600"></i>
+<span>คลังกฎหมาย</span>
+</button>
+<!-- Quick Action 5: ตัวอย่างเอกสาร -->
+<button class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-xs hover:border-slate-300 transition-colors" type="button">
+<i class="fa-regular fa-folder-closed text-indigo-600"></i>
+<span>ตัวอย่างเอกสาร</span>
+</button>
+<!-- Quick Action 6: สรุปสาระสำคัญ / PDF -->
+<button class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-xs hover:border-slate-300 transition-colors" type="button">
+<i class="fa-regular fa-file-pdf text-purple-600"></i>
+<span>สรุปประชุม / PDF</span>
+</button>
+</section>
+<!-- Footer Micro-helper Description -->
+<footer class="text-center text-xs text-slate-400 flex items-center justify-center gap-1.5" data-purpose="footer-hint">
+<i class="fa-solid fa-circle-info text-[11px] text-slate-300"></i>
+<span>ลองเลือกเครื่องมือเพื่อดูตัวอย่างร่างเอกสารจริงได้ทันที หรือลากไฟล์มาวางในช่องพิมพ์ได้ทันที</span>
+</footer>
+</div>
+</main>
+<!-- END: MainContent -->
+
+
+<div id="security-urgency-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-fadeIn" role="dialog" aria-modal="true"><div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden"><div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200/70 text-emerald-700 flex items-center justify-center text-lg shadow-xs shrink-0"><i class="fa-solid fa-shield-halved"></i></div><div><div class="flex items-center gap-2"><h3 class="text-base font-semibold font-display text-slate-900">ตั้งค่าชั้นความลับและชั้นความเร็ว</h3><span class="text-[10px] font-semibold text-emerald-700 bg-emerald-100/70 border border-emerald-200 px-1.5 py-0.5 rounded leading-none">ระเบียบสารบรรณ ๒๕๒๖</span></div><p class="text-xs text-slate-500 mt-0.5">กำหนดระดับความเร่งด่วนและมาตรการรักษาความปลอดภัยของหนังสือราชการ ตามระเบียบสำนักนายกรัฐมนตรีฯ</p></div></div><button type="button" onclick="document.getElementById('security-urgency-modal').classList.add('hidden')" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 flex items-center justify-center transition-colors" title="ปิดหน้าต่าง"><i class="fa-solid fa-plus rotate-45 text-sm"></i></button></div><div class="flex-1 overflow-y-auto p-6 space-y-6"><section><div class="flex items-center justify-between mb-3"><label class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-bolt text-amber-500 text-xs"></i><span>๑. ชั้นความเร็ว (Urgency Level)</span></label><span class="text-[11px] text-slate-400">ประทับตราสีแดงด้วยอักษรไม่เล็กกว่า 32pt</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"><label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors"><input type="radio" name="urgency_level" value="normal" class="mt-1 text-emerald-600 focus:ring-emerald-500 border-slate-300"><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span class="text-xs font-semibold text-slate-800">ปกติ (Normal)</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">ทั่วไป</span></div><p class="text-[11px] text-slate-500 mt-0.5 leading-snug">จัดส่งและปฏิบัติตามลำดับขั้นตอนงานสารบรรณปกติ</p></div></label><label class="flex items-start gap-3 p-3 rounded-xl border border-amber-200 bg-amber-50/40 hover:bg-amber-50 cursor-pointer transition-colors"><input type="radio" name="urgency_level" value="urgent" class="mt-1 text-amber-600 focus:ring-amber-500 border-slate-300"><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span class="text-xs font-semibold text-amber-900">ด่วน (Urgent)</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium border border-amber-200">สีส้ม</span></div><p class="text-[11px] text-amber-800/80 mt-0.5 leading-snug">ให้เจ้าหน้าที่ปฏิบัติเร็วกว่าการปฏิบัติงานตามปกติ</p></div></label><label class="flex items-start gap-3 p-3 rounded-xl border-2 border-rose-500 bg-rose-50/50 shadow-xs cursor-pointer transition-colors"><input type="radio" name="urgency_level" value="very_urgent" checked="checked" class="mt-1 text-rose-600 focus:ring-rose-500 border-slate-300"><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><div class="flex items-center gap-1.5"><span class="text-xs font-bold text-rose-900">ด่วนมาก (Very Urgent)</span><span class="w-1.5 h-1.5 rounded-full bg-rose-600"></span></div><span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold border border-rose-200">แนะนำ</span></div><p class="text-[11px] text-rose-800 mt-0.5 leading-snug">ให้เจ้าหน้าที่ปฏิบัติโดยเร็วที่สุดเมื่อได้รับหนังสือ</p></div></label><label class="flex items-start gap-3 p-3 rounded-xl border border-rose-200 hover:bg-rose-50/40 cursor-pointer transition-colors"><input type="radio" name="urgency_level" value="most_urgent" class="mt-1 text-rose-700 focus:ring-rose-600 border-slate-300"><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span class="text-xs font-semibold text-rose-950">ด่วนที่สุด (Most Urgent)</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-600 text-white font-medium">สีแดงสด</span></div><p class="text-[11px] text-slate-500 mt-0.5 leading-snug">ให้เจ้าหน้าที่ปฏิบัติทันทีที่ได้รับหนังสือฉบับนี้</p></div></label></div></section><section><div class="flex items-center justify-between mb-3"><label class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-lock text-emerald-600 text-xs"></i><span>๒. ชั้นความลับ (Security Classification)</span></label><span class="text-[11px] text-slate-400">ระเบียบว่าด้วยการรักษาความลับของทางราชการ</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3.5"><label class="flex items-start gap-3 p-3 rounded-xl border-2 border-emerald-600 bg-emerald-50/40 cursor-pointer transition-colors"><input type="radio" name="security_level" value="unclassified" checked="checked" class="mt-1 text-emerald-600 focus:ring-emerald-500 border-slate-300"><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span class="text-xs font-bold text-emerald-950">ปกติ (ทั่วไป)</span><i class="fa-solid fa-circle-check text-emerald-600 text-xs"></i></div><p class="text-[11px] text-slate-600 mt-0.5 leading-snug">เปิดเผยได้ตาม พ.ร.บ. ข้อมูลข่าวสารของราชการ พ.ศ. ๒๕๔๐</p></div></label><label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors"><input type="radio" name="security_level" value="secret" class="mt-1 text-slate-700 focus:ring-slate-600 border-slate-300"><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span class="text-xs font-semibold text-slate-800">ลับ (Secret)</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">กระทบปานกลาง</span></div><p class="text-[11px] text-slate-500 mt-0.5 leading-snug">หากเปิดเผยจะเกิดความเสียหายแก่ประโยชน์แห่งรัฐ</p></div></label><label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors"><input type="radio" name="security_level" value="very_secret" class="mt-1 text-slate-700 focus:ring-slate-600 border-slate-300"><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span class="text-xs font-semibold text-slate-800">ลับมาก (Very Secret)</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">เสียหายร้ายแรง</span></div><p class="text-[11px] text-slate-500 mt-0.5 leading-snug">หากเปิดเผยจะเกิดความเสียหายแก่ประโยชน์แห่งรัฐอย่างร้ายแรง</p></div></label><label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors"><input type="radio" name="security_level" value="top_secret" class="mt-1 text-slate-700 focus:ring-slate-600 border-slate-300"><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span class="text-xs font-semibold text-slate-800">ลับที่สุด (Top Secret)</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-600 text-white font-semibold">ความมั่นคงสูงสุด</span></div><p class="text-[11px] text-slate-500 mt-0.5 leading-snug">หากเปิดเผยจะกระทบความมั่นคงหรืออธิปไตยแห่งรัฐขั้นสูงสุด</p></div></label></div><div class="p-3 rounded-xl bg-slate-50 border border-slate-200/90 text-xs flex items-start gap-2.5 text-slate-600 leading-relaxed"><i class="fa-solid fa-shield-halved text-emerald-700 text-sm mt-0.5 shrink-0"></i><div><span class="font-semibold text-slate-800">มาตรการความปลอดภัย Fail-Closed Policy:</span> เมื่อเลือกชั้นความลับ (ลับ / ลับมาก / ลับที่สุด) GovDoc AI จะสลับเข้าสู่โหมด On-Premise Secure Enclave และทำการ Mask ข้อมูลส่วนบุคคล (PDPA) อัตโนมัติ ป้องกันข้อมูลรั่วไหลออกนอกหน่วยงาน 100%</div></div></section><section class="pt-2 border-t border-slate-100 space-y-2.5"><div class="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">๓. ข้อกำหนดเพิ่มเติมสำหรับการจัดพิมพ์</div><label class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" checked="checked" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"><div class="text-xs text-slate-700 font-medium">ประทับตราสีแดงมุมบนซ้ายและกึ่งกลางตามระเบียบสารบรรณอัตโนมัติ</div></label><label class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"><div class="text-xs text-slate-700 font-medium">บังคับระบุชื่อผู้มีสิทธิ์เปิดอ่านเอกสาร (e-Document Security Gate)</div></label></section></div><div class="px-6 py-3.5 border-t border-slate-200/80 bg-slate-50/70 flex items-center justify-between gap-3"><span class="text-[11px] text-slate-500 flex items-center gap-1.5"><i class="fa-solid fa-circle-info text-slate-400"></i><span>ตั้งค่าจะมีผลต่อคำขึ้นต้น-ลงท้าย และหัวจดหมาย</span></span><div class="flex items-center gap-2"><button type="button" onclick="document.getElementById('security-urgency-modal').classList.add('hidden')" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors">ยกเลิก</button><button type="button" onclick="document.getElementById('security-urgency-modal').classList.add('hidden')" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-medium text-xs shadow-md shadow-emerald-700/20 active:scale-95 transition-all duration-150"><i class="fa-solid fa-check text-xs"></i><span>บันทึกและนำไปใช้ร่างหนังสือ</span></button></div></div></div></div></body></html>

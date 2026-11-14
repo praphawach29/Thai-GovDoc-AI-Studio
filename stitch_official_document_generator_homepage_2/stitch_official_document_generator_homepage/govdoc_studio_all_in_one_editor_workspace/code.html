@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="th"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ekkasarn AI - ระบบร่างและตรวจบันทึกข้อความราชการอัจฉริยะ</title>
+<!-- Google Fonts: Sarabun & Prompt -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Sarabun:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Prompt', 'sans-serif'],
+            sarabun: ['Sarabun', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              500: '#10b981',
+              600: '#00876c',
+              700: '#05614f',
+              800: '#064e40',
+              900: '#0a3641',
+            },
+            govdoc: {
+              paper: '#ffffff',
+              border: '#e5e7eb',
+              highlight: '#1e40af',
+              tagbg: '#fef3c7',
+              tagtext: '#b45309'
+            }
+          }
+        }
+      }
+    }
+  </script>
+<!-- Custom Typography & Specific GovDoc Print Styles -->
+<style data-purpose="typography">
+    body {
+      font-family: 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .font-sarabun {
+      font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, serif;
+    }
+    /* Thai Official Memo Form Tab stops and indents */
+    .memo-indent {
+      text-indent: 2.5cm;
+    }
+    .memo-indent-small {
+      text-indent: 1.5cm;
+    }
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+<!-- Element Animation & Elevation Styles -->
+<style data-purpose="animations-and-elevation">
+    .doc-sheet {
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    }
+    .popup-dialog {
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.06);
+      animation: dialogPop 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes dialogPop {
+      0% { opacity: 0; transform: scale(0.96) translateY(6px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+  </style>
+</head>
+<body class="h-full bg-[#f8fafc] text-slate-800 flex overflow-hidden antialiased text-sm">
+<!-- BEGIN: LeftSidebar -->
+<!-- Slim persistent navigation icon rail matching app.ekkasarn.com -->
+<aside class="w-14 bg-white border-r border-slate-200 flex flex-col items-center py-3.5 justify-between shrink-0 z-30 select-none" data-purpose="icon-rail">
+<div class="flex flex-col items-center gap-4 w-full">
+<!-- App Brand Icon -->
+<a class="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center text-white shadow-sm hover:bg-brand-700 transition" href="#" title="Ekkasarn AI">
+<svg class="w-5 h-5 fill-current" viewbox="0 0 24 24">
+<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"></path>
+</svg>
+</a>
+<!-- New Chat / Action Button -->
+<button class="w-9 h-9 rounded-lg border border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-100 flex items-center justify-center transition" title="สร้างเอกสารใหม่" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<div class="w-6 h-px bg-slate-200"></div>
+<!-- Secondary Menu Items -->
+<button class="w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition" title="ประวัติเอกสาร" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<button class="w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition" title="เทมเพลตหนังสือราชการ" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M4 6h16M4 10h16M4 14h16M4 18h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Bottom Settings & Account -->
+<div class="flex flex-col items-center gap-3">
+<button class="w-8 h-8 rounded-full text-slate-400 hover:text-slate-600 flex items-center justify-center transition" title="ตั้งค่าระบบ" type="button">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<div class="w-7 h-7 rounded-full bg-slate-200 text-slate-700 font-semibold text-xs flex items-center justify-center">
+        กช
+      </div>
+</div>
+</aside>
+<!-- END: LeftSidebar -->
+<!-- BEGIN: MainContentWrapper -->
+<main class="flex-1 flex overflow-hidden">
+<!-- BEGIN: LeftChatPane -->
+<!-- Workflow conversation, status notes and interactive prompt box -->
+<section class="w-[45%] min-w-[430px] max-w-[620px] bg-[#fafafa] border-r border-slate-200 flex flex-col h-full" data-purpose="chat-pane">
+<!-- Top Header Bar -->
+<header class="h-14 px-5 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
+<div class="flex items-center gap-2 overflow-hidden mr-2">
+<h1 class="text-sm font-medium text-slate-800 truncate" title="ทำหนังสือบันทึกข้อความเรื่องขอความอนุเคราะห์ใช้สถานที่...">
+            ทำหนังสือบันทึกข้อความเรื่องขอ...
+          </h1>
+</div>
+<div class="flex items-center gap-2 shrink-0">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-normal text-emerald-700 bg-emerald-50 border border-emerald-300">
+            เอกสารพร้อมตรวจ
+          </span>
+<button class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-normal text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 transition" type="button">
+<svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+            เอกสารใหม่
+          </button>
+</div>
+</header>
+<!-- Chat Messages Scroll Area -->
+<div class="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+<!-- Assistant Status Badge -->
+<div class="flex items-start gap-2.5">
+<div class="w-6 h-6 rounded bg-brand-600 text-white flex items-center justify-center shrink-0 mt-0.5 text-xs font-semibold">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 20 20">
+<path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"></path>
+</svg>
+</div>
+<div class="space-y-1">
+<div class="text-xs font-medium text-slate-500">Ekkasarn AI</div>
+<div class="inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+<svg class="w-3 h-3 stroke-[2.5]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+              ใช้เครื่องมือแล้ว
+            </div>
+</div>
+</div>
+<!-- AI Draft Ready Card -->
+<div class="flex items-start gap-2.5">
+<div class="w-6 h-6 rounded bg-brand-600 text-white flex items-center justify-center shrink-0 mt-0.5 text-xs font-semibold">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 20 20">
+<path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"></path>
+</svg>
+</div>
+<div class="flex-1 space-y-3">
+<div class="text-xs font-medium text-slate-500">Ekkasarn AI</div>
+<div class="text-slate-800 text-sm leading-relaxed">
+<p class="font-medium text-slate-900">ร่างเอกสารเสร็จแล้ว</p>
+<p class="text-slate-600 text-xs mt-0.5">ถ้าต้องการแก้ไขหรือเพิ่มเติมข้อมูล พิมพ์บอกได้เลย</p>
+</div>
+<!-- Active Document Reference Link Button -->
+<div class="bg-white border-2 border-emerald-500/70 rounded-xl p-3 shadow-sm hover:border-emerald-600 transition flex items-center justify-between group cursor-pointer">
+<div class="flex items-center gap-3 pr-2">
+<div class="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+</svg>
+</div>
+<div class="text-xs">
+<span class="text-emerald-700 font-medium">กำลังเปิดอยู่</span>
+<span class="text-slate-400 mx-1">·</span>
+<span class="text-slate-500 font-medium">บันทึกข้อความ</span>
+<p class="text-slate-800 font-medium text-xs mt-0.5 line-clamp-1">
+                    การขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วยพระราชทาน สมเด็จพระกนิษฐาธิราชเจ้า กรมสมเด็จพระเทพรัตนราชสุดาฯ...
+                  </p>
+</div>
+</div>
+<svg class="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+<!-- Feedback Interaction -->
+<div class="flex items-center gap-3 pt-1">
+<span class="text-xs text-slate-500">คุณชอบผลลัพธ์นี้หรือไม่?</span>
+<button class="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50 transition" title="ชอบ" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<button class="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 transition" title="ไม่ชอบ" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76 1.02m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+</div>
+</div>
+<!-- Assistant Explanatory Note -->
+<div class="flex items-start gap-2.5 pt-1">
+<div class="w-6 h-6 rounded bg-brand-600 text-white flex items-center justify-center shrink-0 mt-0.5 text-xs font-semibold">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 20 20">
+<path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"></path>
+</svg>
+</div>
+<div class="flex-1 space-y-1">
+<div class="text-xs font-medium text-slate-500">Ekkasarn AI</div>
+<p class="text-xs text-slate-700 leading-relaxed bg-white border border-slate-200/80 p-3 rounded-lg shadow-2xs">
+              ได้ร่างบันทึกข้อความเสนอพิจารณาการขอเป็นเจ้าภาพร่วมและการขอใช้สถานที่จัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทยให้เรียบร้อยแล้ว โดยยังเหลือจุดที่ต้องระบุ ได้แก่ เลขที่หนังสือ ชื่อ และตำแหน่งของผู้ลงนามเสนอเรื่อง ตรวจสอบและแก้ไขเพิ่มเติมในหน้าต่างเอกสารได้ทันที
+            </p>
+</div>
+</div>
+</div>
+<!-- Bottom Chat Prompt Box -->
+<footer class="p-4 border-t border-slate-200 bg-white space-y-2">
+<div class="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 mb-1">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>บทสนทนานี้จะถูกปรับปรุง AI</span>
+</div>
+<div class="relative bg-slate-50 rounded-2xl border border-slate-200 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:bg-white transition-all shadow-inner">
+<textarea class="w-full bg-transparent border-0 resize-none px-4 pt-3 pb-11 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:ring-0 focus:outline-hidden" placeholder="ลองถาม เช่น ช่วยอะไรได้อีกบ้าง..." rows="2"></textarea>
+<div class="absolute bottom-2.5 left-3 flex items-center gap-1 text-slate-400">
+<button class="p-1 hover:text-slate-600 rounded transition" title="แนบเอกสารอ้างอิง" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+<button class="p-1 hover:text-slate-600 rounded transition" title="ปรับแต่งรูปแบบคำสั่ง" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<div class="absolute bottom-2 right-2.5">
+<button class="w-7 h-7 rounded-full bg-brand-600 text-white flex items-center justify-center hover:bg-brand-700 transition shadow-sm" title="ส่งข้อความ" type="button">
+<svg class="w-3.5 h-3.5 stroke-[2.5]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M5 10l7-7m0 0l7 7m-7-7v18" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+</div>
+<p class="text-[10px] text-center text-slate-400">
+          Ekkasarn AI สามารถผิดพลาดได้ ควรตรวจสอบก่อนนำไปใช้งานจริงเสมอ
+        </p>
+</footer>
+</section>
+<!-- END: LeftChatPane -->
+<!-- BEGIN: RightDocumentPane -->
+<!-- Document Viewport, Toolbars, and A4 Sheet Simulation with Garuda emblem -->
+<section class="flex-1 bg-[#eaeef2] flex flex-col h-full relative overflow-hidden" data-purpose="document-pane">
+<!-- Top Action Bar -->
+<header class="h-16 pt-3.5 pb-3 px-6 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-20 shadow-2xs gap-3 select-none"><div class="flex items-center gap-3 shrink-0"><div class="flex items-center gap-1.5 font-medium text-slate-800 text-xs sm:text-sm"><svg class="w-4 h-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span class="font-semibold">บันทึกข้อความ</span></div><span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-300"><svg class="w-2.5 h-2.5 text-emerald-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>ร่างสมบูรณ์</span><div class="w-px h-4 bg-slate-200 hidden sm:block"></div><span class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-md" id="auto-save-indicator"><svg class="w-3 h-3 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span>บันทึกอัตโนมัติเรียบร้อย</span></span></div><div class="flex items-center gap-2 overflow-x-auto shrink-0"><button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition shadow-2xs font-medium cursor-pointer text-xs shrink-0" id="toggle-direct-edit-btn" title="คลิกเพื่อเปิด/ปิดโหมดพิมพ์แก้ไขโดยตรง"><span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span></span><svg class="w-3.5 h-3.5 text-emerald-700" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span class="text-[11px] font-medium hidden md:inline" id="edit-mode-label">โหมดพิมพ์บนกระดาษ (เปิดอยู่)</span></button><button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-xs transition shadow-2xs cursor-pointer shrink-0" id="btn-save-inline" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span>บันทึกการแก้ไข</span></button><div class="flex items-center gap-1.5 shrink-0"><button class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs transition shadow-2xs shrink-0" title="ดาวน์โหลดเป็นเอกสาร Word .docx" type="button"><svg class="w-3.5 h-3.5 text-brand-600" fill="currentColor" viewbox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 9h-2v4h2v-4zm-4 0H7v4h2v-4zm8 0h-2v4h2v-4zm-3-7.5L18.5 8H14V3.5z"></path></svg><span>ดาวน์โหลด Word (.docx)</span></button><button class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs transition shadow-2xs shrink-0" title="ดาวน์โหลดเป็นไฟล์ PDF คุณภาพสูง (Typst Engine)" type="button"><svg class="w-3.5 h-3.5 text-rose-600" fill="currentColor" viewbox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4h2v4zm0-6h-2V7h2v4z"></path></svg><span>ดาวน์โหลด PDF (Typst)</span></button></div><div class="w-px h-4 bg-slate-200 mx-0.5 shrink-0"></div><div class="flex items-center gap-1 text-slate-500 shrink-0"><button class="p-1.5 hover:text-slate-800 hover:bg-slate-100 rounded transition" title="ขยายเต็มจอ" type="button"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button></div></div></header>
+<!-- Document Format Bar (Undo, Redo, Lists, Download Button) -->
+<nav class="h-9 bg-white/95 backdrop-blur px-5 border-b border-slate-200 flex items-center justify-between shrink-0 text-slate-600 text-xs" data-purpose="document-toolbar"><div class="flex items-center gap-1"><button class="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition" title="เลิกทำ (Undo)" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 10h10a5 5 0 015 5v2m0 0l-3-3m3 3l3-3M3 10l3 3m-3-3l3-3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button><button class="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition" title="ทำซ้ำ (Redo)" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M21 10H11a5 5 0 00-5 5v2m0 0l3-3m-3 3l-3-3m14-4l-3-3m3 3l-3 3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button><div class="w-px h-3 bg-slate-200 mx-1"></div><button class="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition" title="ลำดับรายการ" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button><button class="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition" title="สัญลักษณ์หัวข้อย่อย" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 6h.01M4 12h.01M4 18h.01M8 6h12M8 12h12M8 18h12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button><div class="w-px h-3 bg-slate-200 mx-1"></div><span class="text-[11px] text-slate-400 pl-1">คลิกบนข้อความเพื่อแก้ไขโดยตรง หรือกดปุ่ม AI เพื่อเกลาสำนวน</span></div><div class="flex items-center gap-2"><button class="flex items-center gap-1 px-2 py-0.5 hover:bg-slate-100 rounded text-slate-600 transition text-[11px]" title="ตรวจเช็กระเบียบงานสารบรรณ" type="button"><svg class="w-3.5 h-3.5 text-brand-600" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill-rule="evenodd"></path></svg><span class="font-medium text-emerald-800">ตรวจระเบียบผ่าน (3 จุด)</span></button></div></nav><div class="bg-slate-50/95 border-b border-slate-200 px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs select-none z-10 shrink-0" id="govdoc-section-switcher"><div class="flex items-center gap-3 flex-wrap"><span class="font-medium text-slate-700 flex items-center gap-1"><svg class="w-3.5 h-3.5 text-brand-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span>หัวข้อบันทึกข้อความ:</span></span><div class="flex items-center gap-2 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs"><label class="inline-flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-slate-900"><input checked="" class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5" type="checkbox"/><span class="text-[11px] font-medium">อ้างถึง</span></label><span class="text-slate-300">|</span><label class="inline-flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-slate-900"><input checked="" class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5" type="checkbox"/><span class="text-[11px] font-medium">สิ่งที่ส่งมาด้วย</span></label><span class="text-slate-300">|</span><label class="inline-flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-slate-900"><input checked="" class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5" type="checkbox"/><span class="text-[11px] font-medium">ข้อกฎหมาย</span></label></div><span class="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">3/3 หัวข้อเปิดใช้งาน</span></div><div class="text-[11px] text-slate-500 hidden xl:block">คลิกเพื่อเปิด/ปิดหัวข้อ หรือซ่อนทั้งหมดเพื่อเริ่มเนื้อหาต่อจากบรรทัดเรียนทันที</div></div>
+<!-- Scrollable Paper Canvas Area -->
+<div class="flex-1 overflow-y-auto px-4 py-8 flex justify-center relative" id="doc-viewport">
+<!-- Live Thai Official Document A4 Simulation Sheet -->
+<article class="doc-sheet w-full max-w-[780px] min-h-[1100px] bg-white rounded-sm px-14 py-12 text-[#1e293b] font-sarabun text-[15px] leading-[1.85] relative select-text border border-slate-200/90 mb-14" data-purpose="official-gov-document"><div class="absolute -top-4 left-14 right-14 bg-white/95 backdrop-blur shadow-lg border border-slate-200/90 rounded-xl px-3 py-1.5 z-30 flex items-center justify-between text-xs transition-all" id="inline-floating-toolbar"><div class="flex items-center gap-1.5"><div class="flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span><span>โหมดพิมพ์แก้ไขโดยตรง</span></div><div class="w-px h-3.5 bg-slate-200 mx-1"></div><button class="p-1 hover:bg-slate-100 rounded text-slate-700 font-bold transition w-6 h-6 flex items-center justify-center" title="ตัวหนา (Ctrl+B)">B</button><button class="p-1 hover:bg-slate-100 rounded text-slate-700 italic transition w-6 h-6 flex items-center justify-center font-serif" title="ตัวเอียง (Ctrl+I)">I</button><button class="p-1 hover:bg-slate-100 rounded text-slate-700 underline transition w-6 h-6 flex items-center justify-center" title="ขีดเส้นใต้ (Ctrl+U)">U</button><div class="w-px h-3.5 bg-slate-200 mx-1"></div><button class="px-2 py-0.5 hover:bg-slate-100 rounded text-slate-600 text-[11px] transition" title="แปลงเลขอารบิกเป็นเลขไทย">๑๒๓ แปลงเลขไทย</button></div><div class="flex items-center gap-2"><span class="text-[11px] text-slate-400">A4 ครุฑ ๑.๕ ซม.</span></div></div><div class="relative pt-4"><div class="flex items-end justify-between border-b-2 border-slate-900 pb-3 mb-4"><div class="flex items-center gap-4"><div class="w-14 h-14 shrink-0 flex items-center justify-center"><svg class="w-14 h-14 text-slate-900 fill-current" viewbox="0 0 100 100"><path d="M50 8c-3 0-5 3-5 6v6c-4 1-8 4-11 7l-5-3c-3-2-6-1-8 2s-1 6 2 8l4 3c-2 4-3 9-3 14l-6 1c-3 1-5 4-4 7s4 5 7 4l6-1c2 5 5 10 9 13l-4 6c-2 3-1 7 2 9 1 1 3 1 4 1 2 0 4-1 5-3l4-6c3 1 7 2 11 2s8-1 11-2l4 6c1 2 3 3 5 3 1 0 3 0 4-1 3-2 4-6 2-9l-4-6c4-3 7-8 9-13l6 1c3 1 6-1 7-4s-1-6-4-7l-6-1c0-5-1-10-3-14l4-3c3-2 4-6 2-8s-5-4-8-2l-5 3c-3-3-7-6-11-7v-6c0-3-2-6-5-6zm0 18c6 0 10 5 10 11s-4 11-10 11-10-5-10-11 4-11 10-11zm-15 48c4 3 9 5 15 5s11-2 15-5c-3 6-8 11-15 11s-12-5-15-11z"></path></svg></div><div class="flex flex-col"><h2 class="text-2xl font-bold text-slate-900 leading-tight font-sarabun tracking-tight">บันทึกข้อความ</h2><span class="text-xs text-slate-500 font-sans">ตราครุฑ ๑.๕ ซม. มุมซ้ายบน</span></div></div><div class="text-right text-xs text-slate-500 font-sans">แบบฟอร์มระเบียบงานสารบรรณ พ.ศ. ๒๕๒๖</div></div><div class="space-y-2 text-slate-900"><div class="flex flex-wrap items-baseline gap-2"><span class="font-bold">ส่วนราชการ</span><span class="font-normal border-b border-dotted border-slate-300 pb-0.5">กลุ่มงานยุทธศาสตร์และพัฒนานโยบาย สำนักงานส่งเสริมกีฬาแห่งชาติ โทร. ๐ ๒๑๒๓ ๔๕๖๗</span></div><div class="flex items-baseline justify-between gap-4"><div class="flex items-baseline gap-2"><span class="font-bold">ที่</span><span class="font-normal border-b border-dotted border-slate-300 pb-0.5">กท ๐๕๐๔/</span><span class="px-1.5 py-0.2 bg-amber-50 border border-dashed border-amber-300 rounded text-amber-800 text-xs font-sans cursor-pointer" title="คลิกเพื่อใส่เลขที่หนังสือ">[ ✏️ ระบุเลขที่ ]</span></div><div class="flex items-baseline gap-2"><span class="font-bold">วันที่</span><span class="font-normal border-b border-dotted border-slate-300 pb-0.5 cursor-pointer hover:bg-slate-50 rounded px-1" id="date-day-slot" onclick="toggleBlankDateMode()" title="คลิกเพื่อสลับใส่วันที่ / เว้นว่าง"><span class="text-amber-800 bg-amber-50 border border-dashed border-amber-300 px-1.5 py-0.2 rounded text-xs font-sans">[ ✏️ เว้นวันที่ ]</span> ๒๓ กันยายน ๒๕๖๙</span></div></div><div class="flex items-baseline gap-2"><span class="font-bold">เรื่อง</span><span class="font-normal border-b border-dotted border-slate-300 pb-0.5">การขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วยพระราชทานฯ</span></div></div><div class="mt-4 pt-2 border-t border-slate-200/60"><div class="flex items-baseline gap-2"><span class="font-bold">เรียน</span><span class="font-normal">อธิบดีกรมพลศึกษา</span></div></div><div class="mt-3 bg-slate-50/70 border border-slate-200/80 rounded-lg p-3 space-y-2 text-sm"><div class="flex items-baseline gap-2"><span class="font-bold text-slate-800 shrink-0">อ้างถึง</span><span class="text-slate-800">หนังสือสมาคมวิ่งเปี้ยวประเทศไทย ที่ สวปท. ๐๔/๒๕๖๙ ลงวันที่ ๑๕ กันยายน ๒๕๖๙</span><button class="text-slate-400 hover:text-emerald-700 text-xs p-0.5" title="แก้ไขอ้างถึง">✏️</button></div><div class="flex items-baseline gap-2"><span class="font-bold text-slate-800 shrink-0">สิ่งที่ส่งมาด้วย</span><span class="text-slate-800">๑. โครงการจัดการแข่งขันและกำหนดการแข่งขัน จำนวน ๑ ชุด<br/>๒. ร่างคำสั่งแต่งตั้งคณะกรรมการจัดการแข่งขัน จำนวน ๑ ฉบับ</span><button class="text-slate-400 hover:text-emerald-700 text-xs p-0.5" title="แก้ไขสิ่งที่ส่งมาด้วย">✏️</button></div><div class="flex items-baseline gap-2"><span class="font-bold text-slate-800 shrink-0">ข้อกฎหมาย</span><span class="text-slate-800">พระราชบัญญัติส่งเสริมกีฬาแห่งชาติ พ.ศ. ๒๕๕๘ มาตรา ๑๙ และระเบียบสำนักนายกรัฐมนตรีฯ</span><button class="text-slate-400 hover:text-emerald-700 text-xs p-0.5" title="แก้ไขข้อกฎหมาย">✏️</button></div></div><div class="mt-5 space-y-4 text-justify leading-relaxed"><p class="memo-indent text-slate-900 group relative" id="para-1-text"><span class="bg-emerald-50/60 border-b border-emerald-400/80 py-0.5 px-1 rounded-xs cursor-pointer" onclick="toggleRefineDialog(event)" title="คลิกเพื่อเปิด AI ปรับสำนวน">ด้วย สมาคมวิ่งเปี้ยวประเทศไทย ได้มีหนังสือตามที่อ้างถึง ขอความอนุเคราะห์กรมพลศึกษาเป็นเจ้าภาพร่วมและสนับสนุนสถานที่ในการจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วยพระราชทาน สมเด็จพระกนิษฐาธิราชเจ้า กรมสมเด็จพระเทพรัตนราชสุดาฯ สยามบรมราชกุมารี ประจำปี ๒๕๖๙ ณ อาคารนิมิบุตร สนามกีฬาแห่งชาติ</span></p><p class="memo-indent text-slate-900">กลุ่มงานยุทธศาสตร์และพัฒนานโยบาย ได้พิจารณาข้อเท็จจริงและข้อระเบียบที่เกี่ยวข้องแล้ว เห็นว่ากิจกรรมดังกล่าวสอดคล้องกับยุทธศาสตร์การพัฒนาและส่งเสริมการออกกำลังกายขั้นพื้นฐานของประชาชน อีกทั้งเป็นการอนุรักษ์กีฬาไทยดั้งเดิมสู่มาตรฐานสากล จึงเห็นควรให้การสนับสนุนการจัดกิจกรรมดังกล่าว</p><p class="memo-indent text-slate-900">จึงเรียนมาเพื่อโปรดพิจารณาอนุมัติการเป็นเจ้าภาพร่วมและอนุญาตให้ใช้สถานที่ตามกำหนดการต่อไป</p></div><div class="mt-12 flex justify-end"><div class="w-72 text-center space-y-2"><div class="flex items-center justify-center gap-2"><span class="text-slate-700 font-sarabun">( .................................................... )</span><button class="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-dashed border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-sans transition cursor-pointer" title="คลิกเพื่อระบุชื่อผู้ลงนาม"><span>✏️</span><span>ระบุชื่อ</span></button></div><div class="flex items-center justify-center gap-2"><span class="text-slate-600 text-sm font-sarabun">ตำแหน่ง ....................................................</span><button class="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-dashed border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-sans transition cursor-pointer" title="คลิกเพื่อระบุตำแหน่งผู้ลงนาม"><span>✏️</span><span>ระบุตำแหน่ง</span></button></div></div></div></div></article>
+<!-- BEGIN: InlineRefineDialogPopup -->
+<!-- Contextual Pop-up Dialog for Inline Editing (as featured in Screenshot 1005) -->
+<div class="popup-dialog absolute top-28 left-6 sm:left-12 w-[390px] bg-white rounded-2xl border border-slate-200 p-4 z-40" data-purpose="refine-sentence-dialog" id="refine-popup-dialog">
+<!-- Header: Title and Credits -->
+<div class="flex items-center justify-between pb-2 border-b border-slate-100">
+<div class="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
+<span>ปรับสำนวน</span>
+<span class="text-slate-400 font-normal">·</span>
+<span class="text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded text-[11px] border border-emerald-200">1.4 เครดิต</span>
+</div>
+<button class="w-6 h-6 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition" onclick="closeRefineDialog()" title="ปิด" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Paragraph preview box with subtle vertical scroll -->
+<div class="mt-2.5 max-h-24 overflow-y-auto bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-700 leading-relaxed font-sarabun">
+            ตามหนังสือสมาคมวิ่งเปี้ยวประเทศไทย ที่ สวปท. ๐๔/๒๕๖๙ ลงวันที่ ๒๓ กันยายน ๒๕๖๙ เรื่อง ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย...
+          </div>
+<!-- Prompt instruction input -->
+<div class="mt-3">
+<input class="w-full text-xs rounded-xl border border-slate-200 bg-white placeholder-slate-400 px-3 py-2 focus:border-brand-600 focus:ring-1 focus:ring-brand-500/20" id="refine-input" placeholder="สั่งให้ปรับอย่างไร เช่น ให้กระชับขึ้น" type="text"/>
+</div>
+<!-- Quick Action Prompt Chips -->
+<div class="mt-2.5 flex flex-wrap gap-1.5">
+<button class="px-2.5 py-1 rounded-full text-[11px] font-normal bg-slate-100 hover:bg-slate-200 text-slate-700 transition" onclick="applyChip('ให้กระชับและเป็นทางการขึ้น')" type="button">
+              ให้กระชับและเป็นทางการขึ้น
+            </button>
+<button class="px-2.5 py-1 rounded-full text-[11px] font-normal bg-slate-100 hover:bg-slate-200 text-slate-700 transition" onclick="applyChip('ขยายความ')" type="button">
+              ขยายความ
+            </button>
+<button class="px-2.5 py-1 rounded-full text-[11px] font-normal bg-slate-100 hover:bg-slate-200 text-slate-700 transition" onclick="applyChip('แก้ให้ถูกระเบียบงานสารบรรณ')" type="button">
+              แก้ให้ถูกระเบียบ
+            </button>
+</div>
+<!-- Action Buttons -->
+<div class="mt-4 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<button class="px-4 py-1.5 rounded-lg bg-slate-600 hover:bg-slate-700 text-white font-medium text-xs shadow-xs transition" onclick="executeRefine()" type="button">
+                ปรับ
+              </button>
+<button class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-normal text-xs transition" onclick="closeRefineDialog()" type="button">
+                ยกเลิก
+              </button>
+</div>
+<span class="text-[11px] text-slate-400">Esc เพื่อออก</span>
+</div>
+</div>
+<!-- END: InlineRefineDialogPopup -->
+</div>
+<!-- Bottom Floating Action Button: Quick Tools (ปุ่มลัด) -->
+<aside class="absolute bottom-5 right-6 z-20" data-purpose="floating-action">
+<button class="flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#0a3641] hover:bg-[#072831] text-white font-medium text-xs shadow-lg shadow-teal-950/20 hover:shadow-xl transition transform hover:-translate-y-0.5 active:translate-y-0" type="button">
+<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>ปุ่มลัด</span>
+</button>
+</aside>
+<!-- Bottom Document Status / Version Bar -->
+<footer class="h-8 bg-white border-t border-slate-200 px-6 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
+<div class="flex items-center gap-3">
+<span>ประวัติเวอร์ชัน (1)</span>
+<span class="text-slate-300">|</span>
+<span class="text-emerald-700">บันทึกล่าสุดเมื่อสักครู่</span>
+</div>
+<div class="flex items-center gap-2">
+<span>ความยาว ๔๗๒ คำ</span>
+<span class="text-slate-300">|</span>
+<span>A4 มาตรฐานครุฑไทย ๑.๕ ซม.</span>
+</div>
+</footer>
+</section>
+<!-- END: RightDocumentPane -->
+</main>
+<!-- END: MainContentWrapper -->
+<!-- JavaScript: Pop-up Control and Interactivity -->
+<script data-purpose="refine-interaction-handlers">
+    // Toggle the contextual refine dialog
+    function toggleRefineDialog(event) {
+      if (event) {
+        event.stopPropagation();
+      }
+      const dialog = document.getElementById('refine-popup-dialog');
+      if (dialog) {
+        dialog.classList.toggle('hidden');
+      }
+    }
+
+    // Dismiss dialog explicitly
+    function closeRefineDialog() {
+      const dialog = document.getElementById('refine-popup-dialog');
+      if (dialog) {
+        dialog.classList.add('hidden');
+      }
+    }
+
+    // Handle suggestion prompt chip clicks
+    function applyChip(promptText) {
+      const input = document.getElementById('refine-input');
+      if (input) {
+        input.value = promptText;
+        input.focus();
+      }
+    }
+
+    // Simulate AI Refinement execution
+    function executeRefine() {
+      const input = document.getElementById('refine-input');
+      const para1 = document.getElementById('para-1-text');
+      if (input && para1) {
+        const val = input.value.trim();
+        // Visual indication of successful AI update
+        para1.classList.remove('bg-blue-800/90', 'text-white');
+        para1.classList.add('bg-emerald-50', 'text-emerald-950', 'border', 'border-emerald-300');
+        setTimeout(() => {
+          para1.classList.remove('bg-emerald-50', 'text-emerald-950', 'border', 'border-emerald-300');
+        }, 2200);
+        closeRefineDialog();
+      }
+    }
+
+    // Keyboard support: Escape closes the dialog
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeRefineDialog();
+      }
+    });
+  </script>
+<script data-purpose="date-mode-toggle">let isDateBlanked = true; function toggleBlankDateMode() { const slot = document.getElementById('date-day-slot'); const label = document.getElementById('date-day-label'); const btnText = document.getElementById('date-toggle-btn-text'); if (!slot || !label) return; isDateBlanked = !isDateBlanked; if (isDateBlanked) { slot.className = 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100/80 text-xs cursor-pointer transition select-none font-sarabun'; slot.innerHTML = '<span class="text-[10px] text-amber-700">✏️</span><span id="date-day-label" class="font-medium">[ เว้นวันที่ ]</span>'; if (btnText) btnText.textContent = 'ใส่วันที่เต็ม'; } else { slot.className = 'editable-field text-slate-800 px-1 py-0.5 rounded hover:bg-slate-50 font-sarabun text-[15px] border border-transparent cursor-text'; slot.innerHTML = '<span id="date-day-label" contenteditable="true" class="outline-none">๒๓</span>'; if (btnText) btnText.textContent = 'เว้นว่างวันที่'; } }</script></body></html>

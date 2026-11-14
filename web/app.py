@@ -7,6 +7,7 @@ app.py — หน้าจอใช้งานหลัก (Interactive Workspa
 import os
 import re
 import sys
+import html
 import base64
 import tempfile
 import uuid
@@ -396,78 +397,264 @@ st.markdown("""
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        max-width: 820px;
-        margin: 2.0rem auto 1.2rem auto;
+        max-width: 900px !important;
+        margin: clamp(2.4rem, 8vh, 5rem) auto 0.8rem auto !important;
         text-align: center;
+        position: relative;
+        isolation: isolate;
+    }
+    .hero-wrapper::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        width: min(78vw, 850px);
+        height: 330px;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        border-radius: 50%;
+        background: radial-gradient(ellipse, rgba(207, 240, 244, 0.62) 0%, rgba(230, 246, 247, 0.36) 44%, rgba(255, 255, 255, 0) 76%);
+        filter: blur(10px);
+        pointer-events: none;
     }
     .hero-sparkle-icon {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 68px;
-        height: 68px;
+        width: 44px;
+        height: 44px;
         background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
         border: 1px solid #a7f3d0;
-        border-radius: 18px;
-        margin-bottom: 1.1rem;
-        box-shadow: 0 4px 14px rgba(16, 185, 129, 0.16);
+        border-radius: 14px;
+        margin-bottom: 0.6rem;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.16);
     }
     .hero-title {
-        font-size: 2.15rem !important;
+        font-size: clamp(2.1rem, 3.3vw, 3.05rem) !important;
         font-weight: 700 !important;
         color: #0f172a !important;
-        margin-bottom: 0.4rem !important;
+        margin-bottom: 0.35rem !important;
         letter-spacing: -0.02em !important;
         font-family: 'Sarabun', sans-serif !important;
         line-height: 1.25 !important;
     }
     .hero-subtitle {
-        font-size: 1.02rem !important;
+        font-size: 1.08rem !important;
         color: #64748b !important;
-        margin-bottom: 1.8rem !important;
+        margin-bottom: 1.2rem !important;
         font-weight: 400 !important;
     }
     .hero-card-wrapper {
         background: #ffffff;
         border: 1.5px solid #e2e8f0;
         border-radius: 16px;
-        padding: 20px 22px;
-        box-shadow: 0 4px 24px -2px rgba(15, 23, 42, 0.06);
-        max-width: 820px;
+        padding: 16px 20px;
+        box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+        max-width: 680px;
         margin: 0 auto;
         transition: all 0.2s ease;
     }
+    .st-key-hero_composer,
+    div[data-testid="stLayoutWrapper"]:has(> .st-key-hero_composer),
+    div:has(> .st-key-hero_composer) {
+        max-width: 960px !important;
+        width: 100% !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
     .st-key-hero_composer {
-        border-radius: 22px !important;
-        border: 1.5px solid #e2e8f0 !important;
-        box-shadow: 0 6px 28px -6px rgba(15, 23, 42, 0.10) !important;
-        padding: 14px 18px 10px 18px !important;
-        background: #ffffff !important;
+        border-radius: 20px !important;
+        border: 1px solid #d7dee7 !important;
+        box-shadow: 0 18px 44px -24px rgba(15, 23, 42, 0.22) !important;
+        padding: 18px 20px 10px 20px !important;
+        background: rgba(246, 248, 250, 0.94) !important;
+        transition: all 0.2s ease !important;
+    }
+    .st-key-hero_composer:focus-within {
+        border-color: #a8c6c9 !important;
+        box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.08), 0 18px 44px -24px rgba(15, 23, 42, 0.22) !important;
+    }
+    .st-key-hero_composer div[data-baseweb="textarea"],
+    .st-key-hero_composer div[data-baseweb="base-input"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
     }
     .st-key-hero_composer textarea {
         border: none !important;
         box-shadow: none !important;
         background: transparent !important;
-        font-size: 1.0rem !important;
+        font-size: 0.95rem !important;
         line-height: 1.55 !important;
-        padding: 4px 2px !important;
+        padding: 2px 0 !important;
+        color: #1e293b !important;
+        resize: none !important;
+        min-height: 100px !important;
+        height: 112px !important;
     }
     .st-key-hero_composer textarea:focus {
         border: none !important;
         box-shadow: none !important;
         outline: none !important;
     }
-    .st-key-hero_composer:focus-within {
-        border-color: #10b981 !important;
-        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12), 0 8px 30px rgba(15, 23, 42, 0.10) !important;
+    .st-key-hero_composer textarea::placeholder {
+        color: #788391 !important;
+        font-size: 0.92rem !important;
+    }
+    .st-key-hero_composer label {
+        display: none !important;
+    }
+    .st-key-hero_composer [data-testid="stHorizontalBlock"] {
+        border-top: 1px solid #e8edf2 !important;
+        background: rgba(248, 250, 252, 0.88) !important;
+        border-radius: 0 0 18px 18px !important;
+        padding: 8px 6px 0 !important;
+        margin-top: 8px !important;
     }
     .st-key-hero_composer [data-testid="stPopover"] button {
-        border-radius: 9999px !important;
-        font-size: 0.82rem !important;
-        padding: 4px 10px !important;
+        width: 42px !important;
+        min-width: 42px !important;
+        height: 42px !important;
+        min-height: 42px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 8px !important;
+        background: transparent !important;
+        color: #475569 !important;
+        font-size: 0 !important;
+        position: relative !important;
+    }
+    .st-key-hero_composer [data-testid="stPopover"] button > * {
+        opacity: 0 !important;
+    }
+    .st-key-hero_composer [data-testid="stPopover"] button::before {
+        content: "";
+        visibility: visible !important;
+        display: block !important;
+        position: absolute !important;
+        left: 50% !important;
+        top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        width: 23px !important;
+        height: 23px !important;
+        background-color: #475569 !important;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'/%3E%3C/svg%3E") center / contain no-repeat !important;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'/%3E%3C/svg%3E") center / contain no-repeat !important;
+    }
+    .st-key-hero_composer [data-testid="stPopover"] button:hover {
+        border: 0 !important;
+        background: #e9eff2 !important;
     }
     .st-key-hero_composer [data-testid="stBaseButton-primary"] {
+        width: 44px !important;
+        min-width: 44px !important;
+        min-height: 44px !important;
+        height: 44px !important;
+        padding: 0 !important;
+        border-radius: 12px !important;
+        font-size: 1.25rem !important;
+        font-weight: 600 !important;
+        background: #0b192c !important;
+        color: #ffffff !important;
+        border: 0 !important;
+        white-space: nowrap !important;
+        position: relative !important;
+        letter-spacing: 0.01em !important;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12) !important;
+    }
+    .st-key-hero_composer [data-testid="stBaseButton-primary"]:hover {
+        background: #0f766e !important;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.20) !important;
+    }
+    .st-key-hero_composer [data-testid="stBaseButton-primary"]:disabled {
+        background: #64748b !important;
+        color: #ffffff !important;
+        opacity: 1 !important;
+        cursor: not-allowed !important;
+        box-shadow: none !important;
+    }
+    .st-key-hero_composer [data-testid="stBaseButton-primary"] p {
+        visibility: hidden !important;
+    }
+    .st-key-hero_composer [data-testid="stBaseButton-primary"]::before {
+        content: "↑";
+        position: absolute !important;
+        left: 50% !important;
+        top: 50% !important;
+        transform: translate(-50%, -52%) !important;
+        font-size: 1.35rem !important;
+        line-height: 1 !important;
+    }
+
+    /* Starter Pills Container */
+    .st-key-hero_pills,
+    div[data-testid="stLayoutWrapper"]:has(> .st-key-hero_pills),
+    div:has(> .st-key-hero_pills) {
+        max-width: 900px !important;
+        width: 100% !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+    .st-key-hero_pills [data-testid="column"] {
+        padding: 0 3px !important;
+    }
+    .st-key-hero_pills button {
         border-radius: 9999px !important;
+        border: 1px solid #e2e8f0 !important;
+        background: #ffffff !important;
+        color: #334155 !important;
+        font-size: 0.86rem !important;
+        font-weight: 500 !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        padding: 0 10px !important;
+        white-space: nowrap !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+        transition: all 0.15s ease !important;
+    }
+    .st-key-hero_pills button:hover {
+        border-color: #10b981 !important;
+        color: #047857 !important;
+        background: #ecfdf5 !important;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.12) !important;
+        transform: translateY(-1px) !important;
+    }
+    .govdoc-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 48px;
+        margin: -0.9rem -1.8rem 0;
+        padding: 8px 2rem;
+        border-bottom: 1px solid #edf1f5;
+        background: rgba(255, 255, 255, 0.92);
+    }
+    .govdoc-topbar-crumbs,
+    .govdoc-topbar-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.78rem !important;
+    }
+    .govdoc-topbar-crumbs { color: #94a3b8; }
+    .govdoc-topbar-crumbs strong { color: #334155; font-weight: 500; }
+    .govdoc-topbar-status {
+        padding: 5px 10px;
+        border: 1px solid #dbe5ea;
+        border-radius: 8px;
+        color: #64748b;
+        background: #f8fafc;
+        white-space: nowrap;
+    }
+    .govdoc-topbar-status::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #0d9488;
+        box-shadow: 0 0 0 3px #ccfbef;
     }
     .hero-card-wrapper:focus-within {
         border-color: #10b981;
@@ -574,55 +761,42 @@ st.markdown("""
         background: #0f172a !important;
     }
 
-    /* 11. Hero polish */
-    .hero-title {
-        font-size: 2.35rem !important;
-        margin-bottom: 0.35rem !important;
-    }
-    .hero-subtitle {
-        font-size: 1.06rem !important;
-        margin-bottom: 1.45rem !important;
-    }
-    .st-key-hero_composer [data-testid="stPopover"] button {
-        width: 44px !important;
-        min-width: 44px !important;
-        height: 40px !important;
-        padding: 0 !important;
-        border-radius: 9999px !important;
-        font-size: 1.05rem !important;
-        border: 1px solid #e2e8f0 !important;
-        background: #ffffff !important;
-    }
-    .st-key-hero_composer [data-testid="stPopover"] button:hover {
-        border-color: #10b981 !important;
-        background: #f0fdf4 !important;
-    }
+    /* 11. Hero polish - helper overrides */
     .st-key-hero_composer [data-testid="stBaseButton-primary"] {
-        width: 46px !important;
-        min-width: 46px !important;
-        height: 40px !important;
-        padding: 0 !important;
-        margin-left: auto !important;
-        border-radius: 9999px !important;
-        font-size: 1.1rem !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
     }
-    .st-key-hero_composer textarea::placeholder {
-        color: #94a3b8 !important;
-        font-size: 0.95rem !important;
+    button:focus-visible,
+    textarea:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    section[data-testid="stSidebar"] label:focus-within {
+        outline: 3px solid #0f766e !important;
+        outline-offset: 2px !important;
     }
-    .st-key-hero_pills button {
-        border-radius: 9999px !important;
-        border: 1px solid #e2e8f0 !important;
-        background: #ffffff !important;
-        color: #334155 !important;
-        font-size: 0.82rem !important;
-        min-height: 36px !important;
-        padding: 4px 8px !important;
-    }
-    .st-key-hero_pills button:hover {
-        border-color: #10b981 !important;
-        color: #047857 !important;
-        background: #f0fdf4 !important;
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: 0.8rem !important;
+            padding-right: 0.8rem !important;
+        }
+        .hero-title {
+            font-size: 1.55rem !important;
+        }
+        .hero-subtitle {
+            font-size: 0.9rem !important;
+        }
+        .st-key-hero_composer {
+            padding: 10px !important;
+        }
+        .govdoc-topbar {
+            margin-left: -0.8rem;
+            margin-right: -0.8rem;
+            padding-left: 0.8rem;
+            padding-right: 0.8rem;
+        }
+        .govdoc-topbar-status {
+            font-size: 0.68rem !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -3043,10 +3217,17 @@ def render_welcome_hero():
     clean_name = raw_name.replace("(", "").replace(")", "").replace("นาย", "").replace("นางสาว", "").replace("นาง", "").strip()
     first_name = clean_name.split()[0] if clean_name else "Jack_Sport"
 
+    st.markdown("""
+    <div class="govdoc-topbar">
+        <div class="govdoc-topbar-crumbs"><span>ร่างหนังสือราชการ</span><span>›</span><strong>เอกสารใหม่</strong></div>
+        <div class="govdoc-topbar-status">พร้อมใช้งาน · ระเบียบสารบรรณ พ.ศ. ๒๕๒๖</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown(f"""
     <div class="hero-wrapper">
         <div class="hero-sparkle-icon">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" fill="#10b981" fill-opacity="0.16" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M14 2V8H20" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M9 13H15" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3054,43 +3235,32 @@ def render_welcome_hero():
                 <path d="M19 11L20 9L22 8L20 7L19 5L18 7L16 8L18 9L19 11Z" fill="#10b981"/>
             </svg>
         </div>
-        <div class="hero-title">สวัสดี คุณ{first_name}</div>
-        <div class="hero-subtitle">แค่บอกสิ่งที่คุณต้องการ หรือแนบไฟล์ต้นเรื่อง ที่เหลือให้เราจัดการให้</div>
+        <div class="hero-title">สวัสดี คุณ{html.escape(first_name)}</div>
+        <div class="hero-subtitle">วันนี้มีอะไรให้ช่วยร่างครับ? พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องได้เลย</div>
     </div>
     """, unsafe_allow_html=True)
 
+    # หน้าเริ่มต้นไม่ให้ตั้งค่าชนิดหนังสือหรือชั้นความลับ ระบบจำแนกชนิดจากต้นเรื่อง
+    hero_secret = SecretLevel.NORMAL
+
     with st.container(border=True, key="hero_composer"):
         hero_prompt = st.text_area(
-            "ข้อความสั่งการหรือเนื้อหาต้นเรื่อง",
+            "คำสั่งหรือเนื้อหาต้นเรื่อง",
             value="",
-            placeholder="พิมพ์คำสั่งหรือวางเนื้อหาต้นเรื่อง เช่น เขียนหนังสือขอความอนุเคราะห์ใช้อาคารกีฬาเวสน์ ๑ หรือเขียนหนังสือทวงถามเอกสารหลักฐานการเบิกจ่าย...",
-            height=110,
+            placeholder="พิมพ์คำสั่งหรือวางเนื้อหาต้นเรื่อง เช่น เขียนหนังสือขอความอนุเคราะห์ใช้อาคารกีฬาเวสน์ ๑ หรือแนบไฟล์ต้นเรื่อง...",
+            height=75,
             label_visibility="collapsed",
             key="hero_prompt_input",
         )
 
-        hc1, hc2, hc_spacer, hc3 = st.columns([0.9, 0.9, 4.2, 1.0], gap="small")
+        hc1, hc_spacer, hc3 = st.columns([0.7, 6.0, 1.8], gap="small")
         with hc1:
-            with st.popover("📎", use_container_width=True, help="แนบ PDF / DOCX / TXT หรือรูปภาพต้นเรื่อง"):
+            with st.popover("📎", use_container_width=True, help="แนบไฟล์ PDF, DOCX, TXT หรือรูปภาพ"):
                 hero_file = st.file_uploader(
-                    "แนบไฟล์ต้นเรื่อง",
+                    "แนบไฟล์",
                     type=["pdf", "docx", "txt", "png", "jpg", "jpeg"],
                     label_visibility="collapsed",
                     key="hero_file_upload",
-                )
-        with hc2:
-            with st.popover("⚙️", use_container_width=True, help="ชั้นความลับและชนิดหนังสือ"):
-                hero_secret = st.selectbox(
-                    "ชั้นความลับ",
-                    options=[SecretLevel.NORMAL, SecretLevel.SECRET, SecretLevel.VERY_SECRET],
-                    format_func=lambda s: f"🔒 {s.to_thai()}",
-                    key="hero_secret_select",
-                )
-                hero_doctype = st.selectbox(
-                    "ชนิดหนังสือ",
-                    options=[DocType.INTERNAL, DocType.EXTERNAL],
-                    format_func=lambda d: "📄 บันทึกภายใน" if d == DocType.INTERNAL else "🏛️ หนังสือภายนอก",
-                    key="hero_doctype_select",
                 )
         with hc3:
             btn_hero_submit = st.button(
@@ -3098,17 +3268,19 @@ def render_welcome_hero():
                 type="primary",
                 use_container_width=True,
                 key="hero_submit_btn",
-                help="ยกร่างจากข้อความหรือไฟล์ที่แนบ",
+                disabled=(hero_file is None and not hero_prompt.strip()),
+                help="วิเคราะห์ข้อความหรือไฟล์ และเตรียมร่างเอกสาร",
             )
 
-        _doctype_label = "บันทึกภายใน" if hero_doctype == DocType.INTERNAL else "หนังสือภายนอก"
-        st.caption(f"🔒 {hero_secret.to_thai()}  ·  {_doctype_label}" + (f"  ·  📎 {hero_file.name}" if hero_file is not None else ""))
+        if hero_file is not None:
+            st.markdown(f'<div style="margin-top: 8px; display: inline-flex; align-items: center; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 4px 10px; color: #065f46;">📄 {html.escape(hero_file.name)}</div>', unsafe_allow_html=True)
 
-    if hero_file is not None:
+    if btn_hero_submit and hero_file is not None:
         saved_path = uploads_dir / hero_file.name
         with open(saved_path, "wb") as f:
             f.write(hero_file.getbuffer())
-        with st.spinner("กำลังอ่านและสกัดข้อความจากเอกสารต้นเรื่อง (Multi-Engine OCR)..."):
+        with st.status("กำลังอ่านต้นเรื่อง...", expanded=True) as progress:
+            st.write("กำลังสกัดข้อความจากไฟล์")
             ctx = extract_source_document(
                 str(saved_path),
                 api_key=st.session_state.get("ai_api_key"),
@@ -3117,26 +3289,34 @@ def render_welcome_hero():
             )
             st.session_state.source_context = ctx
             st.session_state.last_uploaded_file = hero_file.name
+            progress.update(label="กำลังจำแนกเนื้อหาและชนิดหนังสือ...", state="running")
             cls = classify_source_document(ctx)
             st.session_state.classification = cls
             st.session_state.classification_confirmed = True
             if not ctx.extraction_failed:
-                target_type = hero_doctype if hero_doctype else cls.doc_type
+                progress.update(label="กำลังเตรียมร่างให้ตรวจทาน...", state="running")
+                target_type = cls.doc_type
                 draft = draft_from_context_rule_based(ctx, doc_type=target_type, intent=cls.intent)
                 draft.secret = hero_secret
                 st.session_state.doc_data = draft
                 st.session_state.initial_ai_draft = draft.model_copy(deep=True)
-            st.session_state.has_active_draft = True
+                progress.update(label="ร่างพร้อมตรวจทาน", state="complete")
+                st.session_state.has_active_draft = True
+            else:
+                progress.update(label="อ่านต้นเรื่องไม่สำเร็จ กรุณาตรวจไฟล์หรือป้อนข้อความด้วยตนเอง", state="error")
+        if not ctx.extraction_failed:
             st.rerun()
+        else:
+            st.error("ยังไม่สร้างร่าง เพราะอ่านเนื้อหาจากไฟล์ไม่ได้ กรุณาลองไฟล์อื่นหรือกรอกข้อความต้นเรื่อง")
 
-    if btn_hero_submit and hero_prompt.strip():
-        with st.spinner("กำลังประมวลผลคำสั่งและยกร่างเอกสาร..."):
+    elif btn_hero_submit and hero_prompt.strip():
+        with st.spinner("กำลังวิเคราะห์คำสั่งและเตรียมร่างให้ตรวจทาน..."):
             ctx = extract_from_raw_text(hero_prompt.strip(), filename="คำสั่งผู้ใช้.txt")
             st.session_state.source_context = ctx
             cls = classify_source_document(ctx)
             st.session_state.classification = cls
             st.session_state.classification_confirmed = True
-            draft = draft_from_context_rule_based(ctx, doc_type=hero_doctype, intent=cls.intent)
+            draft = draft_from_context_rule_based(ctx, doc_type=cls.doc_type, intent=cls.intent)
             draft.secret = hero_secret
             clean_p = hero_prompt.strip().replace("\n", " ")
             draft.subject = clean_p[:60] if len(clean_p) <= 60 else clean_p[:60] + "..."
@@ -3144,12 +3324,6 @@ def render_welcome_hero():
             st.session_state.initial_ai_draft = draft.model_copy(deep=True)
             st.session_state.has_active_draft = True
             st.rerun()
-
-    st.markdown("""
-    <div style="text-align: center; margin-top: 24px; margin-bottom: 10px;">
-        <span style="font-size: 0.84rem; color: #64748b; font-weight: 500;">ลองเลือกเครื่องมือหรือตัวอย่างเพื่อเริ่มต้นใช้งาน:</span>
-    </div>
-    """, unsafe_allow_html=True)
 
     with st.container(key="hero_pills"):
         p1, p2, p3, p4, p5 = st.columns(5, gap="small")
@@ -3183,6 +3357,12 @@ def render_welcome_hero():
                 st.session_state.source_context = None
                 st.session_state.has_active_draft = True
                 st.rerun()
+
+    st.markdown("""
+    <div style="text-align: center; margin-top: 10px; margin-bottom: 6px; color: #94a3b8; font-size: 0.78rem;">
+        ลองเลือกเครื่องมือเพื่อดูตัวอย่างร่างเอกสารจริงได้ทันที
+    </div>
+    """, unsafe_allow_html=True)
 
 def render_split_workspace():
     doc = st.session_state.doc_data
@@ -3273,8 +3453,8 @@ with st.sidebar:
         st.rerun()
 
     sidebar_search = st.text_input(
-        "ค้นหา",
-        placeholder="ค้นเรื่องหรือแชทเดิม...",
+        "ค้นหาตัวอย่างงาน",
+        placeholder="ค้นหาตัวอย่างเอกสาร...",
         label_visibility="collapsed",
         key="sidebar_search",
     )
@@ -3282,7 +3462,7 @@ with st.sidebar:
 
     st.markdown("""
     <div style="margin-top: 16px; margin-bottom: 6px; font-size: 0.72rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em;">
-        ล่าสุด (Recent Drafts)
+        ตัวอย่างงาน
     </div>
     """, unsafe_allow_html=True)
 
@@ -3321,16 +3501,24 @@ with st.sidebar:
             st.session_state.nav_selection = "📝 ห้องร่างหนังสือ"
             st.rerun()
 
-    st.markdown("<div style='height: 35px;'></div>", unsafe_allow_html=True)
-    raw_name = current_profile.signatory_name or "JS"
+    st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
+    raw_name = current_profile.signatory_name or "ยังไม่ได้ตั้งชื่อผู้ลงนาม"
     clean_name = raw_name.replace("(", "").replace(")", "").replace("นาย", "").replace("นางสาว", "").replace("นาง", "").strip()
-    user_initials = clean_name[:2].upper() if clean_name else "JS"
+    parts = clean_name.split()
+    if len(parts) >= 2:
+        user_initials = (parts[0][:1] + parts[1][:1]).strip() or "สล"
+    elif parts:
+        user_initials = parts[0][:2]
+    else:
+        user_initials = "สล"
+    profile_name = html.escape(raw_name.replace("(", "").replace(")", "").strip())
+    profile_position = html.escape(current_profile.signatory_position or "เพิ่มตำแหน่งในตั้งค่า")
     st.markdown(f"""
     <div class="sidebar-user-card">
         <div class="user-avatar-circle">{user_initials}</div>
         <div style="flex: 1; min-width: 0;">
-            <div style="font-weight: 600; font-size: 0.82rem; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{current_profile.signatory_name}</div>
-            <div style="font-size: 0.71rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{current_profile.signatory_position}</div>
+            <div style="font-weight: 600; font-size: 0.82rem; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{profile_name}</div>
+            <div style="font-size: 0.72rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{profile_position}</div>
         </div>
         <span style="font-size: 0.68rem; background: #ecfdf5; color: #047857; padding: 2px 6px; border-radius: 9999px; font-weight: 600;">Free</span>
     </div>
