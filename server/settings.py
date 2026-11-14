@@ -45,6 +45,11 @@ class Settings:
         or os.environ.get("SUPABASE_ANON_KEY", "")
     )
     source_bucket: str = "sources"
+    # บนคลาวด์ต้องมีล็อกอินเสมอ: ถ้าลืมตั้ง Supabase ระบบจะปฏิเสธ API แทนการเปิดใช้แบบไม่มีล็อกอิน
+    # (บนเครื่องตัวเองไม่บังคับ; ตั้ง GOVDOC_REQUIRE_AUTH=1 เพื่อบังคับเองได้)
+    require_auth: bool = field(
+        default_factory=lambda: os.environ.get("GOVDOC_REQUIRE_AUTH", "1" if _ON_SERVERLESS else "0") == "1"
+    )
     web_dir: Path = ROOT_DIR / "web" / "studio"
     assets_dir: Path = ROOT_DIR / "assets"
     typst_templates_dir: Path = ROOT_DIR / "templates" / "typst"

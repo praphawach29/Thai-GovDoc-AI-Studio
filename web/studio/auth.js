@@ -42,6 +42,13 @@
   // ให้หน้าเว็บรอจนรู้ว่าล็อกอินแล้ว ก่อนเริ่มเรียก API
   const ready = (async () => {
     const cfg = await loadConfig();
+    if (cfg.misconfigured) {
+      // เซิร์ฟเวอร์บนคลาวด์ยังไม่ได้ตั้ง Supabase: API จะปฏิเสธทุกคำขอ แจ้งผู้ดูแลแทนการแสดงหน้าที่ใช้ไม่ได้
+      document.body.innerHTML = '<div style="max-width:32rem;margin:15vh auto;padding:1.5rem;font-family:sans-serif;line-height:1.6">' +
+        '<h1 style="font-size:1.1rem;font-weight:600;margin-bottom:.5rem">ระบบยังไม่พร้อมใช้งาน</h1>' +
+        '<p>ผู้ดูแลยังไม่ได้ตั้งค่าการเข้าสู่ระบบ (SUPABASE_URL และ SUPABASE_PUBLISHABLE_KEY) บนเซิร์ฟเวอร์</p></div>';
+      return new Promise(() => {});
+    }
     if (!cfg.auth_required || isLoginPage()) return cfg;
     if (!(await token())) { goLogin(); return new Promise(() => {}); }   // หยุดหน้าไว้ระหว่างเปลี่ยนหน้า
     client.auth.onAuthStateChange((event) => { if (event === 'SIGNED_OUT') goLogin(); });

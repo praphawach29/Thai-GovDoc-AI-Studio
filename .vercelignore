@@ -1,0 +1,17 @@
+# ไม่ส่งขึ้น Vercel: ไม่ได้ใช้ตอนรันเซิร์ฟเวอร์ (ลดขนาด function และไม่เผยแพร่ข้อมูลตัวอย่าง)
+.venv/
+tests/
+examples/
+legacy/
+supabase/
+skills/
+scripts/
+uploads/
+stitch_official_document_generator_homepage_2/
+data/pythainlp/
+data/*.db
+Dockerfile.tesseract
+requirements-dev.txt
+pytest.ini
+*.md
+**/__pycache__/

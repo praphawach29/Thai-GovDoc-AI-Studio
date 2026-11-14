@@ -14,6 +14,7 @@ def public_config(settings: Settings = Depends(get_settings)):
     enabled = supabase_enabled(settings)
     return {
         "auth_required": enabled,
+        "misconfigured": settings.require_auth and not enabled,
         "supabase_url": settings.supabase_url if enabled else None,
         "supabase_publishable_key": settings.supabase_publishable_key if enabled else None,
         "source_bucket": settings.source_bucket,

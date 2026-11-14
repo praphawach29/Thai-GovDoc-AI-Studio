@@ -235,3 +235,13 @@ def test_legal_library_uses_org_table(fake, client):
     res = client.post("/api/v1/legal/references", json={"title": "ระเบียบงานสารบรรณ", "quote": "ข้อ ๑๖"}, headers=h)
     assert res.json()["reference"]["org_id"] == ORG_ID
     assert len(client.get("/api/v1/legal/references", headers=h).json()["references"]) == 1
+
+
+def test_cloud_without_supabase_fails_closed(tmp_path, client):
+    """ขึ้น Vercel แล้วลืมตั้ง Supabase → API ต้องปฏิเสธ ไม่ใช่เปิดให้ใช้โดยไม่ล็อกอิน"""
+    settings = Settings(upload_dir=tmp_path / "u", registry_db_path=tmp_path / "r.db", require_auth=True)
+    app.dependency_overrides[get_settings] = lambda: settings
+    assert client.get("/api/v1/studio/templates").status_code == 503
+    assert client.post("/api/v1/export/typst", json=_doc()).status_code == 503
+    assert client.get("/api/v1/health").status_code == 200
+    assert client.get("/api/v1/config").json()["misconfigured"] is True

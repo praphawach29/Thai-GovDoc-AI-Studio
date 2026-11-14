@@ -115,6 +115,9 @@ def verify_token(token: str, settings: Settings) -> CurrentUser:
 def get_current_user(request: Request, settings: Settings = Depends(get_settings)) -> Optional[CurrentUser]:
     """ผู้ใช้ที่ล็อกอิน (โหมด Supabase) หรือ None (โหมดเครื่องเดียว)"""
     if not supabase_enabled(settings):
+        if settings.require_auth:
+            # fail-closed: ขึ้นคลาวด์แล้วแต่ยังไม่ได้ตั้ง Supabase → ห้ามเปิดใช้แบบไม่มีล็อกอิน
+            raise HTTPException(status_code=503, detail="ระบบยังไม่ได้ตั้งค่าการเข้าสู่ระบบ (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY)")
         return None
     auth = request.headers.get("authorization", "")
     scheme, _, token = auth.partition(" ")
