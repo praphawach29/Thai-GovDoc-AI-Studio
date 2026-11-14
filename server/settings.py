@@ -35,9 +35,23 @@ class Settings:
     max_upload_bytes: int = field(
         default_factory=lambda: int(os.environ.get("GOVDOC_MAX_UPLOAD_MB", "50")) * 1024 * 1024
     )
+    # Supabase: ตั้ง SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY แล้วระบบจะบังคับล็อกอินทุก API
+    # และเก็บข้อมูลใน Supabase; ไม่ตั้ง = โหมดเครื่องเดียว (SQLite + localStorage, ไม่มีล็อกอิน)
+    # publishable key (เดิมเรียก anon key) เปิดเผยในหน้าเว็บได้ สิทธิ์ถูกคุมด้วย RLS
+    # ห้ามใส่ service_role / secret key ที่นี่ — API เรียก Supabase ด้วย token ของผู้ใช้เท่านั้น
+    supabase_url: str = field(default_factory=lambda: os.environ.get("SUPABASE_URL", "").rstrip("/"))
+    supabase_publishable_key: str = field(
+        default_factory=lambda: os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+        or os.environ.get("SUPABASE_ANON_KEY", "")
+    )
+    source_bucket: str = "sources"
     web_dir: Path = ROOT_DIR / "web" / "studio"
     assets_dir: Path = ROOT_DIR / "assets"
     typst_templates_dir: Path = ROOT_DIR / "templates" / "typst"
+
+
+def supabase_enabled(settings: "Settings") -> bool:
+    return bool(settings.supabase_url and settings.supabase_publishable_key)
 
 
 @lru_cache

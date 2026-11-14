@@ -53,6 +53,11 @@ select pg_temp.check(public.save_document_version('33333333-3333-3333-3333-33333
 select pg_temp.check(public.save_document_version('33333333-3333-3333-3333-333333333333', '{"subject":"ร่าง ๒"}', 'ขัดเกลา') = 2, 'เวอร์ชัน 2');
 select pg_temp.check((select subject from public.documents where id = '33333333-3333-3333-3333-333333333333') = 'ร่าง ๒', 'เรื่องตามเวอร์ชันล่าสุด');
 
+-- บันทึกอัตโนมัติ (working copy) ได้ โดยไม่สร้างเวอร์ชันใหม่
+update public.documents set workspace = '{"doc":{"subject":"กำลังแก้"}}' where id = '33333333-3333-3333-3333-333333333333';
+select pg_temp.check((select workspace->'doc'->>'subject' = 'กำลังแก้' and current_version = 2 from public.documents
+                      where id = '33333333-3333-3333-3333-333333333333'), 'autosave workspace ไม่เพิ่มเวอร์ชัน');
+
 -- ออกเลขผูกกับเอกสาร → เอกสารได้เลขที่และสถานะ numbered
 select pg_temp.check((public.reserve_outgoing_number('กท ๐๐๐๑/', 'ผูกเอกสาร', false, 'กรม ข',
         '33333333-3333-3333-3333-333333333333')).doc_number = 'กท ๐๐๐๑/๓', 'เลขที่ผูกเอกสาร');

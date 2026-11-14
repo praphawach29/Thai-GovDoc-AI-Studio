@@ -17,10 +17,18 @@ from core.studio import (
     start_draft,
 )
 from core.templates_library import get_preset_template, list_preset_templates
+from server import source_store
+from server.auth import CurrentUser, get_current_user, get_profile, get_supabase
 from server.deps import save_upload
 from server.settings import Settings, get_settings
+from server.supabase import SupabaseClient
 
 router = APIRouter(tags=["studio"])
+
+
+class StudioDraftResponse(StudioDraftResult):
+    # โหมด Supabase: แถวใน source_files ของไฟล์ต้นเรื่อง (ผูกกับเอกสารภายหลังได้)
+    source_file_id: Optional[str] = None
 
 
 class BlankRequest(BaseModel):
@@ -33,32 +41,69 @@ def studio_profile():
     return get_user_profile()
 
 
-@router.post("/api/v1/studio/draft", response_model=StudioDraftResult)
+@router.post("/api/v1/studio/draft", response_model=StudioDraftResponse)
 async def studio_draft(
     prompt: str = Form(""),
     doc_type: Optional[DocType] = Form(None),
     urgency: UrgencyLevel = Form(UrgencyLevel.NORMAL),
     secret: SecretLevel = Form(SecretLevel.NORMAL),
     file: Optional[UploadFile] = File(None),
+    source_path: Optional[str] = Form(None),     # โหมด Supabase: ไฟล์ที่อัปโหลดตรงเข้า Storage แล้ว
+    source_name: Optional[str] = Form(None),
     settings: Settings = Depends(get_settings),
+    user: Optional[CurrentUser] = Depends(get_current_user),
 ):
-    """เริ่มร่างจากคำสั่งที่พิมพ์และ/หรือไฟล์ต้นเรื่อง (สกัด → จำแนก → ร่าง → ตรวจ)"""
-    saved_path: Optional[Path] = None
-    if file is not None and file.filename:
-        saved_path = await save_upload(file, settings)
-    elif not prompt.strip():
+    """เริ่มร่างจากคำสั่งที่พิมพ์และ/หรือไฟล์ต้นเรื่อง (สกัด → จำแนก → ร่าง → ตรวจ)
+
+    โหมด Supabase: ไฟล์ต้นเรื่องทุกไฟล์ถูกเก็บใน Storage + ตาราง source_files
+    และไฟล์ชั่วคราวบนเซิร์ฟเวอร์ถูกลบทันทีหลังอ่านเสร็จ
+    """
+    has_file = file is not None and bool(file.filename)
+    if not has_file and not source_path and not prompt.strip():
         raise HTTPException(status_code=400, detail="พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องก่อนเริ่มร่าง")
 
-    result = start_draft(
-        prompt=prompt,
-        file_path=str(saved_path) if saved_path else None,
-        doc_type_hint=doc_type,
-        urgency=urgency,
-        secret=secret,
-    )
-    if result.context is not None and file is not None and file.filename:
-        result.context.source_filename = Path(file.filename).name
-    return result
+    stored = None   # (path, filename, bytes) ที่ต้องบันทึกลง source_files
+    saved_path: Optional[Path] = None
+    if user is None:
+        if source_path:
+            raise HTTPException(status_code=400, detail="source_path ใช้ได้เมื่อเชื่อมต่อ Supabase เท่านั้น")
+        if has_file:
+            saved_path = await save_upload(file, settings)
+    else:
+        client = get_supabase(user, settings)
+        profile = get_profile(user, client)
+        if source_path:
+            data, saved_path = source_store.download_source(client, settings, profile, source_path)
+            stored = (source_path, source_name or Path(source_path).name, data)
+        elif has_file:
+            saved_path = await save_upload(file, settings)
+            data = saved_path.read_bytes()
+            path = source_store.new_storage_path(profile, file.filename)
+            client.upload(settings.source_bucket, path, data, source_store.MIME_BY_SUFFIX[saved_path.suffix])
+            stored = (path, file.filename, data)
+
+    try:
+        result = start_draft(
+            prompt=prompt,
+            file_path=str(saved_path) if saved_path else None,
+            doc_type_hint=doc_type,
+            urgency=urgency,
+            secret=secret,
+        )
+    finally:
+        if user is not None and saved_path is not None:
+            saved_path.unlink(missing_ok=True)
+
+    response = StudioDraftResponse(**result.model_dump())
+    display_name = Path(file.filename).name if has_file else (Path(stored[1]).name if stored else None)
+    if response.context is not None and display_name:
+        response.context.source_filename = display_name
+    if stored is not None:
+        response.source_file_id = source_store.record_source_file(
+            client, user, profile, path=stored[0], filename=stored[1], data=stored[2],
+            ctx=response.context, secret=secret,
+        )
+    return response
 
 
 @router.post("/api/v1/studio/blank", response_model=GovDocumentSchema)

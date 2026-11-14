@@ -3,13 +3,15 @@
 รันบนเครื่อง:  uvicorn server.main:app --port 8600
 """
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from server.routers import drafting, export, health, legal, registry, sources, studio
+from server.auth import get_current_user
+from server.routers import account, documents, drafting, export, health, legal, registry, sources, studio
 from server.settings import get_settings
+from server.supabase import SupabaseError
 
 
 def create_app() -> FastAPI:
@@ -27,8 +29,17 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT"],
         allow_headers=["Content-Type", "Authorization"],
     )
-    for module in (health, sources, drafting, legal, export, registry, studio):
+    # ไม่ต้องล็อกอิน: สถานะระบบ และค่าตั้งที่หน้า login ต้องใช้
+    for module in (health, account):
         app.include_router(module.router)
+    # ต้องล็อกอินเมื่อเปิดโหมด Supabase (โหมดเครื่องเดียว get_current_user คืน None)
+    protected = [Depends(get_current_user)]
+    for module in (sources, drafting, legal, export, registry, studio, documents):
+        app.include_router(module.router, dependencies=protected)
+
+    @app.exception_handler(SupabaseError)
+    async def _supabase_error(_: Request, exc: SupabaseError):
+        return JSONResponse(status_code=exc.status, content={"detail": exc.message})
 
     app.mount("/studio", StaticFiles(directory=settings.web_dir, html=True), name="studio")
     app.mount("/assets", StaticFiles(directory=settings.assets_dir), name="assets")
