@@ -132,8 +132,13 @@
 
   function stamps() {
     const out = [];
-    if (st.doc.secret !== 'normal') out.push(`<div class="absolute top-[0.9cm] left-0 right-0 text-center text-red-600 font-bold" style="font-size:20pt">${SECRET[st.doc.secret].label}</div>`);
-    if (st.doc.urgency !== 'normal') out.push(`<div class="absolute top-[1.3cm] left-[3cm] text-red-600 font-bold border-2 border-red-600 px-2 leading-tight" style="font-size:22pt">${URGENCY[st.doc.urgency].label}</div>`);
+    // ชั้นความลับ: กลางหน้าทั้งบนและล่าง / ชั้นความเร็ว: แดง 32 pt (ตรงกับไฟล์ที่ส่งออก)
+    if (st.doc.secret !== 'normal') {
+      const label = SECRET[st.doc.secret].label;
+      out.push(`<div class="absolute top-[0.9cm] left-0 right-0 text-center text-red-600 font-bold" style="font-size:20pt">${label}</div>`);
+      out.push(`<div class="absolute bottom-[0.6cm] left-0 right-0 text-center text-red-600 font-bold" style="font-size:20pt">${label}</div>`);
+    }
+    if (st.doc.urgency !== 'normal') out.push(`<div class="absolute top-[1.3cm] left-[3cm] text-red-600 font-bold leading-tight" style="font-size:32pt">${URGENCY[st.doc.urgency].label}</div>`);
     return out.join('');
   }
   function signature() {

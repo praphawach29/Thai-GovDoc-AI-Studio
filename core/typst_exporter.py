@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from core.models import GovDocumentSchema, DocType
+from core.layout_profile import get_layout_profile
 from core.thai_segmenter import to_thai_numerals
 
 
@@ -53,8 +54,17 @@ def _format_memo_blocks(data: GovDocumentSchema) -> str:
     return "(\n    " + ",\n    ".join(items) + ",\n  )"
 
 
-def generate_typst_content(data: GovDocumentSchema, garuda_rel_path: str = "assets/garuda.svg") -> str:
-    """สร้างเนื้อหาโค้ด Typst จาก GovDocumentSchema"""
+def generate_typst_content(
+    data: GovDocumentSchema,
+    garuda_rel_path: str = "assets/garuda.svg",
+    layout_profile: Optional[str] = None,
+) -> str:
+    """สร้างเนื้อหาโค้ด Typst จาก GovDocumentSchema
+
+    layout_profile: ชื่อโปรไฟล์ใน core.layout_profile (None = ค่าเริ่มต้นตามชนิดหนังสือ
+    ซึ่งบันทึกข้อความคือแบบกรุงเทพมหานคร)
+    """
+    profile = get_layout_profile(layout_profile, data.doc_type)
     fmt_date = to_thai_numerals(data.doc_date) if data.use_thai_numerals else data.doc_date
     fmt_number = to_thai_numerals(data.doc_number) if data.use_thai_numerals else data.doc_number
     fmt_reason = to_thai_numerals(data.paragraph_reason) if data.use_thai_numerals else data.paragraph_reason
@@ -86,6 +96,7 @@ def generate_typst_content(data: GovDocumentSchema, garuda_rel_path: str = "asse
   contact_email: {_escape_typst_string(data.contact_email)},
   urgency: "{data.urgency.value}",
   secret: "{data.secret.value}",
+  thai_page_numbers: {"true" if data.use_thai_numerals else "false"},
   garuda_path: "{garuda_rel_path}",
   garuda: read("{garuda_rel_path}", encoding: none),
 )
@@ -112,6 +123,8 @@ def generate_typst_content(data: GovDocumentSchema, garuda_rel_path: str = "asse
   urgency: "{data.urgency.value}",
   secret: "{data.secret.value}",
   thai_page_numbers: {"true" if data.use_thai_numerals else "false"},
+  top_margin: {profile.margins.top_cm:g}cm,
+  title_size: {profile.memo_title_pt:g}pt,
   garuda_path: "{garuda_rel_path}",
   garuda: read("{garuda_rel_path}", encoding: none),
 )

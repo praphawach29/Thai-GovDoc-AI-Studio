@@ -106,6 +106,10 @@ class ExportOptions(BaseModel):
     export_font: Optional[Literal["sarabun_new", "psk", "it9"]] = Field(
         default=None, description="ฟอนต์ที่ใช้ส่งออก; None = ใช้ค่าจาก LayoutProfile"
     )
+    body_alignment: Literal["thai_distribute", "left"] = Field(
+        default="thai_distribute",
+        description="การจัดแนวเนื้อความใน Word: กระจายแบบไทย (ค่าเริ่มต้น) หรือชิดซ้าย",
+    )
     embed_fonts: bool = Field(
         default=True, description="ฝังฟอนต์ลงในไฟล์ .docx (odttf)"
     )

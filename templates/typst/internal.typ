@@ -19,6 +19,9 @@
 
 #let _leader = box(width: 1fr, repeat[.])
 
+#let _secret_label(secret) = if secret == "top_secret" { "ลับที่สุด" } else if secret == "very_secret" { "ลับมาก" } else { "ลับ" }
+#let _urgency_label(urgency) = if urgency == "most_urgent" { "ด่วนที่สุด" } else if urgency == "very_urgent" { "ด่วนมาก" } else { "ด่วน" }
+
 // ระยะบรรทัด ≈ 0.75 ซม. ที่ 16pt (เทียบกับบันทึกข้อความต้นแบบที่พิมพ์จาก Word)
 #let _leading = 0.25em
 
@@ -43,6 +46,10 @@
   urgency: "normal",
   secret: "normal",
   thai_page_numbers: false,
+  // โปรไฟล์ค่าเริ่มต้น = แบบกรุงเทพมหานคร (ขอบบน 1.5 ซม., หัว 32 pt)
+  // คู่มือการพิมพ์ทั่วไป: top_margin 2.5cm, title_size 29pt
+  top_margin: 1.5cm,
+  title_size: 32pt,
   garuda_path: "../../assets/garuda.svg",
   // bytes ของภาพครุฑ อ่านจากไฟล์หลักด้วย read(..., encoding: none)
   // (image() หาพาธเทียบกับไฟล์ที่เรียก จึงต้องอ่านจากไฟล์หลักแล้วส่งเข้ามา)
@@ -50,13 +57,20 @@
 ) = [
   #set page(
     paper: "a4",
-    margin: (top: 2.0cm, bottom: 2.0cm, left: 3.0cm, right: 2.0cm),
+    margin: (top: top_margin, bottom: 2.0cm, left: 3.0cm, right: 2.0cm),
     header: context {
+      // ชั้นความลับ: แดง กลางหน้า ทั้งบนและล่างทุกหน้า
+      if secret != "normal" {
+        align(center, text(size: 20pt, weight: "bold", fill: rgb("#c00000"), _secret_label(secret)))
+      }
       let n = counter(page).get().first()
       if n > 1 {
         let label = if thai_page_numbers { _thai_digits(n) } else { str(n) }
         align(center, text(size: 16pt, "-" + label + "-"))
       }
+    },
+    footer: if secret != "normal" {
+      align(center, text(size: 20pt, weight: "bold", fill: rgb("#c00000"), _secret_label(secret)))
     },
   )
   // ฟอนต์ตระกูล Sarabun มี ascender/descender สูงมาก — กำหนดขอบบรรทัดเองให้ระยะบรรทัดใกล้เคียง Word (single)
@@ -64,10 +78,14 @@
             top-edge: 0.75em, bottom-edge: -0.3em)
   #set par(leading: _leading, spacing: _leading, justify: true, first-line-indent: 0pt)
 
-  // หัวกระดาษ: ครุฑ 1.5 ซม. ซ้าย + "บันทึกข้อความ" 29 pt หนา กึ่งกลางหน้ากระดาษ
+  // หัวกระดาษ: ครุฑ 1.5 ซม. ซ้าย + ชั้นความเร็ว (แดง 32 pt ถัดจากครุฑ) + "บันทึกข้อความ" ตัวหนา กึ่งกลาง
   #block(height: 1.6cm, width: 100%)[
     #place(top + left, image(if garuda != none { garuda } else { garuda_path }, height: 1.5cm))
-    #align(center + horizon, text(size: 29pt, weight: "bold")[บันทึกข้อความ])
+    #if urgency != "normal" {
+      place(left + horizon, dx: 1.9cm,
+            text(size: 32pt, weight: "bold", fill: rgb("#c00000"), _urgency_label(urgency)))
+    }
+    #align(center + horizon, text(size: title_size, weight: "bold")[บันทึกข้อความ])
   ]
 
   #_field("ส่วนราชการ", dept_name)

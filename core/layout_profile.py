@@ -32,12 +32,15 @@ class LayoutProfile(BaseModel):
     line_pitch_twips: int = 360
     header_style: Literal["dotted", "segmented", "solid"] = "dotted"
     page_number_style: Literal["thai", "arabic", "none"] = "thai"
+    # หัว "บันทึกข้อความ": แบบ กทม. 32 pt / คู่มือการพิมพ์ทั่วไป 29 pt (ระยะบรรทัด Exactly 35 pt)
+    memo_title_pt: float = 32
+    memo_title_line_pt: float = 35
 
 
 PROFILES: Dict[str, LayoutProfile] = {
     "standard_memo": LayoutProfile(
         name="standard_memo",
-        description="บันทึกข้อความมาตรฐาน (ขอบ 3/2/1.5/2 ซม., TH Sarabun New)",
+        description="บันทึกข้อความแบบกรุงเทพมหานคร — ค่าเริ่มต้น (ขอบ 3/2/1.5/2 ซม., หัว 32 pt)",
         font_key="sarabun_new",
         margins=PageMargins(top_cm=1.5, bottom_cm=2.0, left_cm=3.0, right_cm=2.0, header_cm=1.2),
         letter_spacing_pt=0.4,
@@ -45,6 +48,18 @@ PROFILES: Dict[str, LayoutProfile] = {
         line_pitch_twips=360,
         header_style="dotted",
         page_number_style="thai",
+    ),
+    "manual_memo": LayoutProfile(
+        name="manual_memo",
+        description="บันทึกข้อความตามคู่มือการพิมพ์ทั่วไป (ยอดครุฑห่างขอบบน 2.5 ซม., หัว 29 pt)",
+        font_key="sarabun_new",
+        margins=PageMargins(top_cm=2.5, bottom_cm=2.0, left_cm=3.0, right_cm=2.0, header_cm=1.2),
+        letter_spacing_pt=0.0,
+        body_indent_cm=None,
+        line_pitch_twips=360,
+        header_style="dotted",
+        page_number_style="thai",
+        memo_title_pt=29,
     ),
     "standard_external": LayoutProfile(
         name="standard_external",

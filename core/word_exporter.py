@@ -11,7 +11,7 @@ from typing import Optional
 
 from docx import Document
 from docx.shared import Cm, Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn, nsdecls
@@ -25,6 +25,12 @@ from core.thai_segmenter import insert_zwsp, to_thai_numerals
 FONT_NAME = "TH Sarabun New"
 DEFAULT_FONT_SIZE = 16
 _ACTIVE_FONT: ContextVar[str] = ContextVar("govdoc_font", default=FONT_NAME)
+_BODY_ALIGNMENT: ContextVar[str] = ContextVar("govdoc_body_alignment", default="thai_distribute")
+
+# ระเบียบงานสารบรรณ ข้อ 16: ชั้นความเร็วใช้ตัวอักษรสีแดงขนาดไม่เล็กกว่า 32 พอยท์
+URGENCY_FONT_PT = 32
+SECRET_FONT_PT = 20
+MARK_RED = RGBColor(200, 0, 0)
 
 
 def _font_for_option(font_key: str) -> str:
@@ -35,15 +41,77 @@ def _font_for_option(font_key: str) -> str:
 
 
 def _apply_thai_distributed(paragraph):
-    """กำหนดการจัดแนวเป็น Thai Distributed (กระจายแบบไทย) ในระดับ OpenXML"""
+    """จัดแนวเนื้อความตามตัวเลือกผู้ใช้ (ค่าเริ่มต้น Thai Distributed / กระจายแบบไทย)
+
+    ตัวเลือก "left" ใช้เมื่อไม่อยากให้ Word ยืดตัวอักษรในบรรทัดที่คำยาว
+    (thaigqsoft/thai-doc-skills แนะนำชิดซ้าย; สำนักงานส่วนใหญ่ใช้กระจายแบบไทย)
+    """
     pPr = paragraph._p.get_or_add_pPr()
     # ตรวจสอบว่ามี jc เดิมอยู่หรือไม่ ถ้ามีให้ลบออกก่อน
     for child in list(pPr):
         if child.tag.endswith('jc'):
             pPr.remove(child)
     jc = OxmlElement('w:jc')
-    jc.set(qn('w:val'), 'thaiDistribute')
+    jc.set(qn('w:val'), 'left' if _BODY_ALIGNMENT.get() == "left" else 'thaiDistribute')
     pPr.append(jc)
+
+
+def _set_exact_line(paragraph, line_pt: float) -> None:
+    """ระยะบรรทัดแบบค่าแน่นอน (Exactly) เช่น หัว "บันทึกข้อความ" 35 pt"""
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    paragraph.paragraph_format.line_spacing = Pt(line_pt)
+
+
+def _mark_paragraph(container_paragraph, text: str, size_pt: int, align):
+    container_paragraph.alignment = align
+    run = container_paragraph.add_run(text)
+    _set_run_thai_font(run, size_pt=size_pt, bold=True, color=MARK_RED)
+    return container_paragraph
+
+
+def _apply_classification_marks(doc: Document, data: GovDocumentSchema) -> None:
+    """ใส่ชั้นความเร็วและชั้นความลับให้หนังสือทุกชนิด
+
+    - ชั้นความลับ: กลางหน้ากระดาษทั้งด้านบนและด้านล่างของ**ทุกหน้า** (หัว/ท้ายกระดาษ)
+    - ชั้นความเร็ว: สีแดง 32 pt มุมบนซ้ายของหน้าแรก (ก่อนตราครุฑ)
+    """
+    if data.urgency != UrgencyLevel.NORMAL:
+        body = doc.element.body
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        _mark_paragraph(p, data.urgency.to_thai(), URGENCY_FONT_PT, WD_ALIGN_PARAGRAPH.LEFT)
+        body.remove(p._p)
+        body.insert(0, p._p)
+
+    if data.secret == SecretLevel.NORMAL:
+        return
+    label = data.secret.to_thai()
+    for section in doc.sections:
+        parts = [section.header, section.footer]
+        if section.different_first_page_header_footer:
+            parts += [section.first_page_header, section.first_page_footer]
+        for part in parts:
+            part.is_linked_to_previous = False
+            first = part.paragraphs[0]
+            if first.text.strip() or first.runs:
+                # มีเลขหน้าอยู่แล้ว: ใส่ชั้นความลับเป็นบรรทัดแรกเหนือเลขหน้า
+                mark = first.insert_paragraph_before()
+            else:
+                mark = first
+            _mark_paragraph(mark, label, SECRET_FONT_PT, WD_ALIGN_PARAGRAPH.CENTER)
+
+
+def _set_thai_language(doc: Document) -> None:
+    """ระบุภาษาไทยใน style Normal ให้ Word ตัดคำ/ตรวจตัวสะกดภาษาไทยได้เอง"""
+    rpr = doc.styles["Normal"].element.get_or_add_rPr()
+    for child in list(rpr):
+        if child.tag == qn("w:lang"):
+            rpr.remove(child)
+    lang = OxmlElement("w:lang")
+    lang.set(qn("w:val"), "th-TH")
+    lang.set(qn("w:bidi"), "th-TH")
+    rpr.append(lang)
 
 
 def _set_run_thai_font(run, font_name=None, size_pt=DEFAULT_FONT_SIZE, bold=False, color=None):
@@ -321,6 +389,7 @@ def export_govdoc_to_docx(
         else options.letter_spacing_pt
     )
     token = _ACTIVE_FONT.set(_font_for_option(font_key))
+    align_token = _BODY_ALIGNMENT.set(options.body_alignment)
     try:
         doc = Document()
         doc.core_properties.comments = (
@@ -354,6 +423,9 @@ def export_govdoc_to_docx(
         else:
             _build_internal_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options, profile)
 
+        _apply_classification_marks(doc, data)
+        _set_thai_language(doc)
+
         # บันทึกไฟล์
         _set_doc_grid(doc, profile.line_pitch_twips)
         out_file = Path(output_path)
@@ -366,6 +438,7 @@ def export_govdoc_to_docx(
 
         return str(out_file)
     finally:
+        _BODY_ALIGNMENT.reset(align_token)
         _ACTIVE_FONT.reset(token)
 
 
@@ -396,7 +469,8 @@ def _build_sections_doc(
         p_title = tbl_top.cell(0, 1).paragraphs[0]
         p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r_title = p_title.add_run("บันทึกข้อความ")
-        _set_run_thai_font(r_title, size_pt=29, bold=True)
+        _set_run_thai_font(r_title, size_pt=profile.memo_title_pt, bold=True)
+        _set_exact_line(p_title, profile.memo_title_line_pt)
     elif garuda_path and os.path.exists(garuda_path):
         p_g = doc.add_paragraph()
         p_g.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -635,20 +709,7 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
                         garuda_path: Optional[str], options: ExportOptions, profile: LayoutProfile):
     """สร้างโครงสร้างหนังสือภายนอก (ครุฑ 3 ซม. กึ่งกลาง)"""
     
-    # 1. ชั้นความลับ / ชั้นความเร็ว (ถ้ามี)
-    if data.secret != SecretLevel.NORMAL:
-        p_sec = doc.add_paragraph()
-        p_sec.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_sec.paragraph_format.space_after = Pt(2)
-        r = p_sec.add_run(data.secret.to_thai())
-        _set_run_thai_font(r, size_pt=20, bold=True, color=RGBColor(200, 0, 0))
-
-    if data.urgency != UrgencyLevel.NORMAL:
-        p_urg = doc.add_paragraph()
-        p_urg.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        p_urg.paragraph_format.space_after = Pt(2)
-        r = p_urg.add_run(data.urgency.to_thai())
-        _set_run_thai_font(r, size_pt=20, bold=True, color=RGBColor(200, 0, 0))
+    # 1. ชั้นความลับ / ชั้นความเร็ว ใส่ทีหลังใน _apply_classification_marks (ทุกชนิดหนังสือ)
 
     # 2. ตราครุฑ 3.0 ซม. กึ่งกลางหน้า
     if garuda_path and os.path.exists(garuda_path):
@@ -830,12 +891,13 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         r_g = p_g.add_run()
         r_g.add_picture(garuda_path, height=Cm(1.5))
 
-    # เซลล์ขวา: คำว่า "บันทึกข้อความ" 29 pt ตัวหนา
+    # เซลล์ขวา: คำว่า "บันทึกข้อความ" ตัวหนา ขนาดตามโปรไฟล์ (กทม. 32 pt / คู่มือทั่วไป 29 pt)
     c_right = tbl_top.cell(0, 1)
     p_title = c_right.paragraphs[0]
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r_title = p_title.add_run("บันทึกข้อความ")
-    _set_run_thai_font(r_title, size_pt=29, bold=True)
+    _set_run_thai_font(r_title, size_pt=profile.memo_title_pt, bold=True)
+    _set_exact_line(p_title, profile.memo_title_line_pt)
 
     # 2. รายละเอียดหัวเรื่อง: หัวข้อ ส่วนราชการ / ที่ / วันที่ / เรื่อง ตัวหนา 20 pt พร้อมเส้นจุดไข่ปลาถึงขอบขวา
     def _memo_field(p, label: str, value: str):
