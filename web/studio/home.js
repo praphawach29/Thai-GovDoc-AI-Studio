@@ -68,30 +68,74 @@
   });
 
   // ---------- งานล่าสุด ----------
+  // แต่ละรายการบอก ประเภท · หน่วย · สถานะ (ต้องแก้ n / ส่งออกแล้ว / ร่าง) · เวลา — เรื่องซ้ำกันก็แยกได้
+  // เก็บฉบับทดลองออกจากรายการได้ (ไม่ลบ ดึงกลับได้จาก "ที่เก็บไว้")
   const DOT = { normal: 'bg-sky-500', urgent: 'bg-amber-500', very_urgent: 'bg-rose-500', most_urgent: 'bg-rose-700' };
-  let recent = [];
+  const TYPE_SHORT = { internal: 'บันทึก', external: 'ภายนอก' };
+  const unitLabels = {};
+  let recent = [], showArchived = false;
   async function loadRecent() {
-    try { recent = await store.list(); } catch (err) { recent = []; toast('โหลดรายการเอกสารไม่สำเร็จ: ' + err.message, 'error'); }
+    try { recent = await store.list({ archived: showArchived }); }
+    catch (err) { recent = []; toast('โหลดรายการเอกสารไม่สำเร็จ: ' + err.message, 'error'); }
     renderRecent();
+    window.dispatchEvent(new CustomEvent('govdoc:recent', { detail: showArchived ? null : recent }));
+  }
+  function statusOf(e) {
+    if (e.todo > 0) return `<span class="text-amber-700 font-medium">ต้องแก้ ${toThai(e.todo)}</span>`;
+    if (e.editStatus === 'saved') return '<span class="text-emerald-700">ส่งออกแล้ว</span>';
+    return '<span>ร่าง</span>';
+  }
+  function metaOf(e) {
+    return [TYPE_SHORT[e.docType] && `<span>${TYPE_SHORT[e.docType]}</span>`,
+      e.unitKey && unitLabels[e.unitKey] && `<span class="truncate">${esc(unitLabels[e.unitKey])}</span>`,
+      statusOf(e), `<span class="shrink-0">${esc(relTime(e.updated))}</span>`]
+      .filter(Boolean).join('<span class="text-slate-300">·</span>');
   }
   function renderRecent() {
     const q = $('recent-search').value.trim();
     const items = recent.filter(e => !q || (e.title || '').includes(q));
-    $('recent-list').innerHTML = items.length ? items.slice(0, 12).map(e => `
-      <li>
-        <a href="editor.html?id=${encodeURIComponent(e.id)}" class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors" title="${esc(e.title)}">
-          <span class="w-2 h-2 rounded-full shrink-0 ${DOT[e.doc?.urgency] || 'bg-slate-300'}"></span>
-          <span class="truncate flex-1">${esc(e.title || 'ไม่มีชื่อเรื่อง')}</span>
-          <span class="text-[10px] text-slate-400 shrink-0">${esc(relTime(e.updated))}</span>
+    $('recent-title').textContent = showArchived ? 'ที่เก็บไว้' : 'งานล่าสุด';
+    $('btn-archived').innerHTML = showArchived
+      ? '<i class="fa-solid fa-arrow-left text-[10px]"></i><span>กลับไปงานล่าสุด</span>'
+      : '<i class="fa-solid fa-box-archive text-[10px]"></i><span>ที่เก็บไว้</span>';
+    const action = (e) => showArchived
+      ? `<button type="button" data-restore="${esc(e.id)}" class="absolute right-1 top-1.5 px-1.5 h-6 rounded-md text-[10px] text-emerald-700 hover:bg-emerald-50 border border-emerald-200 bg-white" title="ดึงกลับมาที่งานล่าสุด"><i class="fa-solid fa-rotate-left mr-0.5"></i>ดึงกลับ</button>`
+      : `<button type="button" data-archive="${esc(e.id)}" class="absolute right-1 top-1.5 w-6 h-6 rounded-md text-slate-400 hover:text-slate-700 hover:bg-white opacity-0 group-hover:opacity-100 focus:opacity-100 transition" title="เก็บออกจากรายการ (ไม่ลบ ดึงกลับได้)" aria-label="เก็บ ${esc(e.title || '')}"><i class="fa-solid fa-box-archive text-[11px]"></i></button>`;
+    $('recent-list').innerHTML = items.length ? items.slice(0, 15).map(e => `
+      <li class="group relative" data-doc="${esc(e.id)}">
+        <a href="editor.html?id=${encodeURIComponent(e.id)}" class="block pl-2.5 ${showArchived ? 'pr-16' : 'pr-8'} py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors" title="${esc(e.title)}">
+          <span class="flex items-center gap-2.5">
+            <span class="w-2 h-2 rounded-full shrink-0 ${DOT[e.doc?.urgency] || 'bg-slate-300'}"></span>
+            <span class="truncate flex-1">${esc(e.title || 'ไม่มีชื่อเรื่อง')}</span>
+          </span>
+          <span class="mt-0.5 pl-[1.125rem] flex items-center gap-1 text-[10px] text-slate-400 min-w-0 overflow-hidden whitespace-nowrap">${metaOf(e)}</span>
         </a>
+        ${action(e)}
       </li>`).join('')
-      : `<li class="px-2.5 py-2 text-slate-400">${q ? 'ไม่พบเอกสาร' : 'ยังไม่มีเอกสาร — เริ่มร่างฉบับแรกได้เลย'}</li>`;
+      : `<li class="px-2.5 py-2 text-slate-400">${q ? 'ไม่พบเอกสาร' : showArchived ? 'ยังไม่มีเอกสารที่เก็บไว้' : 'ยังไม่มีเอกสาร — เริ่มร่างฉบับแรกได้เลย'}</li>`;
   }
   $('recent-search').addEventListener('input', renderRecent);
+  $('btn-archived').addEventListener('click', () => { showArchived = !showArchived; loadRecent(); });
+  $('recent-list').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-archive], [data-restore]');
+    if (!b) return;
+    ev.preventDefault();
+    const id = b.dataset.archive || b.dataset.restore, archiving = !!b.dataset.archive;
+    b.disabled = true;
+    try {
+      await store.setArchived(id, archiving);
+      recent = recent.filter(e => e.id !== id);
+      renderRecent();
+      window.dispatchEvent(new CustomEvent('govdoc:recent', { detail: showArchived ? null : recent }));
+      toast(archiving ? 'เก็บแล้ว — ดึงกลับได้ที่ "ที่เก็บไว้"' : 'ดึงกลับมาที่งานล่าสุดแล้ว');
+    } catch (err) { b.disabled = false; toast((archiving ? 'เก็บไม่สำเร็จ: ' : 'ดึงกลับไม่สำเร็จ: ') + err.message, 'error'); }
+  });
   auth.ready.then(loadRecent);
 
   // ---------- หน่วยออกหนังสือ (ส่วนราชการ + รูปแบบเลขที่ของบันทึกข้อความ) ----------
   auth.ready.then(() => api.units()).then((units) => {
+    units.forEach((u) => { unitLabels[u.key] = u.label; });
+    renderRecent();
     $('unit').innerHTML = units.map(u =>
       `<option value="${esc(u.key)}" ${u.is_default ? 'selected' : ''}>หน่วย: ${esc(u.label)}</option>`).join('');
   }).catch(() => { $('unit').innerHTML = '<option value="">หน่วย: ตั้งต้น</option>'; });

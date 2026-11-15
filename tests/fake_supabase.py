@@ -119,12 +119,14 @@ class FakeSupabase:
     def _table(self, request: httpx.Request, table: str, query: Dict[str, str]) -> httpx.Response:
         rows = self.tables[table]
         filters = {k: v[3:] for k, v in query.items() if v.startswith("eq.")}
+        not_eq = {k: v[4:] for k, v in query.items() if v.startswith("neq.")}
         if table == "profiles":
             filters = {k: v for k, v in filters.items() if k == "user_id"}
             filters["user_id"] = self._caller(request) if filters.get("user_id") else filters.get("user_id")
 
         def match(r):
-            return all(str(r.get(k)).lower() == v.lower() for k, v in filters.items())
+            return (all(str(r.get(k)).lower() == v.lower() for k, v in filters.items())
+                    and all(str(r.get(k)).lower() != v.lower() for k, v in not_eq.items()))
 
         if request.method == "GET":
             out = [r for r in rows if match(r)]
@@ -135,7 +137,7 @@ class FakeSupabase:
                 out = out[: int(query["limit"])]
             cols = query.get("select", "*")
             if cols != "*" and "(" not in cols:                       # คอลัมน์ธรรมดา (ไม่มี embed)
-                out = [{c: r[c] for c in cols.split(",") if c in r} for r in out]   # ไม่มีในแถวจำลอง = ค่าตั้งต้นของคอลัมน์
+                out = [_project(r, cols.split(",")) for r in out]       # ไม่มีในแถวจำลอง = ค่าตั้งต้นของคอลัมน์
             return self._json(200, out)
         body = json.loads(request.content or b"{}")
         if request.method == "POST":
@@ -223,6 +225,23 @@ class FakeSupabase:
             self.storage[path[len("/storage/v1/object/"):]] = request.content
             return self._json(200, {"Key": path})
         return self._json(404, {"message": "not found"})
+
+
+def _project(row: Dict[str, Any], cols: List[str]) -> Dict[str, Any]:
+    """เลือกคอลัมน์แบบ PostgREST: ชื่อธรรมดา หรือ alias:คอลัมน์->key->>key (อ่านค่าใน jsonb)"""
+    out: Dict[str, Any] = {}
+    for col in cols:
+        alias, _, expr = col.rpartition(":") if ":" in col else ("", "", col)
+        if "->" not in expr:
+            if expr in row:
+                out[alias or expr] = row[expr]
+            continue
+        keys = expr.replace("->>", "->").split("->")
+        value: Any = row.get(keys[0])
+        for k in keys[1:]:
+            value = value.get(k) if isinstance(value, dict) else None
+        out[alias or keys[-1]] = value
+    return out
 
 
 def _file_from_body(request: httpx.Request) -> bytes:

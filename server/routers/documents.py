@@ -1,6 +1,6 @@
 """เอกสารที่เก็บบนเซิร์ฟเวอร์ (โหมด Supabase): ร่างที่กำลังแก้ + ประวัติเวอร์ชัน"""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +13,11 @@ from server.supabase import SupabaseClient
 router = APIRouter(tags=["documents"])
 
 _LIST_COLUMNS = "id,subject,kind,doc_type,status,doc_number,urgency,secret_level,current_version,updated_at"
+# ค่าสรุปจาก workspace สำหรับรายการงาน (เลือกเฉพาะส่วนที่ใช้ ไม่ดึงต้นเรื่องทั้งฉบับ)
+_SUMMARY_COLUMNS = (
+    "unit_key:workspace->>unitKey,source_name:workspace->>sourceName,edit_status:workspace->doc->>edit_status,"
+    "placeholders:workspace->check->placeholders,issues:workspace->check->lint->issues"
+)
 
 
 class DocumentIn(BaseModel):
@@ -44,12 +49,40 @@ def _workspace(body: DocumentIn) -> Dict[str, Any]:
     return ws
 
 
+class StatusIn(BaseModel):
+    # เก็บ (ซ่อนจากรายการงาน) หรือดึงกลับมาเป็นร่าง — สถานะอื่นมาจากทะเบียน/การออกเลข
+    status: Literal["archived", "draft"]
+
+
+def _summary(row: Dict[str, Any]) -> Dict[str, Any]:
+    """รายการงาน: นับจุดที่ต้องแก้ (ต้องระบุ + ข้อควรแก้ตามระเบียบ) จากผลตรวจล่าสุดที่หน้าแก้ไขบันทึกไว้"""
+    out = {k: v for k, v in row.items() if k not in ("placeholders", "issues")}
+    placeholders: List[Any] = row.get("placeholders") or []
+    issues: List[Any] = row.get("issues") or []
+    out["todo"] = len(placeholders) + len(issues)
+    return out
+
+
 @router.get("/api/v1/documents")
 def list_documents(
     limit: int = Query(30, ge=1, le=200),
+    archived: bool = Query(False, description="true = เฉพาะเอกสารที่เก็บแล้ว"),
     client: SupabaseClient = Depends(get_supabase),
 ):
-    return client.select("documents", {"select": _LIST_COLUMNS, "order": "updated_at.desc", "limit": str(limit)})
+    rows = client.select("documents", {
+        "select": _LIST_COLUMNS + "," + _SUMMARY_COLUMNS, "order": "updated_at.desc", "limit": str(limit),
+        "status": "eq.archived" if archived else "neq.archived",
+    })
+    return [_summary(r) for r in rows]
+
+
+@router.patch("/api/v1/documents/{document_id}/status")
+def set_document_status(document_id: UUID, body: StatusIn, client: SupabaseClient = Depends(get_supabase)):
+    """เก็บเอกสาร (ฉบับทดลอง/ไม่ใช้แล้ว) ออกจากรายการงาน — ไม่ลบ ดึงกลับได้ ประวัติเวอร์ชันยังอยู่ครบ"""
+    rows = client.update("documents", {"id": f"eq.{document_id}"}, {"status": body.status})
+    if not rows:
+        raise HTTPException(status_code=404, detail="ไม่พบเอกสาร")
+    return {"id": str(document_id), "status": rows[0].get("status", body.status)}
 
 
 @router.post("/api/v1/documents", status_code=201)

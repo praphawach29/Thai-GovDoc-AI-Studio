@@ -81,8 +81,22 @@
   function writeAll(list) {
     try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, 30))); return true; } catch (_) { return false; }
   }
+  // ค่าสรุปสำหรับรายการงาน (เหมือนที่ API ส่งในโหมดเซิร์ฟเวอร์)
+  const summarize = (x) => ({
+    ...x, docType: x.doc?.doc_type, editStatus: x.doc?.edit_status,
+    todo: (x.check?.placeholders?.length || 0) + (x.check?.lint?.issues?.length || 0),
+  });
   const localStore = {
-    async list() { return readAll().sort((a, b) => (b.updated || '').localeCompare(a.updated || '')); },
+    async list({ archived = false } = {}) {
+      return readAll().filter(x => !!x.archived === archived).map(summarize)
+        .sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+    },
+    async setArchived(id, on) {
+      const entry = readAll().find(x => x.id === id);
+      if (!entry) throw new Error('ไม่พบเอกสาร');
+      entry.archived = on;
+      if (!(await localStore.save(entry))) throw new Error('พื้นที่เก็บในเบราว์เซอร์เต็ม');
+    },
     async get(id) { return readAll().find(x => x.id === id) || null; },
     async save(entry) {
       const list = readAll().filter(x => x.id !== entry.id);
@@ -103,9 +117,15 @@
     return { doc, workspace };
   };
   const serverStore = {
-    async list() {
-      const rows = await request('/documents?limit=50').then(r => r.json());
-      return rows.map(r => ({ id: r.id, title: r.subject, updated: r.updated_at, doc: { urgency: r.urgency }, docNumber: r.doc_number, status: r.status }));
+    async list({ archived = false } = {}) {
+      const rows = await request('/documents?limit=50' + (archived ? '&archived=true' : '')).then(r => r.json());
+      return rows.map(r => ({
+        id: r.id, title: r.subject, updated: r.updated_at, doc: { urgency: r.urgency }, docNumber: r.doc_number, status: r.status,
+        docType: r.doc_type, unitKey: r.unit_key, todo: r.todo || 0, editStatus: r.edit_status, sourceName: r.source_name,
+      }));
+    },
+    async setArchived(id, on) {
+      await sendJSON('PATCH', '/documents/' + encodeURIComponent(id) + '/status', { status: on ? 'archived' : 'draft' });
     },
     async get(id) {
       try {
@@ -131,7 +151,8 @@
   // เลือกที่เก็บตามโหมดของเซิร์ฟเวอร์ (รู้หลังโหลด /config)
   const pick = async () => ((await auth.serverMode()) ? serverStore : localStore);
   const store = {
-    list: async () => (await pick()).list(),
+    list: async (opts) => (await pick()).list(opts),
+    setArchived: async (id, on) => (await pick()).setArchived(id, on),
     get: async (id) => (await pick()).get(id),
     save: async (entry) => (await pick()).save(entry),
     create: async (entry) => (await pick()).create(entry),
