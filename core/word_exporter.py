@@ -398,6 +398,52 @@ def _split_first_line(text: str, room_cm: float, size_pt: float = 16.0):
     return text[:cut], text[cut:]
 
 
+SUBJECT_TEXT_CM = 1.25   # ข้อความ "เรื่อง" เริ่มที่ 1.25 ซม. (บรรทัดที่ ๒ เยื้องตรงกัน)
+
+
+def _add_subject_on_line(doc: Document, subject: str) -> None:
+    """
+    บรรทัด "เรื่อง" ของบันทึกข้อความ: เส้นประอยู่เฉพาะบรรทัดที่ตรงกับคำว่า "เรื่อง"
+    ใช้ตาราง ๒ ช่องไม่มีเส้นขอบ — ช่องซ้ายคำว่า "เรื่อง", ช่องขวาข้อความ
+    ย่อหน้าแรกในช่องขวามีเส้นประเป็นขอบล่าง (เริ่มหลังคำว่า "เรื่อง" ยาวถึงขอบขวา) จึงพิมพ์/แก้/ดึงคำขึ้นมาใน Word
+    แล้วเส้นยังอยู่ใต้บรรทัดนั้นเสมอ ส่วนที่ยาวเกินอยู่ย่อหน้าถัดไปในช่องเดียวกัน ไม่มีเส้น
+    (ย่อหน้าเดียวแบบเยื้องลอย Word จะลากเส้นขอบตั้งแต่ขอบซ้ายใต้คำว่า "เรื่อง" ด้วย)
+    """
+    text_cm = TEXT_WIDTH_CM - SUBJECT_TEXT_CM
+    first, rest = _split_first_line(insert_zwsp(subject), text_cm - 0.3)
+
+    tbl = doc.add_table(rows=1, cols=2)
+    tbl.autofit = False
+    tblPr = tbl._tbl.tblPr
+    tblPr.append(parse_xml(
+        '<w:tblBorders %s><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
+        '<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>' % nsdecls('w')))
+    tblPr.append(parse_xml('<w:tblLayout %s w:type="fixed"/>' % nsdecls('w')))
+    tblPr.append(parse_xml(
+        '<w:tblCellMar %s><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>'
+        '<w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>' % nsdecls('w')))
+    for col, width in zip(tbl.columns, (SUBJECT_TEXT_CM, text_cm)):
+        col.width = Cm(width)
+        for cell in col.cells:
+            cell.width = Cm(width)
+
+    c_head, c_text = tbl.rows[0].cells
+    p_h = c_head.paragraphs[0]
+    p_h.paragraph_format.space_after = Pt(0)
+    _set_run_thai_font(p_h.add_run("เรื่อง"), size_pt=MEMO_LABEL_SIZE, bold=True)
+
+    p1 = c_text.paragraphs[0]
+    # ให้ฐานตัวอักษร 16 pt ตรงกับคำว่า "เรื่อง" 20 pt (ต่างกันประมาณส่วนขึ้นของฟอนต์ × 4 pt)
+    p1.paragraph_format.space_before = Pt(0.85 * (MEMO_LABEL_SIZE - DEFAULT_FONT_SIZE))
+    p1.paragraph_format.space_after = Pt(0 if rest else 6)
+    _set_run_thai_font(p1.add_run(first.strip()), size_pt=DEFAULT_FONT_SIZE)
+    _apply_bottom_border(p1, val="dotted", sz=6, space=0)
+    if rest:
+        p2 = c_text.add_paragraph()
+        p2.paragraph_format.space_after = Pt(6)
+        _set_run_thai_font(p2.add_run(rest.strip()), size_pt=DEFAULT_FONT_SIZE)
+
+
 MEMO_SIGN_INDENT_CM = 6.0
 
 
@@ -1027,39 +1073,21 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     if profile.header_style == "solid":
         _apply_bottom_border(p_meta)
 
-    # เรื่อง (บรรทัดที่สองเยื้องตรงกับข้อความ — hanging indent)
+    # เรื่อง (บรรทัดที่สองเยื้องตรงกับข้อความ)
     clean_sub = re.sub(r'^เรื่อง\s*', '', data.subject.strip())
-    p_sub = doc.add_paragraph()
-    p_sub.paragraph_format.space_after = Pt(6)
-    p_sub.paragraph_format.left_indent = Cm(1.25)
-    p_sub.paragraph_format.first_line_indent = Cm(-1.25)
-    if on_line:
-        p_sub.paragraph_format.tab_stops.add_tab_stop(Cm(1.25), WD_TAB_ALIGNMENT.LEFT, WD_TAB_LEADER.SPACES)
-    else:
-        _header_tab(p_sub, TEXT_WIDTH_CM)
     sub_value = to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub
     if on_line:
-        # เส้นประเฉพาะบรรทัดที่ตรงกับ "เรื่อง": ย่อหน้าแรกเป็นบรรทัดเดียว มีเส้นประเป็นขอบล่างของย่อหน้า
-        # (เริ่มที่ระยะเยื้อง 1.25 ซม. = หลังคำว่า "เรื่อง" ยาวถึงขอบขวา) — พิมพ์/แก้ข้อความในบรรทัดนี้ใน Word
-        # เส้นยังอยู่ใต้ข้อความเสมอ ส่วนที่ยาวเกินอยู่ย่อหน้าถัดไป เยื้องตรงข้อความ ไม่มีเส้น
-        room = TEXT_WIDTH_CM - 1.25 - 0.3
-        first, rest = _split_first_line(insert_zwsp(sub_value), room)
-        r_h = p_sub.add_run("เรื่อง")
-        _set_run_thai_font(r_h, size_pt=MEMO_LABEL_SIZE, bold=True)
-        _set_run_thai_font(p_sub.add_run("\t"), size_pt=DEFAULT_FONT_SIZE)
-        _set_run_thai_font(p_sub.add_run(first.rstrip()), size_pt=DEFAULT_FONT_SIZE)
-        _apply_bottom_border(p_sub, val="dotted", sz=4, space=0)
-        if rest:
-            p_sub.paragraph_format.space_after = Pt(0)
-            p_rest = doc.add_paragraph()
-            p_rest.paragraph_format.space_after = Pt(6)
-            p_rest.paragraph_format.left_indent = Cm(1.25)
-            _set_run_thai_font(p_rest.add_run(rest.strip()), size_pt=DEFAULT_FONT_SIZE)
+        _add_subject_on_line(doc, sub_value)
     else:
+        p_sub = doc.add_paragraph()
+        p_sub.paragraph_format.space_after = Pt(6)
+        p_sub.paragraph_format.left_indent = Cm(1.25)
+        p_sub.paragraph_format.first_line_indent = Cm(-1.25)
+        _header_tab(p_sub, TEXT_WIDTH_CM)
         _memo_field(p_sub, "เรื่อง", sub_value)
         p_sub.add_run("\t")
-    if profile.header_style == "solid":
-        _apply_bottom_border(p_sub)
+        if profile.header_style == "solid":
+            _apply_bottom_border(p_sub)
 
     # เรียน (ตัวปกติ 16 pt ตามแบบบันทึกข้อความ)
     sal_text = data.salutation.strip()
