@@ -113,7 +113,9 @@
         </div>
         <label for="prompt" class="sr-only">คำสั่งหรือเนื้อหาต้นเรื่อง</label>
         <div class="p-4 pb-2">
-          <textarea id="prompt" rows="4" class="w-full border-0 focus:ring-0 p-0 text-slate-800 placeholder:text-slate-400 text-sm sm:text-base resize-none bg-transparent leading-relaxed font-body" placeholder="พิมพ์คำสั่งหรือวางเนื้อหาต้นเรื่อง เช่น เขียนหนังสือขอความอนุเคราะห์ใช้อาคารกีฬา วันที่ ๑๕ มกราคม ๒๕๗๐ ถึงผู้ว่าราชการกรุงเทพมหานคร..."></textarea>
+          <textarea id="prompt" rows="4" class="w-full border-0 outline-none focus:outline-none focus:ring-0 p-0 text-slate-800 placeholder:text-slate-400 text-sm sm:text-base resize-none bg-transparent leading-relaxed font-body" placeholder="พิมพ์คำสั่งหรือวางเนื้อหาต้นเรื่อง เช่น เขียนหนังสือขอความอนุเคราะห์ใช้อาคารกีฬา วันที่ ๑๕ มกราคม ๒๕๗๐ ถึงผู้ว่าราชการกรุงเทพมหานคร..."></textarea>
+          <!-- ตัวอย่างคำสั่ง: แสดงเมื่อช่องว่าง กดแล้วใส่ข้อความให้แก้ต่อ -->
+          <div id="examples" class="flex flex-wrap gap-1.5 pt-2" aria-label="ตัวอย่างคำสั่ง"></div>
         </div>
         <div class="border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
           <div id="file-bar" class="px-4 pt-2.5 pb-1 flex flex-wrap items-center gap-2" hidden></div>
@@ -172,9 +174,6 @@
       </button>
       <button type="button" data-open="legal" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition">
         <i class="fa-solid fa-gavel text-rose-600"></i><span>คลังกฎหมาย</span>
-      </button>
-      <button type="button" id="btn-example" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition">
-        <i class="fa-regular fa-lightbulb text-indigo-600"></i><span>ตัวอย่างคำสั่ง</span>
       </button>
     </section>
 

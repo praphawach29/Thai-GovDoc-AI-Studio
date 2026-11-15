@@ -113,6 +113,7 @@
         <button type="button" id="btn-remove-file" class="text-slate-400 hover:text-rose-500 ml-1 p-0.5" aria-label="ลบไฟล์แนบ"><i class="fa-solid fa-xmark text-xs"></i></button>
       </div>` : '';
     if (state.file) $('btn-remove-file').addEventListener('click', () => { $('file-input').value = ''; setFile(null); });
+    syncExamples();
   }
   $('btn-attach').addEventListener('click', () => $('file-input').click());
   $('file-input').addEventListener('change', (e) => setFile(e.target.files[0]));
@@ -257,13 +258,32 @@
 
   $('btn-new').addEventListener('click', () => {
     $('prompt').value = ''; $('file-input').value = ''; setFile(null);
-    $('progress').hidden = true; $('error-box').hidden = true; setSidebar(false); $('prompt').focus();
+    $('progress').hidden = true; $('error-box').hidden = true; setSidebar(false); syncExamples(); $('prompt').focus();
   });
-  $('btn-example').addEventListener('click', () => {
-    $('prompt').value = 'ร่างบันทึกข้อความเสนอผู้อำนวยการสำนัก ขออนุมัติเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาเยาวชน และขอใช้ลานกีฬากลาง ระหว่างวันที่ ๑๐ – ๑๒ มกราคม ๒๕๗๐ ตามหนังสือของสมาคมกีฬาที่ขอความร่วมมือมา';
-    $('doc-type').value = 'internal';
+  // ---------- ตัวอย่างคำสั่ง (ในช่องพิมพ์ แสดงเฉพาะตอนยังว่าง) ----------
+  const EXAMPLES = [
+    { label: 'สรุปไฟล์แนบแล้วร่างบันทึกเสนอ', type: 'internal', attach: true,
+      text: 'ร่างบันทึกข้อความเสนอตามหนังสือที่แนบ สรุปข้อเท็จจริงและข้อพิจารณา เพื่อเสนอผู้บังคับบัญชาพิจารณา' },
+    { label: 'ขออนุมัติเป็นเจ้าภาพร่วมจัดกีฬา', type: 'internal',
+      text: 'ร่างบันทึกข้อความขออนุมัติเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาเยาวชน และขอใช้ลานกีฬากลาง ระหว่างวันที่ ๑๐ – ๑๒ มกราคม ๒๕๗๐ ตามหนังสือของสมาคมกีฬาที่ขอความร่วมมือมา' },
+    { label: 'ตอบหนังสือขอใช้สถานที่', type: 'external',
+      text: 'ร่างหนังสือภายนอกตอบสมาคมกีฬา แจ้งอนุญาตให้ใช้ลานกีฬากลาง ในวันที่ ๑๕ มกราคม ๒๕๗๐ เวลา ๐๘.๐๐ – ๑๖.๐๐ น. โดยให้ประสานเจ้าหน้าที่สนามล่วงหน้า' },
+  ];
+  $('examples').innerHTML = EXAMPLES.map((x, i) => `
+    <button type="button" data-example="${i}" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 text-[11px] text-slate-600 hover:text-emerald-800 transition">
+      <i class="fa-regular ${x.attach ? 'fa-file-lines' : 'fa-lightbulb'} text-emerald-600"></i>${esc(x.label)}</button>`).join('');
+  $('examples').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-example]');
+    if (!b) return;
+    const x = EXAMPLES[+b.dataset.example];
+    $('prompt').value = x.text;
+    $('doc-type').value = x.type;
+    syncExamples();
     $('prompt').focus();
+    if (x.attach && !state.file) toast('แนบไฟล์ต้นเรื่องด้วยปุ่ม "แนบไฟล์" หรือลากไฟล์มาวางในกล่องนี้');
   });
+  function syncExamples() { $('examples').hidden = !!($('prompt').value.trim() || state.file); }
+  $('prompt').addEventListener('input', syncExamples);
 
   // ---------- เอกสารเปล่า / แม่แบบ ----------
   async function openBlank(type) {
