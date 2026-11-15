@@ -14,6 +14,7 @@ from pypdf import PdfReader, PdfWriter
 from fastapi.responses import FileResponse, PlainTextResponse
 from starlette.background import BackgroundTask
 
+from core.layout_profile import get_layout_profile
 from core.models import GovDocumentSchema
 from core.typst_exporter import compile_typst_to_pdf, generate_typst_content
 from core.word_exporter import export_govdoc_to_docx
@@ -58,7 +59,8 @@ def render_pdf(doc: GovDocumentSchema, settings: Settings) -> bytes:
         (tmp / "assets").mkdir()
         shutil.copy(settings.assets_dir / "garuda.svg", tmp / "assets" / "garuda.svg")
         typ_path.write_text(generate_typst_content(without_server_paths(doc)), encoding="utf-8")
-        ok, message = compile_typst_to_pdf(str(typ_path), str(pdf_path))
+        font_key = doc.font_family or get_layout_profile(None, doc.doc_type).font_key
+        ok, message = compile_typst_to_pdf(str(typ_path), str(pdf_path), font_key=font_key)
         if not ok or not pdf_path.exists():
             # ข้อความจาก Typst มี path ภายในเซิร์ฟเวอร์ — เก็บใน log ไม่ส่งให้ผู้ใช้
             logger.error("typst compile failed: %s", message)

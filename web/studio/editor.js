@@ -179,8 +179,9 @@
     const refs = d.references != null, atts = d.attachments != null;
     if (isMemo()) {
       const law = d.memo_law != null;
+      let secNo = 0;
       const sec = (key, title) => `
-        <div class="mt-3">
+        <div class="${secNo++ ? 'gap-6pt' : ''}">
           <div><span class="doc-bold underline underline-offset-4">${title}</span></div>
           ${block(key, 'indent-25 justify-thai')}
         </div>`;
@@ -197,15 +198,15 @@
           </div>
           <div class="flex items-baseline gap-2"><span class="doc-bold shrink-0">เรื่อง</span><div class="group relative flex-1">${field('subject', 'block dotted-fill')}</div></div>
         </div>
-        <div class="mt-3 flex items-baseline gap-2"><span class="doc-bold">${esc((d.salutation || '').match(SAL_RE)?.[1] || 'เรียน')}</span>${field('salutation_to', 'flex-1')}</div>
+        <div class="gap-6pt flex items-baseline gap-2"><span class="doc-bold">${esc((d.salutation || '').match(SAL_RE)?.[1] || 'เรียน')}</span>${field('salutation_to', 'flex-1')}</div>
         ${refs ? `<div class="mt-1 flex items-baseline gap-2"><span class="doc-bold shrink-0">อ้างถึง</span>${field('references', 'flex-1')}</div>` : ''}
         ${atts ? `<div class="mt-1 flex items-baseline gap-2"><span class="doc-bold shrink-0">สิ่งที่ส่งมาด้วย</span>${field('attachments', 'flex-1')}</div>` : ''}
-        <div class="mt-1">
+        <div>
           ${sec('memo_intro', 'ต้นเรื่อง')}
           ${law ? sec('memo_law', 'ข้อกฎหมาย') : ''}
           ${sec('memo_facts', 'ข้อเท็จจริง')}
           ${sec('memo_consideration', 'ข้อพิจารณาและเสนอแนะ')}
-          <div class="mt-3">${block('memo_request', 'indent-25 justify-thai')}</div>
+          <div class="gap-6pt">${block('memo_request', 'indent-25 justify-thai')}</div>
         </div>
         ${signature()}`;
     }
@@ -346,6 +347,8 @@
     });
   });
   $('toggle-thai-num').addEventListener('change', (e) => commit(d => { d.use_thai_numerals = e.target.checked; }));
+  $('font-select').addEventListener('change', (e) => commit(d => { d.font_family = e.target.value; }));
+  const FONT_LABEL = { it9: 'TH SarabunIT๙', psk: 'TH SarabunPSK', sarabun_new: 'TH Sarabun New' };
 
   // ---------- หน่วยออกหนังสือ / สายการเสนอ (บันทึกข้อความ) ----------
   // ค่าที่เปลี่ยนตามหน่วย: ส่วนราชการ เลขที่ วันที่ ผู้ประสาน ผู้รับ ผู้ลงนาม ผู้พิจารณา และภาคความประสงค์มาตรฐาน
@@ -462,11 +465,13 @@
     $('checks-count').textContent = toThai(c.ph + n);
     $('btn-undo').disabled = !st.undo.length; $('btn-redo').disabled = !st.redo.length;
     $('toggle-thai-num').checked = !!d.use_thai_numerals;
+    $('font-select').value = d.font_family || 'it9';
+    $('sheet').dataset.font = d.font_family || 'it9';
     $('unit-wrap').hidden = !isMemo();
     $('version-count').textContent = toThai(st.versions.length + 1);
     const words = [d.subject, d.paragraph_reason, d.paragraph_details, d.paragraph_purpose, d.memo_law].filter(Boolean).join(' ');
     $('footer-words').textContent = `ความยาว ${toThai(words.replace(/\s+/g, '').length)} ตัวอักษร`;
-    $('footer-format').textContent = `A4 · TH Sarabun New ๑๖ pt · ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`;
+    $('footer-format').textContent = `A4 · ${FONT_LABEL[d.font_family || 'it9']} ๑๖ pt · ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`;
     renderSaveState('saved');
   }
 

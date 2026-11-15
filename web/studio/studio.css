@@ -1,4 +1,8 @@
-/* ฟอนต์เอกสารราชการจริง (TH Sarabun New) จาก assets/fonts — ใช้บนกระดาษ A4 เท่านั้น */
+/* ฟอนต์เอกสารราชการจริงจาก assets/fonts — ใช้บนกระดาษ A4 เท่านั้น (ค่าเริ่มต้น TH SarabunIT๙) */
+@font-face { font-family: 'TH SarabunIT๙'; src: url('/assets/fonts/THSarabunIT9.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TH SarabunIT๙'; src: url('/assets/fonts/THSarabunIT9-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TH SarabunPSK'; src: url('/assets/fonts/THSarabunPSK.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TH SarabunPSK'; src: url('/assets/fonts/THSarabunPSK-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: 'TH Sarabun New'; src: url('/assets/fonts/THSarabunNew.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: 'TH Sarabun New'; src: url('/assets/fonts/THSarabunNew-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: 'TH Sarabun New'; src: url('/assets/fonts/THSarabunNew-Italic.ttf') format('truetype'); font-weight: 400; font-style: italic; font-display: swap; }
@@ -21,13 +25,17 @@
   width: 21cm;
   min-height: 29.7cm;
   padding: 2.5cm 2cm 2cm 3cm;
-  font-family: 'TH Sarabun New', 'Sarabun', serif;
+  font-family: 'TH SarabunIT๙', 'TH Sarabun New', 'Sarabun', serif;
   font-size: 16pt;
   line-height: 1.3;
   color: #0f172a;
   background: #fff;
   box-sizing: border-box;
 }
+.a4-sheet[data-font="psk"] { font-family: 'TH SarabunPSK', 'TH Sarabun New', serif; }
+.a4-sheet[data-font="sarabun_new"] { font-family: 'TH Sarabun New', 'Sarabun', serif; }
+/* ระยะก่อนย่อหน้าตามแบบจริง: 'เรียน' และหัวข้อใหม่ 6 pt, ต้นเรื่อง 0 pt */
+.a4-sheet .gap-6pt { margin-top: 6pt; }
 .a4-sheet .doc-bold { font-weight: 700; }
 .a4-sheet .memo-title { font-size: 29pt; font-weight: 700; line-height: 1; }
 .a4-sheet .indent-25 { text-indent: 2.5cm; }

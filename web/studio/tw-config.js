@@ -6,7 +6,7 @@ tailwind.config = {
       fontFamily: {
         sans: ['Prompt', 'sans-serif'],
         body: ['Sarabun', 'sans-serif'],
-        doc: ['"TH Sarabun New"', 'Sarabun', 'serif'],
+        doc: ['"TH SarabunIT๙"', '"TH Sarabun New"', 'Sarabun', 'serif'],
       },
       colors: {
         brand: {

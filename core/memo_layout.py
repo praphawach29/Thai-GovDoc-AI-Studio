@@ -126,6 +126,11 @@ def build_memo_sections(intro: str, facts: str, law: str, consideration: str,
     return out
 
 
+# ระยะก่อนย่อหน้าตามแบบบันทึกข้อความที่หน่วยงานใช้จริง: 'เรียน' และทุกหัวข้อใหม่ 6 pt
+SECTION_GAP_PT = 6.0
+SALUTATION_GAP_PT = 6.0
+
+
 def build_memo_blocks(sections: List[Tuple[str, str, str]], request: str,
                       style: str = "bma") -> List[MemoBlock]:
     """แปลงหัวข้อ + ภาคความประสงค์ เป็นรายการย่อหน้าพร้อมระยะย่อหน้า"""
@@ -134,7 +139,8 @@ def build_memo_blocks(sections: List[Tuple[str, str, str]], request: str,
 
     for s_idx, (key, title, body) in enumerate(sections):
         lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
-        gap = 12.0 if s_idx > 0 else 4.0
+        # ต้นเรื่อง (หัวข้อแรก ต่อจาก 'เรียน') 0 pt, ขึ้นหัวข้อใหม่ 6 pt, ย่อหน้าในหัวข้อเดียวกัน 0 pt
+        gap = SECTION_GAP_PT if s_idx > 0 else 0.0
         run_in = style == "bma" and key in _BMA_RUN_IN and lines and not _RE_LEVEL1.match(lines[0])
 
         if run_in:
@@ -152,7 +158,7 @@ def build_memo_blocks(sections: List[Tuple[str, str, str]], request: str,
 
     for i, ln in enumerate([x.strip() for x in (request or "").splitlines() if x.strip()]):
         blocks.append(MemoBlock(text=ln, indent_cm=BASE_INDENT_CM,
-                                space_before_pt=12.0 if i == 0 else 0.0, kind="request",
+                                space_before_pt=SECTION_GAP_PT if i == 0 else 0.0, kind="request",
                                 section_key="consideration"))
     return blocks
 

@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 
+from core.docx_fonts import FONT_FILES
 from core.models import GovDocumentSchema, DocType
 from core.layout_profile import get_layout_profile
 from core.thai_segmenter import to_thai_numerals
@@ -106,6 +107,7 @@ def generate_typst_content(
   urgency: "{data.urgency.value}",
   secret: "{data.secret.value}",
   thai_page_numbers: {"true" if data.use_thai_numerals else "false"},
+  font: "{TYPST_FAMILY[data.font_family or profile.font_key]}",
   garuda_path: "{garuda_rel_path}",
   garuda: read("{garuda_rel_path}", encoding: none),
 )
@@ -133,6 +135,7 @@ def generate_typst_content(
   urgency: "{data.urgency.value}",
   secret: "{data.secret.value}",
   thai_page_numbers: {"true" if data.use_thai_numerals else "false"},
+  font: "{TYPST_FAMILY[data.font_family or profile.font_key]}",
   top_margin: {profile.margins.top_cm:g}cm,
   title_size: {profile.memo_title_pt:g}pt,
   garuda_path: "{garuda_rel_path}",
@@ -181,17 +184,43 @@ def find_typst_binary() -> Optional[str]:
     return None
 
 
-def compile_typst_to_pdf(typ_path: str, output_pdf_path: str) -> Tuple[bool, str]:
+# ชื่อตระกูลฟอนต์ที่ Typst อ่านจากไฟล์: TH SarabunIT๙ ใช้ชื่อภายในว่า "TH SarabunPSK" ซ้ำกับ PSK
+# จึงส่งให้ Typst เห็นเฉพาะไฟล์ของฟอนต์ที่เลือก (+ TH Sarabun New สำรอง) — ดู _font_dir_for()
+TYPST_FAMILY = {"it9": "TH SarabunPSK", "psk": "TH SarabunPSK", "sarabun_new": "TH Sarabun New"}
+_FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+
+
+def _font_dir_for(font_key: Optional[str], work_dir: Path) -> Optional[Path]:
+    """โฟลเดอร์ฟอนต์สำหรับคอมไพล์: เฉพาะไฟล์ของฟอนต์ที่เลือก (กัน IT๙/PSK ชื่อชนกัน)"""
+    if not _FONT_DIR.exists():
+        return None
+    if font_key not in FONT_FILES:
+        return _FONT_DIR
+    out = work_dir / "_fonts"
+    out.mkdir(exist_ok=True)
+    keep = {font_key, "sarabun_new"}
+    for key in keep:
+        stem = Path(FONT_FILES[key]["regular"]).stem          # THSarabunIT9 / THSarabunPSK / THSarabunNew
+        for f in _FONT_DIR.glob(f"{stem}*.ttf"):
+            target = out / f.name
+            if not target.exists():
+                shutil.copyfile(f, target)
+    return out
+
+
+def compile_typst_to_pdf(typ_path: str, output_pdf_path: str, font_key: Optional[str] = None) -> Tuple[bool, str]:
     """
     คอมไพล์ไฟล์ .typ เป็น .pdf
     ลำดับ: Typst CLI (ถ้ามี) -> Python binding `typst` (pip install typst)
+    font_key: ฟอนต์ของเอกสาร (it9/psk/sarabun_new) — ใช้เลือกไฟล์ฟอนต์ที่ให้ Typst เห็น
+    ไม่ใช้ฟอนต์ของระบบ เพื่อให้ผลเหมือนกันทุกเครื่องและบนคลาวด์
     คืนค่า (ความสำเร็จ True/False, ข้อความ Error หรือ Success)
     """
+    font_dir = _font_dir_for(font_key, Path(output_pdf_path).resolve().parent)
     typst_bin = find_typst_binary()
     if typst_bin:
-        cmd = [typst_bin, "compile"]
-        font_dir = Path(__file__).resolve().parent.parent / "assets" / "fonts"
-        if font_dir.exists():
+        cmd = [typst_bin, "compile", "--ignore-system-fonts"]
+        if font_dir is not None:
             cmd += ["--font-path", str(font_dir)]
         cmd += [typ_path, output_pdf_path]
         try:
@@ -209,16 +238,14 @@ def compile_typst_to_pdf(typ_path: str, output_pdf_path: str) -> Tuple[bool, str
         return False, "Typst CLI/Python package is not installed on this system."
 
     root_dir = Path(typ_path).resolve().parent
-    font_dir = Path(__file__).resolve().parent.parent / "assets" / "fonts"
-    font_paths = [str(font_dir)] if font_dir.exists() else []
     try:
         typst_py.compile(
             input=str(typ_path),
             output=str(output_pdf_path),
             root=str(root_dir),
-            font_paths=font_paths,
+            font_paths=[str(font_dir)] if font_dir is not None else [],
+            ignore_system_fonts=True,
         )
         return True, f"Successfully compiled {output_pdf_path} (Python binding)"
     except Exception as e:
         return False, f"Typst compilation failed: {e}"
-

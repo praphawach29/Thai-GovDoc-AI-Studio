@@ -16,8 +16,9 @@ from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn, nsdecls
 
-from core.docx_fonts import embed_fonts
+from core.docx_fonts import FONT_FILES, embed_fonts
 from core.layout_profile import LayoutProfile, get_layout_profile
+from core.memo_layout import SALUTATION_GAP_PT
 from core.models import ExportOptions, GovDocumentSchema, DocType, DocumentKind, SectionKind, UrgencyLevel, SecretLevel
 from core.thai_segmenter import insert_zwsp, to_thai_numerals
 
@@ -160,11 +161,12 @@ _MEASURE_FONTS: dict = {}
 
 
 def _text_width_cm(text: str, font_size_pt: float = 16.0, bold: bool = False) -> float:
-    """ความกว้างจริงของข้อความด้วยฟอนต์ TH Sarabun New (Pillow + raqm จัดสระ/วรรณยุกต์ไทยถูกต้อง)
+    """ความกว้างจริงของข้อความด้วยฟอนต์ที่ใช้ส่งออก (Pillow + raqm จัดสระ/วรรณยุกต์ไทยถูกต้อง)
     ไม่มีไฟล์ฟอนต์ = ประมาณจากจำนวนตัวอักษรที่กินที่ (ไม่นับสระบน-ล่างและวรรณยุกต์)"""
     if not text:
         return 0.0
-    name = "THSarabunNew-Bold.ttf" if bold else "THSarabunNew.ttf"
+    files = next((f for f in FONT_FILES.values() if f["family"] == _ACTIVE_FONT.get()), FONT_FILES["sarabun_new"])
+    name = files["bold" if bold else "regular"]
     font = _MEASURE_FONTS.get(name)
     if font is None and (_FONT_DIR / name).exists():
         try:
@@ -406,7 +408,7 @@ def export_govdoc_to_docx(
     """
     options = options or ExportOptions()
     profile = get_layout_profile(options.layout_profile, data.doc_type)
-    font_key = options.export_font or profile.font_key
+    font_key = options.export_font or data.font_family or profile.font_key
     letter_spacing = (
         profile.letter_spacing_pt
         if options.letter_spacing_pt is None
@@ -980,7 +982,8 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         clean_sal = re.sub(r'^เรียน\s*', '', sal_text)
 
     p_sal = doc.add_paragraph()
-    p_sal.paragraph_format.space_after = Pt(4)
+    p_sal.paragraph_format.space_before = Pt(SALUTATION_GAP_PT)
+    p_sal.paragraph_format.space_after = Pt(0)
     r_salh = p_sal.add_run(sal_header)
     _set_run_thai_font(r_salh, size_pt=DEFAULT_FONT_SIZE)
     r_salv = p_sal.add_run(insert_zwsp(clean_sal))

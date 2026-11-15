@@ -513,6 +513,10 @@ class GovDocumentSchema(BaseModel):
     urgency: UrgencyLevel = Field(default=UrgencyLevel.NORMAL, description="ชั้นความเร็ว")
     secret: SecretLevel = Field(default=SecretLevel.NORMAL, description="ชั้นความลับ")
     use_thai_numerals: bool = Field(default=False, description="แปลงตัวเลขเป็นเลขไทยหรือไม่")
+    font_family: Optional[Literal["it9", "psk", "sarabun_new"]] = Field(
+        default=None,
+        description="ฟอนต์ของฉบับนี้: it9 = TH SarabunIT๙ (ค่าเริ่มต้น), psk = TH SarabunPSK, sarabun_new = TH Sarabun New; None = ตามโปรไฟล์",
+    )
     
     # ส่วนหัวหนังสือ
     doc_number: str = Field(..., description="ที่ (เลขที่หนังสือ) เช่น กค ๐๔๐๖/๑๒๓")

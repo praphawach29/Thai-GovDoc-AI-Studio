@@ -80,6 +80,9 @@
   urgency: "normal",
   secret: "normal",
   thai_page_numbers: false,
+  // ฟอนต์หลักของฉบับ: ไฟล์ TH SarabunIT๙ ใช้ชื่อภายใน "TH SarabunPSK"
+  // (core/typst_exporter.py ส่งเฉพาะไฟล์ฟอนต์ที่เลือกให้ Typst จึงไม่ชนกับ PSK)
+  font: "TH SarabunPSK",
   garuda_path: "../../assets/garuda.svg",
   // bytes ของภาพครุฑ อ่านจากไฟล์หลักด้วย read(..., encoding: none)
   // (image() หาพาธเทียบกับไฟล์ที่เรียก จึงต้องอ่านจากไฟล์หลักแล้วส่งเข้ามา)
@@ -102,7 +105,7 @@
       align(center, text(size: 20pt, weight: "bold", fill: _RED, _secret_label(secret)))
     },
   )
-  #set text(font: ("TH Sarabun New", "TH SarabunPSK", "TH Sarabun PSK", "TH SarabunIT๙", "TH Sarabun IT9", "Sarabun"), size: 16pt, lang: "th",
+  #set text(font: (font, "TH Sarabun New", "Sarabun"), size: 16pt, lang: "th",
             top-edge: 0.75em, bottom-edge: -0.3em)
   // 1 Enter + Before 6 pt ระหว่างย่อหน้าและหัวข้อ
   #set par(leading: _LEADING, spacing: _LEADING + 6pt, justify: true, first-line-indent: 0pt)

@@ -62,6 +62,9 @@
   urgency: "normal",
   secret: "normal",
   thai_page_numbers: false,
+  // ฟอนต์หลักของฉบับ: ไฟล์ TH SarabunIT๙ ใช้ชื่อภายใน "TH SarabunPSK"
+  // (core/typst_exporter.py ส่งเฉพาะไฟล์ฟอนต์ที่เลือกให้ Typst จึงไม่ชนกับ PSK)
+  font: "TH SarabunPSK",
   // โปรไฟล์ค่าเริ่มต้น = แบบกรุงเทพมหานคร (ขอบบน 1.5 ซม., หัว 32 pt)
   // คู่มือการพิมพ์ทั่วไป: top_margin 2.5cm, title_size 29pt
   top_margin: 1.5cm,
@@ -90,7 +93,7 @@
     },
   )
   // ฟอนต์ตระกูล Sarabun มี ascender/descender สูงมาก — กำหนดขอบบรรทัดเองให้ระยะบรรทัดใกล้เคียง Word (single)
-  #set text(font: ("TH Sarabun New", "TH SarabunPSK", "TH Sarabun PSK", "TH SarabunIT๙", "TH Sarabun IT9", "Sarabun"), size: 16pt, lang: "th",
+  #set text(font: (font, "TH Sarabun New", "Sarabun"), size: 16pt, lang: "th",
             top-edge: 0.75em, bottom-edge: -0.3em)
   #set par(leading: _leading, spacing: _leading, justify: true, first-line-indent: 0pt)
 
@@ -114,7 +117,8 @@
 
   #par(hanging-indent: 1.25cm)[#_field("เรื่อง", subject)]
 
-  #v(0.2cm)
+  // 'เรียน' เว้นก่อนย่อหน้า 6 pt
+  #v(6pt)
   #salutation
 
   #if references.len() > 0 {

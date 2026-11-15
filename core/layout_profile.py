@@ -24,7 +24,7 @@ class PageMargins(BaseModel):
 class LayoutProfile(BaseModel):
     name: str
     description: str = ""
-    font_key: Literal["sarabun_new", "psk", "it9"] = "sarabun_new"
+    font_key: Literal["sarabun_new", "psk", "it9"] = "it9"
     margins: PageMargins = Field(default_factory=PageMargins)
     letter_spacing_pt: float = 0.4
     # None = ใช้ระยะย่อหน้าตามลำดับชั้นของ memo block, 0 = ไม่ย่อหน้า
@@ -41,7 +41,7 @@ PROFILES: Dict[str, LayoutProfile] = {
     "standard_memo": LayoutProfile(
         name="standard_memo",
         description="บันทึกข้อความแบบกรุงเทพมหานคร — ค่าเริ่มต้น (ขอบ 3/2/1.5/2 ซม., หัว 32 pt)",
-        font_key="sarabun_new",
+        font_key="it9",
         margins=PageMargins(top_cm=1.5, bottom_cm=2.0, left_cm=3.0, right_cm=2.0, header_cm=1.2),
         letter_spacing_pt=0.4,
         body_indent_cm=None,
@@ -52,7 +52,7 @@ PROFILES: Dict[str, LayoutProfile] = {
     "manual_memo": LayoutProfile(
         name="manual_memo",
         description="บันทึกข้อความตามคู่มือการพิมพ์ทั่วไป (ยอดครุฑห่างขอบบน 2.5 ซม., หัว 29 pt)",
-        font_key="sarabun_new",
+        font_key="it9",
         margins=PageMargins(top_cm=2.5, bottom_cm=2.0, left_cm=3.0, right_cm=2.0, header_cm=1.2),
         letter_spacing_pt=0.0,
         body_indent_cm=None,
@@ -63,8 +63,8 @@ PROFILES: Dict[str, LayoutProfile] = {
     ),
     "standard_external": LayoutProfile(
         name="standard_external",
-        description="หนังสือภายนอกมาตรฐาน (ขอบ 3/2/2.5/2 ซม., TH Sarabun New)",
-        font_key="sarabun_new",
+        description="หนังสือภายนอกมาตรฐาน (ขอบ 3/2/2.5/2 ซม., TH SarabunIT๙)",
+        font_key="it9",
         margins=PageMargins(top_cm=2.5, bottom_cm=2.0, left_cm=3.0, right_cm=2.0, header_cm=1.2),
         letter_spacing_pt=0.4,
         body_indent_cm=2.5,

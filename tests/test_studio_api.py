@@ -67,7 +67,7 @@ def test_blank_and_pdf_export():
         pdf = client.post("/api/v1/export/pdf", json=doc)
         assert pdf.status_code == 200
         assert pdf.content.startswith(b"%PDF-")
-        assert b"SarabunNew" in pdf.content
+        assert b"THSarabunPSK" in pdf.content          # TH SarabunIT๙ (ชื่อภายในไฟล์)
 
 
 def test_templates_list_and_get():
