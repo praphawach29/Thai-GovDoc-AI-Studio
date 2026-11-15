@@ -335,7 +335,11 @@ def parse_govdoc_metadata(raw_text: str) -> dict:
 
     # 2. ค้นหาวันที่ พ.ศ. (รองรับทั้งแบบมีเว้นวรรคและไม่มีเว้นวรรค)
     date_pattern = rf'([๐-๙0-9]{{1,2}})\s*({THAI_MONTHS_REGEX})\s*(?:พ\.ศ\.\s*)?([๐-๙0-9]{{2,4}})'
-    for line in lines[:30]:
+    # วันที่ลงหนังสืออยู่บรรทัดของตัวเอง (หรือหลัง "วันที่" ในบันทึกข้อความ) — ใช้ก่อนวันที่ในประโยคเนื้อหา
+    # เช่น วันจัดงานในย่อหน้าแรก ซึ่งมักมาก่อนบรรทัดลงชื่อ
+    standalone = re.compile(rf'^(?:วันที่\s*)?{date_pattern}\s*$')
+    date_lines = [ln for ln in lines[:30] if standalone.match(ln)] + lines[:30]
+    for line in date_lines:
         match_date = re.search(date_pattern, line)
         if match_date:
             day = match_date.group(1)

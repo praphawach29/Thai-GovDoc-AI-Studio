@@ -21,6 +21,7 @@ CONTENT = DraftContent(
     memo_facts="๑. ขอใช้อาคารวันที่ [✏️ ระบุวันที่]",
     memo_consideration="กลุ่มงานส่งเสริมกีฬาพิจารณาแล้ว เห็นว่า... จึงเห็นควรอนุญาต",
     paragraph_reason="", paragraph_details="", paragraph_purpose="",
+    reference="หนังสือสมาคมกีฬา ลงวันที่ ๑ ตุลาคม ๒๕๖๙",
 )
 CFG = LLMConfig(anthropic_api_key="k1", gemini_api_key="k2", total_timeout_s=45, claude_timeout_s=30)
 
@@ -489,3 +490,21 @@ def test_ocr_logo_annotation_gives_clean_sender_name():
             "ที่ สวปท.๑๔/๒๕๖๙\n๒๓ กันยายน ๒๕๖๙\nเรื่อง ขอเชิญเป็นเจ้าภาพร่วม\nเรียน ผู้ว่าราชการกรุงเทพมหานคร\n")
     meta = parse_govdoc_metadata(text)
     assert meta["dept"] == "สมาคมวิ่งเปี้ยวประเทศไทย"
+
+
+def test_ai_reference_replaces_pattern_guess():
+    """อ้างถึงจาก AI (ชื่อองค์กรผู้ส่ง + วันที่ลงหนังสือ) แทนค่าที่จับจากรูปแบบข้อความ เมื่อเปิดหัวข้ออ้างถึงไว้"""
+    from core.llm_drafter import apply_draft_content
+    doc = PRESET_TEMPLATES["bma_cohost_request"].schema.model_copy(deep=True)
+    doc.references = ["หนังสือรองกรรมการผู้จัดการใหญ่ ลงวันที่ ๑๔ กันยายน ๒๕๖๘"]
+    out = apply_draft_content(doc, CONTENT)
+    assert out.references == ["หนังสือสมาคมกีฬา ลงวันที่ ๑ ตุลาคม ๒๕๖๙"]
+    doc.references = None
+    assert apply_draft_content(doc, CONTENT).references is None
+
+
+def test_letter_date_line_preferred_over_event_date():
+    from core.extractor import parse_govdoc_metadata
+    text = ("บริษัท เซ็นทรัล จำกัด\nเรื่อง ขออนุญาตจัดกิจกรรม\nเรียน ผู้ว่าราชการกรุงเทพมหานคร\n"
+            "ด้วยบริษัทจะจัดงานในวันอาทิตย์ที่ ๑๔ กันยายน ๒๕๖๘ ณ ลานหน้าศูนย์การค้า\n๒๒ กรกฎาคม ๒๕๖๘\n")
+    assert parse_govdoc_metadata(text)["doc_date"] == "๒๒ กรกฎาคม ๒๕๖๘"

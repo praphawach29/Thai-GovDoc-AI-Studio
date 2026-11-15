@@ -40,6 +40,11 @@ class DraftContent(BaseModel):
     paragraph_reason: str = Field(description="หนังสือภายนอก - ภาคเหตุ")
     paragraph_details: str = Field(description="หนังสือภายนอก - ภาคข้อเท็จจริง (ว่างได้)")
     paragraph_purpose: str = Field(description="หนังสือภายนอก - ภาคความประสงค์")
+    # ไม่ใส่ค่าเริ่มต้น: Gemini response_schema ไม่รับ default
+    reference: str = Field(
+        description="อ้างถึง: หนังสือต้นเรื่อง เช่น 'หนังสือ<หน่วยงาน/บริษัทผู้ส่ง> ที่ <เลขที่> ลงวันที่ <วันที่ลงในหนังสือ>' "
+                    "ว่างได้ถ้าไม่มีหนังสือต้นเรื่อง",
+    )
 
 
 def _strict_schema() -> dict:
@@ -112,6 +117,10 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
 4. เขียนเฉพาะเนื้อความ ไม่ต้องเขียนส่วนราชการ ที่ วันที่ คำขึ้นต้น ชื่อหรือตำแหน่งผู้ลงนาม
 5. แยกข้อด้วยการขึ้นบรรทัดใหม่ ใช้เลขข้อแบบ "๑." และข้อย่อย "๑.๑" ไม่ใช้สัญลักษณ์ markdown (เช่น ** หรือ -)
 6. ตอบเป็น JSON ตาม schema เท่านั้น ช่องที่ไม่ใช้กับชนิดหนังสือนี้ให้เป็นข้อความว่าง ""
+7. reference (อ้างถึง): หนังสือต้นเรื่องฉบับหลัก "หนังสือ<ชื่อหน่วยงาน/บริษัท/สมาคมผู้ส่ง> ที่ <เลขที่หนังสือ> ลงวันที่ <วันที่ลงในหนังสือ>"
+   - ผู้ส่งคือชื่อองค์กรบนหัวหนังสือ ไม่ใช่ตำแหน่งผู้ลงนาม (เช่น "หนังสือบริษัท ... จำกัด" ไม่ใช่ "หนังสือรองกรรมการผู้จัดการใหญ่")
+   - วันที่ต้องเป็นวันที่ลงในหนังสือ ไม่ใช่วันจัดงานหรือวันอื่นในเนื้อหา; ไม่มีเลขที่ให้ตัด "ที่ ..." ออก
+   - ต้องตรงกับที่เขียนใน memo_intro / paragraph_reason; ไม่มีหนังสือต้นเรื่องให้เป็น ""
 """
 
 
@@ -373,6 +382,10 @@ def apply_draft_content(doc: GovDocumentSchema, content: DraftContent) -> GovDoc
     updated = doc.model_copy(deep=True)
     if content.subject:
         updated.subject = content.subject
+    # อ้างถึงจาก AI แม่นกว่าการจับรูปแบบข้อความ (ผู้ส่ง = องค์กร, วันที่ = วันลงหนังสือ) — ใช้แทนเมื่อเปิดหัวข้ออ้างถึงไว้
+    ref = (content.reference or "").strip()
+    if ref and updated.references is not None:
+        updated.references = [ref if ref.startswith("หนังสือ") else f"หนังสือ{ref}"]
     if updated.doc_type == DocType.INTERNAL:
         for key in ("memo_intro", "memo_facts", "memo_consideration"):
             value = getattr(content, key)
