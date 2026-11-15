@@ -160,13 +160,12 @@ def test_word_export_memo(bma_cohost_doc, tmp_path):
     heading_runs = [r for p in paras for r in p.runs if r.text == "ต้นเรื่อง"]
     assert heading_runs and heading_runs[0].underline
 
-    # หัวข้อ ส่วนราชการ 20pt ตัวหนา ข้อความวางบนเส้นประถึงขอบขวา (ขีดเส้นใต้แบบจุดทั้งข้อความและแท็บท้าย)
-    for start in ("ส่วนราชการ", "ที่"):
+    # หัวข้อ ส่วนราชการ / ที่ / เรื่อง 20pt ตัวหนา; เส้นประเป็นรูปร่างเส้นตรงที่ล็อกไว้ (ไม่ใช่ขีดเส้นใต้)
+    for start in ("ส่วนราชการ", "ที่", "เรื่อง"):
         hp = next(p for p in paras if p.text.startswith(start))
         assert hp.runs[0].bold and hp.runs[0].font.size.pt == 20
-        lined = [r for r in hp.runs[1:] if (r.text.strip() or r.text == "\t") and not r.bold]
-        assert lined and all('w:u w:val="dotted"' in r._r.xml for r in lined)
-        assert hp.runs[-1].text == "\t"
+        assert "<v:line" in hp._p.xml and "w10:anchorlock" in hp._p.xml
+        assert 'w:u ' not in hp._p.xml
 
     # เลขหน้า -๒- เริ่มหน้าที่ ๒ (หน้าแรกต่างจากหน้าอื่น) ด้วยฟิลด์ PAGE เลขไทย
     sec = d.sections[0]

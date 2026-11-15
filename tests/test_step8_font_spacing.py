@@ -115,29 +115,29 @@ def test_memo_signers_centered_like_pdf(tmp_path):
     assert len(sig) >= 2 and all(p.alignment == WD_ALIGN_PARAGRAPH.CENTER for p in sig)
 
 
-def _subject_paras(tmp_path, subject):
+def _header_lines(tmp_path, subject):
+    import re
     out = tmp_path / "sub.docx"
     export_govdoc_to_docx(_memo().model_copy(update={"subject": subject}), str(out))
-    d = Document(str(out))
-    t = next(t for t in d.tables if t.rows[0].cells[0].text == "เรื่อง")
-    paras = t.rows[0].cells[1].paragraphs
-    return t, paras
+    paras = Document(str(out)).paragraphs
+    def lines(start):
+        p = next(p for p in paras if p.text.startswith(start))
+        return [tuple(float(v) for v in m) for m in
+                re.findall(r'from="([\d.]+)pt,([\d.]+)pt" to="([\d.]+)pt,[\d.]+pt"', p._p.xml)]
+    return lines
 
 
-def test_subject_dotted_line_only_on_first_line(tmp_path):
-    """"เรื่อง" เป็นตาราง ๒ ช่องไม่มีเส้นขอบ: ช่องขวาย่อหน้าแรกมีเส้นประเป็นขอบล่าง (เริ่มหลังคำว่า "เรื่อง")
-    แก้ข้อความใน Word แล้วเส้นยังอยู่ใต้บรรทัดนั้น ส่วนที่ยาวเกินอยู่ย่อหน้าถัดไป ไม่มีเส้น"""
-    t, paras = _subject_paras(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วม")
-    assert len(paras) == 1 and 'w:val="dotted"' in paras[0]._p.pPr.xml
-    assert "w:pBdr" not in t.rows[0].cells[0].paragraphs[0]._p.xml
-    assert abs(t.columns[0].width.cm - 1.25) < 0.01 and abs(t.columns[1].width.cm - 14.75) < 0.01
-    assert 'w:tblBorders' in t._tbl.tblPr.xml and 'w:left w:w="0"' in t._tbl.tblPr.xml
-    t, paras = _subject_paras(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย "
-                                        "ชิงถ้วยพระราชทาน ประจำปี ๒๕๗๐")
-    first, nxt = paras
-    assert "w:pBdr" in first._p.pPr.xml and "w:pBdr" not in nxt._p.xml
-    assert "ขอ\u200bเชิญ" in first.text and nxt.text.replace("\u200b", "").endswith("๒๕๗๐")
-    assert not any('w:u ' in r._r.xml for r in first.runs + nxt.runs)
+def test_header_dotted_lines_are_fixed_shapes(tmp_path):
+    """เส้นประ ๓ บรรทัดบนเป็นรูปร่างเส้นตรงล็อกกับบรรทัด (แบบที่หน่วยงานวางเส้นเองใน Word) —
+    แก้ข้อความแล้วเส้นอยู่ที่เดิม; เรื่องยาวกี่บรรทัดก็มีเส้นเฉพาะบรรทัดแรก ยาวถึงขอบขวา (16 ซม. = 453.5 pt)"""
+    lines = _header_lines(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย "
+                                    "ชิงถ้วยพระราชทาน ประจำปี ๒๕๗๐")
+    dept, meta, sub = lines("ส่วนราชการ"), lines("ที่"), lines("เรื่อง")
+    assert len(dept) == 1 and len(meta) == 2 and len(sub) == 1
+    for x1, y, x2 in dept + sub + meta[1:]:
+        assert abs(x2 - 453.54) < 0.1 and 15 < y < 25
+    assert all(0 < x1 < 100 for x1, _, _ in dept + sub + meta[:1])
+    assert meta[0][2] < 7.5 / 2.54 * 72 < meta[1][0]          # "ที่" ถึงก่อน "วันที่" แล้วต่อหลัง "วันที่"
 
 
 def test_docx_has_no_blank_thumbnail(tmp_path):
@@ -160,7 +160,14 @@ def test_width_measure_counts_letter_spacing():
     finally:
         w._LETTER_SPACING.reset(tok)
     assert abs(spaced - plain - len(text) * 0.4 / 72 * 2.54) < 1e-6
-    # เรื่องที่ Word ตัดบรรทัดหลัง "ชิงถ้วย" (ภาพจาก Word จริง) — บรรทัดแรกต้องไม่ยาวเกินนั้น
-    _, (first, nxt) = _subject_paras(__import__("pathlib").Path(__import__("tempfile").mkdtemp()),
-                                "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วยพระราชทาน ประจำปี ๒๕๗๐")
-    assert nxt.text.replace("\u200b", "").startswith("พระราชทาน")
+    # เรื่องที่ Word ตัดบรรทัดหลัง "ชิงถ้วย" (ภาพจาก Word จริง) — วัดแบบเดียวกับ Word ต้องตัดตรงกัน
+    from core.word_exporter import _split_first_line
+    from core.thai_segmenter import insert_zwsp
+    tok = w._LETTER_SPACING.set(0.4)
+    try:
+        _, rest = _split_first_line(insert_zwsp(
+            "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วยพระราชทาน ประจำปี ๒๕๗๐"),
+            16.0 - 1.25 - 0.3)
+    finally:
+        w._LETTER_SPACING.reset(tok)
+    assert rest.replace("\u200b", "").startswith("พระราชทาน")

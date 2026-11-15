@@ -11,7 +11,7 @@ from typing import Optional
 
 from docx import Document
 from docx.shared import Cm, Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER, WD_UNDERLINE
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn, nsdecls
@@ -398,50 +398,31 @@ def _split_first_line(text: str, room_cm: float, size_pt: float = 16.0):
     return text[:cut], text[cut:]
 
 
-SUBJECT_TEXT_CM = 1.25   # ข้อความ "เรื่อง" เริ่มที่ 1.25 ซม. (บรรทัดที่ ๒ เยื้องตรงกัน)
+_VML_NS = ('xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" '
+           'xmlns:w10="urn:schemas-microsoft-com:office:word"')
 
 
-def _add_subject_on_line(doc: Document, subject: str) -> None:
+def _header_line_y_pt(label_pt: float = 20.0) -> float:
+    """ระยะจากขอบบนของบรรทัดหัวฟอร์มถึงเส้นประ: เส้นฐานของหัวข้อ 20 pt (ส่วนขึ้นของฟอนต์ ~0.85 em) + 2 pt"""
+    return 0.85 * label_pt + 2.0
+
+
+def _add_fixed_dotted_line(paragraph, x1_cm: float, x2_cm: float, y_pt: Optional[float] = None) -> None:
     """
-    บรรทัด "เรื่อง" ของบันทึกข้อความ: เส้นประอยู่เฉพาะบรรทัดที่ตรงกับคำว่า "เรื่อง"
-    ใช้ตาราง ๒ ช่องไม่มีเส้นขอบ — ช่องซ้ายคำว่า "เรื่อง", ช่องขวาข้อความ
-    ย่อหน้าแรกในช่องขวามีเส้นประเป็นขอบล่าง (เริ่มหลังคำว่า "เรื่อง" ยาวถึงขอบขวา) จึงพิมพ์/แก้/ดึงคำขึ้นมาใน Word
-    แล้วเส้นยังอยู่ใต้บรรทัดนั้นเสมอ ส่วนที่ยาวเกินอยู่ย่อหน้าถัดไปในช่องเดียวกัน ไม่มีเส้น
-    (ย่อหน้าเดียวแบบเยื้องลอย Word จะลากเส้นขอบตั้งแต่ขอบซ้ายใต้คำว่า "เรื่อง" ด้วย)
+    วางรูปร่างเส้นตรงแบบจุด (VML line) ยึดกับย่อหน้า อยู่หลังข้อความ ล็อกจุดยึด —
+    เหมือนการแทรกรูปร่าง "เส้น" ใน Word แล้วพิมพ์ข้อความบนเส้น: แก้ข้อความแล้วเส้นอยู่ที่เดิม ไม่ยืด/หดตาม
+    พิกัดแนวนอนนับจากขอบซ้ายของพื้นที่พิมพ์ แนวตั้งนับจากขอบบนของย่อหน้า
     """
-    text_cm = TEXT_WIDTH_CM - SUBJECT_TEXT_CM
-    first, rest = _split_first_line(insert_zwsp(subject), text_cm - 0.3)
-
-    tbl = doc.add_table(rows=1, cols=2)
-    tbl.autofit = False
-    tblPr = tbl._tbl.tblPr
-    tblPr.append(parse_xml(
-        '<w:tblBorders %s><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
-        '<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>' % nsdecls('w')))
-    tblPr.append(parse_xml('<w:tblLayout %s w:type="fixed"/>' % nsdecls('w')))
-    tblPr.append(parse_xml(
-        '<w:tblCellMar %s><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>'
-        '<w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>' % nsdecls('w')))
-    for col, width in zip(tbl.columns, (SUBJECT_TEXT_CM, text_cm)):
-        col.width = Cm(width)
-        for cell in col.cells:
-            cell.width = Cm(width)
-
-    c_head, c_text = tbl.rows[0].cells
-    p_h = c_head.paragraphs[0]
-    p_h.paragraph_format.space_after = Pt(0)
-    _set_run_thai_font(p_h.add_run("เรื่อง"), size_pt=MEMO_LABEL_SIZE, bold=True)
-
-    p1 = c_text.paragraphs[0]
-    # ให้ฐานตัวอักษร 16 pt ตรงกับคำว่า "เรื่อง" 20 pt (ต่างกันประมาณส่วนขึ้นของฟอนต์ × 4 pt)
-    p1.paragraph_format.space_before = Pt(0.85 * (MEMO_LABEL_SIZE - DEFAULT_FONT_SIZE))
-    p1.paragraph_format.space_after = Pt(0 if rest else 6)
-    _set_run_thai_font(p1.add_run(first.strip()), size_pt=DEFAULT_FONT_SIZE)
-    _apply_bottom_border(p1, val="dotted", sz=6, space=0)
-    if rest:
-        p2 = c_text.add_paragraph()
-        p2.paragraph_format.space_after = Pt(6)
-        _set_run_thai_font(p2.add_run(rest.strip()), size_pt=DEFAULT_FONT_SIZE)
+    y = _header_line_y_pt() if y_pt is None else y_pt
+    pt = lambda cm: cm / 2.54 * 72
+    run = paragraph.add_run()
+    run._r.append(parse_xml(
+        '<w:pict %s %s><v:line style="position:absolute;z-index:-1;mso-position-horizontal-relative:margin;'
+        'mso-position-vertical-relative:text" from="%.2fpt,%.2fpt" to="%.2fpt,%.2fpt" '
+        'strokecolor="black" strokeweight=".75pt" o:allowincell="f">'
+        '<v:stroke dashstyle="1 1"/><w10:anchorlock/></v:line></w:pict>'
+        % (nsdecls('w'), _VML_NS, pt(x1_cm), y, pt(x2_cm), y)
+    ))
 
 
 MEMO_SIGN_INDENT_CM = 6.0
@@ -1019,9 +1000,11 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     _set_run_thai_font(r_title, size_pt=profile.memo_title_pt, bold=True)
 
     # 2. รายละเอียดหัวเรื่อง: หัวข้อ ส่วนราชการ / ที่ / วันที่ / เรื่อง ตัวหนา 20 pt
-    #    แบบ dotted (ค่าเริ่มต้น): ข้อความวางบนเส้นประ — ขีดเส้นใต้แบบจุดตั้งแต่หลังหัวข้อจนถึงขอบขวา
-    #    (ตามแบบฟอร์มบันทึกข้อความจริง และตรงกับหน้าแก้ไข) โดยขีดเส้นใต้ทั้งข้อความและแท็บท้ายบรรทัด
+    #    แบบ dotted (ค่าเริ่มต้น): เส้นประเป็น "เส้นตรงที่วางไว้" (รูปร่างเส้น ล็อกกับบรรทัด อยู่หลังข้อความ)
+    #    แบบที่หน่วยงานทำใน Word จริง — แก้/พิมพ์ข้อความทับได้ เส้นไม่ยืด ไม่หด ไม่ตามข้อความ
+    #    มีเฉพาะ ๓ บรรทัด (ส่วนราชการ / ที่-วันที่ / บรรทัดแรกของเรื่อง) บรรทัดที่ ๒ ของเรื่องไม่มีเส้น
     on_line = profile.header_style == "dotted"
+    label_gap_cm = 0.1    # เส้นเริ่มหลังหัวข้อเล็กน้อย
 
     def _header_tab(p, pos_cm: float, align=WD_TAB_ALIGNMENT.RIGHT):
         if on_line:
@@ -1029,60 +1012,63 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         else:
             _add_header_tab(p, pos_cm, profile.header_style)
 
-    def _line_run(p, text: str):
-        r = p.add_run(text)
-        _set_run_thai_font(r, size_pt=DEFAULT_FONT_SIZE)
-        if on_line:
-            r.font.underline = WD_UNDERLINE.DOTTED
-        return r
-
     def _memo_field(p, label: str, value: str):
         r_h = p.add_run(label)
         _set_run_thai_font(r_h, size_pt=MEMO_LABEL_SIZE, bold=True)
-        if on_line:
-            _set_run_thai_font(p.add_run(" "), size_pt=DEFAULT_FONT_SIZE)
-            _line_run(p, "  ")
-        else:
-            _set_run_thai_font(p.add_run("  "), size_pt=DEFAULT_FONT_SIZE)
-        return _line_run(p, insert_zwsp(value))
+        _set_run_thai_font(p.add_run("  "), size_pt=DEFAULT_FONT_SIZE)
+        r_v = p.add_run(insert_zwsp(value))
+        _set_run_thai_font(r_v, size_pt=DEFAULT_FONT_SIZE)
+        return r_v
+
+    def _label_end(label: str, start_cm: float = 0.0) -> float:
+        return start_cm + _text_width_cm(label, MEMO_LABEL_SIZE, bold=True) + label_gap_cm
 
     dept_value = data.dept_name
     if data.contact_tel and data.contact_tel not in dept_value and "โทร" not in dept_value:
         dept_value = f"{dept_value}  โทร. {data.contact_tel}"
     p_dept = doc.add_paragraph()
     p_dept.paragraph_format.space_after = Pt(0)
-    _header_tab(p_dept, TEXT_WIDTH_CM)
     dept_value = to_thai_numerals(dept_value) if data.use_thai_numerals else dept_value
     r_dept = _memo_field(p_dept, "ส่วนราชการ", dept_value)
     # บรรทัดเดียวเสมอ: ความกว้างข้อความ - หัวข้อ 20 pt - ช่องว่าง - เผื่อท้ายเส้น
     room = TEXT_WIDTH_CM - _text_width_cm("ส่วนราชการ   ", MEMO_LABEL_SIZE, bold=True) - 0.3
     _fit_run_to_width(r_dept, insert_zwsp(dept_value), room)   # รวม ZWSP: Word เว้นระยะตัวอักษรให้ด้วย
-    _line_run(p_dept, "\t")
-    if profile.header_style == "solid":
-        _apply_bottom_border(p_dept)
+    if on_line:
+        _add_fixed_dotted_line(p_dept, _label_end("ส่วนราชการ"), TEXT_WIDTH_CM)
+    else:
+        _header_tab(p_dept, TEXT_WIDTH_CM)
+        p_dept.add_run("\t")
+        if profile.header_style == "solid":
+            _apply_bottom_border(p_dept)
 
     # ที่ ....... วันที่ ....... (บรรทัดเดียวกัน: "วันที่" เริ่มที่ 7.5 ซม.)
     p_meta = doc.add_paragraph()
     p_meta.paragraph_format.space_after = Pt(0)
     _header_tab(p_meta, 7.5, WD_TAB_ALIGNMENT.LEFT if on_line else WD_TAB_ALIGNMENT.RIGHT)
-    _header_tab(p_meta, TEXT_WIDTH_CM)
+    if not on_line:
+        _header_tab(p_meta, TEXT_WIDTH_CM)
     _memo_field(p_meta, "ที่", fmt_number)
-    _line_run(p_meta, "\t")
+    p_meta.add_run("\t")
     _memo_field(p_meta, "วันที่", fmt_date)
-    _line_run(p_meta, "\t")
-    if profile.header_style == "solid":
-        _apply_bottom_border(p_meta)
+    if on_line:
+        _add_fixed_dotted_line(p_meta, _label_end("ที่"), 7.5 - label_gap_cm)
+        _add_fixed_dotted_line(p_meta, _label_end("วันที่", 7.5), TEXT_WIDTH_CM)
+    else:
+        p_meta.add_run("\t")
+        if profile.header_style == "solid":
+            _apply_bottom_border(p_meta)
 
-    # เรื่อง (บรรทัดที่สองเยื้องตรงกับข้อความ)
+    # เรื่อง (บรรทัดที่สองเยื้องตรงกับข้อความ 1.25 ซม.)
     clean_sub = re.sub(r'^เรื่อง\s*', '', data.subject.strip())
     sub_value = to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub
+    p_sub = doc.add_paragraph()
+    p_sub.paragraph_format.space_after = Pt(6)
+    p_sub.paragraph_format.left_indent = Cm(1.25)
+    p_sub.paragraph_format.first_line_indent = Cm(-1.25)
     if on_line:
-        _add_subject_on_line(doc, sub_value)
+        _memo_field(p_sub, "เรื่อง", sub_value)
+        _add_fixed_dotted_line(p_sub, _label_end("เรื่อง"), TEXT_WIDTH_CM)   # เฉพาะบรรทัดแรก
     else:
-        p_sub = doc.add_paragraph()
-        p_sub.paragraph_format.space_after = Pt(6)
-        p_sub.paragraph_format.left_indent = Cm(1.25)
-        p_sub.paragraph_format.first_line_indent = Cm(-1.25)
         _header_tab(p_sub, TEXT_WIDTH_CM)
         _memo_field(p_sub, "เรื่อง", sub_value)
         p_sub.add_run("\t")
