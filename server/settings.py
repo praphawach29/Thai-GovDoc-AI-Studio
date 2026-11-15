@@ -70,6 +70,7 @@ class Settings:
     # AI ร่างหนังสือ: ลอง Claude ก่อน แล้ว Gemini; ไม่ตั้งคีย์เลย = ร่างตามกฎอย่างเดียว
     # คีย์เป็นความลับ ตั้งใน Vercel → Settings → Environment Variables เท่านั้น
     anthropic_api_key: str = field(default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    anthropic_workspace_id: str = field(default_factory=lambda: os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip())
     gemini_api_key: str = field(default_factory=lambda: _first_env(("GEMINI_API_KEY", "GOOGLE_API_KEY")))
     claude_model: str = field(default_factory=lambda: os.environ.get("GOVDOC_CLAUDE_MODEL", "claude-opus-5-5").strip())
     claude_effort: str = field(default_factory=lambda: os.environ.get("GOVDOC_CLAUDE_EFFORT", "medium").strip())
@@ -85,6 +86,7 @@ def llm_config(settings: "Settings"):
 
     return LLMConfig(
         anthropic_api_key=settings.anthropic_api_key, gemini_api_key=settings.gemini_api_key,
+        anthropic_workspace_id=settings.anthropic_workspace_id,
         claude_model=settings.claude_model, claude_effort=settings.claude_effort,
         gemini_model=settings.gemini_model,
     )

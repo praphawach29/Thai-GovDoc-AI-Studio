@@ -51,6 +51,8 @@ def _strict_schema() -> dict:
 @dataclass(frozen=True)
 class LLMConfig:
     anthropic_api_key: str = ""
+    # คีย์ระดับองค์กร (ไม่ได้สร้างใน workspace) ต้องบอก workspace ที่จะใช้
+    anthropic_workspace_id: str = ""
     gemini_api_key: str = ""
     claude_model: str = "claude-opus-5-5"
     claude_effort: str = "medium"
@@ -58,7 +60,7 @@ class LLMConfig:
     # เวลาที่ให้ AI ร่าง (วินาที) — คำขอทั้งหมด (อ่านไฟล์ + ร่าง) ต้องน้อยกว่า maxDuration 120 วินาทีใน vercel.json
     total_timeout_s: float = 75.0
     claude_timeout_s: float = 50.0
-    ocr_timeout_s: float = 50.0
+    ocr_timeout_s: float = 60.0
 
     @property
     def any_provider(self) -> bool:
@@ -142,6 +144,14 @@ class EmptyResult(RuntimeError):
     pass
 
 
+def _anthropic_client(config: LLMConfig, timeout_s: float):
+    import anthropic
+
+    headers = {"anthropic-workspace-id": config.anthropic_workspace_id} if config.anthropic_workspace_id else None
+    return anthropic.Anthropic(api_key=config.anthropic_api_key, timeout=timeout_s, max_retries=1,
+                               default_headers=headers)
+
+
 def _claude_create(client, kwargs: dict):
     """เรียก Claude; ถ้าบัญชีใช้ตัวเลือก fallback (beta) ไม่ได้ (400 ที่พูดถึง fallback/beta) ลองใหม่โดยไม่ใส่"""
     try:
@@ -156,9 +166,7 @@ def _claude_create(client, kwargs: dict):
 
 
 def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftContent:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=config.anthropic_api_key, timeout=timeout_s, max_retries=1)
+    client = _anthropic_client(config, timeout_s)
     kwargs = dict(
         model=config.claude_model,
         max_tokens=16000,
@@ -179,21 +187,34 @@ def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
     return DraftContent.model_validate_json(text)
 
 
+def _gemini_generate(client, model: str, contents, **config_kwargs):
+    """เรียก Gemini ให้คิดระดับต่ำ (รุ่น 3.x คิดนานเป็นค่าเริ่มต้น งานถอดข้อความ/เรียบเรียงไม่ต้องคิดลึก)
+    ถ้ารุ่นไม่รองรับ thinking_level (400) ลองใหม่โดยไม่ใส่"""
+    from google.genai import types
+
+    def call(with_thinking: bool):
+        extra = {"thinking_config": types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)} if with_thinking else {}
+        return client.models.generate_content(
+            model=model, contents=contents, config=types.GenerateContentConfig(**config_kwargs, **extra))
+
+    try:
+        return call(True)
+    except Exception as exc:
+        status, message = _status_and_message(exc)
+        if status == 400 and "think" in message.lower():
+            logger.warning("Gemini %s rejected thinking_level, retrying without: %s", model, message)
+            return call(False)
+        raise
+
+
 def _call_gemini(prompt: str, config: LLMConfig, timeout_s: float) -> DraftContent:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=config.gemini_api_key,
                           http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
-    response = client.models.generate_content(
-        model=config.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            response_schema=DraftContent,
-        ),
-    )
+    response = _gemini_generate(client, config.gemini_model, prompt, system_instruction=SYSTEM_PROMPT,
+                                response_mime_type="application/json", response_schema=DraftContent)
     if isinstance(getattr(response, "parsed", None), DraftContent):
         return response.parsed
     return DraftContent.model_validate_json(response.text or "")
@@ -223,6 +244,8 @@ def _short_error(exc: Exception) -> str:
     status, message = _status_and_message(exc)
     lower = message.lower()
     if status is not None:
+        if "workspace" in lower and "anthropic-workspace-id" in lower:
+            return "คีย์ Anthropic ไม่ได้ผูกกับ workspace — ตั้ง ANTHROPIC_WORKSPACE_ID หรือสร้างคีย์ใหม่ภายใน workspace (400)"
         if "credit balance" in lower or "billing" in lower:
             return "เครดิตของบัญชีไม่พอ (เติมเครดิตที่หน้า Billing ของผู้ให้บริการ)"
         if status == 401:
@@ -372,9 +395,7 @@ def _jpeg_b64(image) -> str:
 
 
 def _ocr_claude(images: list, config: LLMConfig, timeout_s: float) -> str:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=config.anthropic_api_key, timeout=timeout_s, max_retries=1)
+    client = _anthropic_client(config, timeout_s)
     content = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": _jpeg_b64(img)}}
                for img in images]
     content.append({"type": "text", "text": OCR_PROMPT})
@@ -399,7 +420,7 @@ def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float) -> str:
 
     parts = [types.Part.from_bytes(data=base64.standard_b64decode(_jpeg_b64(img)), mime_type="image/jpeg")
              for img in images]
-    response = client.models.generate_content(model=config.gemini_model, contents=[*parts, OCR_PROMPT])
+    response = _gemini_generate(client, config.gemini_model, [*parts, OCR_PROMPT])
     return (response.text or "").strip()
 
 

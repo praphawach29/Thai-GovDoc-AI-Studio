@@ -145,14 +145,15 @@ def test_claude_request_shape(monkeypatch):
                                          content=[types.SimpleNamespace(type="text", text=CONTENT.model_dump_json())])
 
     class FakeAnthropic:
-        def __init__(self, api_key, timeout, max_retries):
+        def __init__(self, api_key, timeout, max_retries, default_headers=None):
             captured["client"] = (api_key, timeout, max_retries)
+            captured["headers"] = default_headers
             self.beta = types.SimpleNamespace(messages=FakeMessages())
 
     monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=FakeAnthropic))
     out = llm_drafter._call_claude("prompt", CFG, 30)
     assert out == CONTENT
-    assert captured["client"] == ("k1", 30, 1)
+    assert captured["client"] == ("k1", 30, 1) and captured["headers"] is None
     assert captured["model"] == "claude-opus-5-5" and captured["output_config"]["effort"] == "medium"
     schema = captured["output_config"]["format"]["schema"]
     assert schema["additionalProperties"] is False and set(schema["required"]) == set(DraftContent.model_fields)
@@ -343,3 +344,36 @@ def test_claude_retries_without_fallbacks_when_account_rejects_them():
         llm_drafter._claude_create(types.SimpleNamespace(beta=types.SimpleNamespace(messages=types.SimpleNamespace(
             create=lambda **kw: (_ for _ in ()).throw(_AnthropicLikeError(400, "image too large"))))),
             {"model": "m", "fallbacks": "default"})
+
+
+def test_workspace_header_and_message(monkeypatch):
+    seen = {}
+
+    class FakeAnthropic:
+        def __init__(self, **kw):
+            seen.update(kw)
+            self.beta = types.SimpleNamespace(messages=types.SimpleNamespace(create=lambda **k: types.SimpleNamespace(
+                stop_reason="end_turn", content=[types.SimpleNamespace(type="text", text=CONTENT.model_dump_json())])))
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=FakeAnthropic))
+    llm_drafter._call_claude("p", LLMConfig(anthropic_api_key="k", anthropic_workspace_id="wrkspc_1"), 10)
+    assert seen["default_headers"] == {"anthropic-workspace-id": "wrkspc_1"}
+    err = _AnthropicLikeError(400, "This API key is not scoped to a workspace, so this request must include the "
+                                   "anthropic-workspace-id header with the ID of the workspace to use")
+    assert "ANTHROPIC_WORKSPACE_ID" in llm_drafter._short_error(err)
+
+
+def test_gemini_low_thinking_with_retry_when_unsupported():
+    configs = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            configs.append(config)
+            if config.thinking_config is not None:
+                raise _GoogleLikeError(400, "Thinking level is not supported for this model.")
+            return "ok"
+
+    client = types.SimpleNamespace(models=Models())
+    assert llm_drafter._gemini_generate(client, "gemini-2.5-flash", "x", response_mime_type="application/json") == "ok"
+    assert configs[0].thinking_config.thinking_level.value == "LOW" and configs[1].thinking_config is None
+    assert configs[1].response_mime_type == "application/json"
