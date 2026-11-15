@@ -51,7 +51,13 @@
       showUser({ name: person.full || 'ยังไม่ได้ตั้งค่าผู้ลงนาม', greeting: person.first && `สวัสดี คุณ${person.first}`,
                  initials: person.initials, subtitle: p.signatory_position });
     }
-  }).catch((err) => { $('user-name').textContent = 'โหลดข้อมูลผู้ใช้ไม่สำเร็จ'; toast(err.message, 'error'); });
+  }).catch((err) => {
+    // แสดงสาเหตุบนการ์ดด้วย (ข้อความเด้งหายเร็ว) เช่น "บัญชีนี้ยังไม่ได้ผูกกับหน่วยงาน"
+    $('user-name').textContent = 'โหลดข้อมูลผู้ใช้ไม่สำเร็จ';
+    $('user-position').textContent = err.message;
+    $('user-position').title = err.message;
+    toast(err.message, 'error');
+  });
 
   api.health().then((ok) => {
     $('health').innerHTML = ok
