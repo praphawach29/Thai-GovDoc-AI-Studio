@@ -91,6 +91,8 @@ Agent **ห้ามละเมิด** กฎต่อไปนี้ในก
 ```text
 หนังสือราชการ/
 ├── AGENTS.md               # กฎและข้อแนะนำสำหรับ AI Agent (ไฟล์นี้)
+├── STATUS.md               # สถานะระบบปัจจุบัน + งานถัดไป (อ่านก่อนเริ่มงาน)
+├── skills/                 # thai-govdoc-ai-drafting (pipeline AI + บทเรียน), thai-govdoc-ux-frontend
 ├── DESIGN.md               # สถาปัตยกรรมและรายละเอียดทางเทคนิค
 ├── SARABAN_RULES.md        # ระเบียบงานสารบรรณและแม่แบบกฎเกณฑ์ภาษา
 ├── PROMPT_ENGINEERING.md   # Prompts และ Few-shot templates สำหรับ AI

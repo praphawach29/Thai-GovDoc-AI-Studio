@@ -40,6 +40,8 @@
 
 เพื่อความเข้าใจเชิงลึก โปรดศึกษาเอกสารข้อกำหนดแต่ละฉบับ:
 
+- 🟢 [STATUS.md](STATUS.md) — **สถานะระบบปัจจุบัน: สิ่งที่ใช้งานได้ ข้อจำกัด และงานถัดไป (อ่านก่อน)**
+- 🧭 [skills/thai-govdoc-ai-drafting/SKILL.md](skills/thai-govdoc-ai-drafting/SKILL.md) — คู่มือระบบร่างด้วย AI ทั้ง pipeline + บทเรียนจากการใช้งานจริง
 - 📑 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) — **แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบฉบับสมบูรณ์ (Roadmap Phase 1–10 & Spec)**
 - 🚀 [ONLINE_PRODUCTION_PLAN.md](ONLINE_PRODUCTION_PLAN.md) — **แผนนำระบบขึ้นใช้งานจริงออนไลน์ (Pilot → Production, Security, e-Saraban, Cost)**
 - 📖 [AGENTS.md](AGENTS.md) — กฎเหล็กและข้อแนะนำการทำงานสำหรับ AI Coding Agents
@@ -174,7 +176,8 @@
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
 
-- **สถานะชุดทดสอบ:** **172 tests — ผ่าน 167 / ข้าม 5 / ล้มเหลว 0** (รันล่าสุด ๑๕ พ.ย. ๒๕๖๙)
+- **สถานะระบบ:** ใช้งานจริงแบบนำร่องบน Vercel + Supabase ตั้งแต่ ๑๕ พ.ย. ๒๕๖๙ — รายละเอียดใน [STATUS.md](STATUS.md)
+- **สถานะชุดทดสอบ:** **292 ผ่าน / 1 ข้าม / ล้มเหลว 0** (รันล่าสุด ๑๕ พ.ย. ๒๕๖๙)
   - เทส PDF (headless browser) และ OCR จะ **ข้ามอัตโนมัติ** เมื่อเครื่องไม่มี browser/API key/Docker โดยใช้ marker กลางใน `tests/conftest.py` (ไม่ถูกนับเป็น fail)
 - **ระยะการพัฒนาที่แล้วเสร็จ:**
   - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
@@ -198,7 +201,12 @@
 - ✅ **Phase 8.11 (Step 1):** Intake — สกัด entity พร้อมหลักฐาน, ถามข้อมูลที่ขาด, เลือกหัวข้อ กฎหมาย/อ้างถึง/แนบ, คลังข้อกฎหมาย JSON + UI ยืนยันแหล่ง
 - ✅ **Phase 8.12 (Step 2):** Source Verification — ตรวจร่างเทียบต้นเรื่อง (ชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กฎหมาย) พร้อมหลักฐานและสถานะ พบ/ไม่พบ/ต้องยืนยัน
 - ✅ **Phase 8.13 (Step 3):** Text Checks — ตรวจคำสะกดและความสอดคล้อง แยก critical/warning/info โดยไม่แก้ข้อความอัตโนมัติ
+- ✅ **Phase 8.14 (Online pilot):** Vercel + Supabase (ล็อกอิน, RLS, Storage), หน้าเว็บ `web/studio/` แทน Streamlit
+- ✅ **Phase 8.15 (AI จริง):** Gemini 3.8 Flash อ่านไฟล์สแกน + ร่าง → สำรอง Claude; เลือกประเภทหนังสือ/เปลี่ยนภายหลัง; อ้างถึงจาก AI
+- ✅ **Phase 8.16 (สายเสนอ):** หน่วยออกหนังสือ ๓ ระดับ (กลุ่มงาน → กอง → สำนัก), เสนอขั้นถัดไป, ชุดเสนอ PDF, อัปโหลดฉบับจริง
+- ✅ **Phase 8.17 (แบบฟอร์มหน่วยงาน):** TH SarabunIT๙, ระยะ 6 pt, หัวข้อ 2.5 ซม., ย่อหน้าตามเลขข้อ/Tab, ครุฑจากแม่แบบหน่วยงาน, เส้นประหัวฟอร์มแบบเส้นล็อกใน Word
 - *หมายเหตุ:* ชื่อไฟล์เทส `tests/test_phaseN_*.py` เป็นลำดับรอบพัฒนา ไม่ตรงกับเลข Phase ใน roadmap (เช่น `test_phase9`–`test_phase15` คืองานใน Phase 8.1–8.9 ส่วน `test_step0`–`test_step3` คือ Phase 8.10–8.13)
+- **งานถัดไปที่ใกล้ที่สุด:** แสดง PDF ต้นเรื่องคู่ร่าง, ลดแถบเครื่องมือหน้าแก้ไข, รวมป้ายจุดที่ต้องระบุ (ลำดับเต็มใน [STATUS.md](STATUS.md))
 - **แผนงานระยะถัดไป (Roadmap):**
   - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
   - 🚩 **Phase 10:** Multi-Document Review, Hierarchical Approval & E-Office Integration

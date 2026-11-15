@@ -1,7 +1,7 @@
 # 📑 แผนงานและข้อมูลสถาปัตยกรรมการพัฒนาระบบ (Development Plan & Architecture Specification)
 ## Thai GovDoc AI Studio — ระบบร่างและผลิตหนังสือราชการไทยอัจฉริยะ
-**เวอร์ชันเอกสาร:** 2.2 (อัปเดตล่าสุด: พฤศจิกายน ๒๕๖๙)  
-**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.13 (172 tests: ผ่าน 167 / ข้าม 5 ตามสภาพแวดล้อม / ล้มเหลว 0)  
+**เวอร์ชันเอกสาร:** 2.3 (อัปเดตล่าสุด: ๑๕ พฤศจิกายน ๒๕๖๙)  
+**สถานะการพัฒนา:** ดำเนินการแล้วเสร็จ Phase 1 – 8.17 และใช้งานจริงแบบนำร่องบน Vercel + Supabase (292 tests: ผ่าน 292 / ข้าม 1 / ล้มเหลว 0) — สถานะล่าสุดดู [STATUS.md](STATUS.md)  
 **อ้างอิงกฎหมายและระเบียบ:** ระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ พ.ศ. ๒๕๒๖ และที่แก้ไขเพิ่มเติม, ระเบียบกรุงเทพมหานครว่าด้วยงานสารบรรณ
 
 ---
@@ -246,6 +246,17 @@ class SourceCase(BaseModel):
   - [x] สกัดสายบันทึกเกษียนสั่งการ (Chain of Command) และสังเคราะห์ย่อหน้า "ต้นเรื่อง" อัตโนมัติ
 
 ---
+
+## 7.1 งานที่ทำเพิ่มระหว่างใช้งานจริง (Phase 8.14 – 8.17, ๑๔–๑๕ พ.ย. ๒๕๖๙)
+
+| Phase | สิ่งที่ส่งมอบ | ทดสอบ |
+|---|---|---|
+| 8.14 Online pilot | FastAPI บน Vercel (`server/`), Supabase Auth/RLS/Storage (migration 1–4), หน้าเว็บ `web/studio/` | `test_studio_api`, `tests/db/` |
+| 8.15 AI จริง | `core/llm_drafter.py`: AI OCR + ร่าง, Gemini ก่อนสำรอง Claude, ตัวที่อ่านได้ร่างต่อ, งบเวลา 105 วิ, `DraftContent.reference` | `test_step10_llm_drafting` |
+| 8.16 สายเสนอ | `core/issuing_units.py`, ตาราง `org_units` (migration 5–6), เสนอขั้นถัดไป, `/export/pdf-bundle`, ฉบับจริง `final_files` (migration 7) | `test_step7_unit_chain`, `test_step9_final_files` |
+| 8.17 แบบฟอร์มหน่วยงาน | IT๙ เป็นค่าเริ่มต้น, ระยะ 6 pt, หัวข้อ 2.5 ซม. แก้ชื่อได้, ย่อหน้าตามเลขข้อ/Tab, `garuda_krut.png`, เส้นประหัวฟอร์มแบบเส้นล็อก, วัดความกว้างรวม letter spacing | `test_step8_font_spacing`, `test_phase6_memo_template` |
+
+รายละเอียดกฎที่ตกลงกับผู้ใช้และบทเรียนที่ได้: `skills/thai-govdoc-ai-drafting/SKILL.md`
 
 ## 8. แผนการพัฒนาระยะถัดไป (Future Roadmap: Phase 9 – 10)
 
