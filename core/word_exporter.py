@@ -11,7 +11,7 @@ from typing import Optional
 
 from docx import Document
 from docx.shared import Cm, Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER, WD_UNDERLINE
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn, nsdecls
@@ -943,38 +943,58 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     r_title = p_title.add_run("บันทึกข้อความ")
     _set_run_thai_font(r_title, size_pt=profile.memo_title_pt, bold=True)
 
-    # 2. รายละเอียดหัวเรื่อง: หัวข้อ ส่วนราชการ / ที่ / วันที่ / เรื่อง ตัวหนา 20 pt พร้อมเส้นจุดไข่ปลาถึงขอบขวา
+    # 2. รายละเอียดหัวเรื่อง: หัวข้อ ส่วนราชการ / ที่ / วันที่ / เรื่อง ตัวหนา 20 pt
+    #    แบบ dotted (ค่าเริ่มต้น): ข้อความวางบนเส้นประ — ขีดเส้นใต้แบบจุดตั้งแต่หลังหัวข้อจนถึงขอบขวา
+    #    (ตามแบบฟอร์มบันทึกข้อความจริง และตรงกับหน้าแก้ไข) โดยขีดเส้นใต้ทั้งข้อความและแท็บท้ายบรรทัด
+    on_line = profile.header_style == "dotted"
+
+    def _header_tab(p, pos_cm: float, align=WD_TAB_ALIGNMENT.RIGHT):
+        if on_line:
+            p.paragraph_format.tab_stops.add_tab_stop(Cm(pos_cm), align, WD_TAB_LEADER.SPACES)
+        else:
+            _add_header_tab(p, pos_cm, profile.header_style)
+
+    def _line_run(p, text: str):
+        r = p.add_run(text)
+        _set_run_thai_font(r, size_pt=DEFAULT_FONT_SIZE)
+        if on_line:
+            r.font.underline = WD_UNDERLINE.DOTTED
+        return r
+
     def _memo_field(p, label: str, value: str):
-        r_h = p.add_run(label + "  ")
+        r_h = p.add_run(label)
         _set_run_thai_font(r_h, size_pt=MEMO_LABEL_SIZE, bold=True)
-        r_v = p.add_run(insert_zwsp(value))
-        _set_run_thai_font(r_v, size_pt=DEFAULT_FONT_SIZE)
+        if on_line:
+            _set_run_thai_font(p.add_run(" "), size_pt=DEFAULT_FONT_SIZE)
+            _line_run(p, "  ")
+        else:
+            _set_run_thai_font(p.add_run("  "), size_pt=DEFAULT_FONT_SIZE)
+        return _line_run(p, insert_zwsp(value))
 
     dept_value = data.dept_name
     if data.contact_tel and data.contact_tel not in dept_value and "โทร" not in dept_value:
         dept_value = f"{dept_value}  โทร. {data.contact_tel}"
     p_dept = doc.add_paragraph()
     p_dept.paragraph_format.space_after = Pt(0)
-    _add_header_tab(p_dept, TEXT_WIDTH_CM, profile.header_style)
+    _header_tab(p_dept, TEXT_WIDTH_CM)
     dept_value = to_thai_numerals(dept_value) if data.use_thai_numerals else dept_value
-    _memo_field(p_dept, "ส่วนราชการ", dept_value)
-    if p_dept.runs:
-        # บรรทัดเดียวเสมอ: ความกว้างข้อความ - หัวข้อ 20 pt - ช่องว่าง - เผื่อจุดไข่ปลา
-        room = TEXT_WIDTH_CM - _text_width_cm("ส่วนราชการ  ", MEMO_LABEL_SIZE, bold=True) - 0.3
-        _fit_run_to_width(p_dept.runs[-1], dept_value, room)
-    p_dept.add_run("\t")
+    r_dept = _memo_field(p_dept, "ส่วนราชการ", dept_value)
+    # บรรทัดเดียวเสมอ: ความกว้างข้อความ - หัวข้อ 20 pt - ช่องว่าง - เผื่อท้ายเส้น
+    room = TEXT_WIDTH_CM - _text_width_cm("ส่วนราชการ   ", MEMO_LABEL_SIZE, bold=True) - 0.3
+    _fit_run_to_width(r_dept, dept_value, room)
+    _line_run(p_dept, "\t")
     if profile.header_style == "solid":
         _apply_bottom_border(p_dept)
 
-    # ที่ ....... วันที่ ....... (บรรทัดเดียวกัน ใช้ Tab ๒ ช่วง)
+    # ที่ ....... วันที่ ....... (บรรทัดเดียวกัน: "วันที่" เริ่มที่ 7.5 ซม.)
     p_meta = doc.add_paragraph()
     p_meta.paragraph_format.space_after = Pt(0)
-    _add_header_tab(p_meta, 7.5, profile.header_style)
-    _add_header_tab(p_meta, TEXT_WIDTH_CM, profile.header_style)
+    _header_tab(p_meta, 7.5, WD_TAB_ALIGNMENT.LEFT if on_line else WD_TAB_ALIGNMENT.RIGHT)
+    _header_tab(p_meta, TEXT_WIDTH_CM)
     _memo_field(p_meta, "ที่", fmt_number)
-    p_meta.add_run("\t")
+    _line_run(p_meta, "\t")
     _memo_field(p_meta, "วันที่", fmt_date)
-    p_meta.add_run("\t")
+    _line_run(p_meta, "\t")
     if profile.header_style == "solid":
         _apply_bottom_border(p_meta)
 
@@ -984,9 +1004,9 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     p_sub.paragraph_format.space_after = Pt(6)
     p_sub.paragraph_format.left_indent = Cm(1.25)
     p_sub.paragraph_format.first_line_indent = Cm(-1.25)
-    _add_header_tab(p_sub, TEXT_WIDTH_CM, profile.header_style)
+    _header_tab(p_sub, TEXT_WIDTH_CM)
     _memo_field(p_sub, "เรื่อง", to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub)
-    p_sub.add_run("\t")
+    _line_run(p_sub, "\t")
     if profile.header_style == "solid":
         _apply_bottom_border(p_sub)
 
