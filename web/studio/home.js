@@ -64,6 +64,12 @@
   $('recent-search').addEventListener('input', renderRecent);
   auth.ready.then(loadRecent);
 
+  // ---------- หน่วยออกหนังสือ (ส่วนราชการ + รูปแบบเลขที่ของบันทึกข้อความ) ----------
+  auth.ready.then(() => api.units()).then((units) => {
+    $('unit').innerHTML = units.map(u =>
+      `<option value="${esc(u.key)}" ${u.is_default ? 'selected' : ''}>หน่วย: ${esc(u.label)}</option>`).join('');
+  }).catch(() => { $('unit').innerHTML = '<option value="">หน่วย: ตั้งต้น</option>'; });
+
   // ---------- ไฟล์แนบ ----------
   const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
   const fileIcon = (name) => /\.pdf$/i.test(name) ? 'fa-file-pdf' : /\.docx$/i.test(name) ? 'fa-file-word' : /\.(png|jpe?g|tiff?)$/i.test(name) ? 'fa-file-image' : 'fa-file-lines';
@@ -187,6 +193,7 @@
     const fd = new FormData();
     fd.append('prompt', prompt);
     if ($('doc-type').value) fd.append('doc_type', $('doc-type').value);
+    if ($('unit').value) fd.append('unit_key', $('unit').value);
     fd.append('urgency', state.urgency);
     fd.append('secret', state.secret);
     try {
@@ -208,7 +215,7 @@
       await openInEditor({
         doc: res.document, context: res.context, classification: res.classification,
         check: res.check, steps: res.steps, prompt, cloudBlocked: res.cloud_ai_blocked,
-        sourceName: state.file?.name || null, sourceFileId: res.source_file_id || null,
+        sourceName: state.file?.name || null, sourceFileId: res.source_file_id || null, unitKey: $('unit').value || null,
       });
     } catch (err) {
       $('progress').hidden = true;
@@ -235,10 +242,10 @@
   // ---------- เอกสารเปล่า / แม่แบบ ----------
   async function openBlank(type) {
     try {
-      const doc = await api.blank(type);
+      const doc = await api.blank(type, $('unit').value);
       doc.urgency = state.urgency; doc.secret = state.secret;
       const check = await api.check(doc);
-      await openInEditor({ doc, check, steps: [{ key: 'blank', label: `เปิด${DOC_TYPE_LABEL[type]}เปล่า`, ok: true, detail: 'ข้อมูลหน่วยงานจากโปรไฟล์' }] });
+      await openInEditor({ doc, check, unitKey: $('unit').value || null, steps: [{ key: 'blank', label: `เปิด${DOC_TYPE_LABEL[type]}เปล่า`, ok: true, detail: 'ข้อมูลหน่วยงานจากโปรไฟล์' }] });
     } catch (err) { toast(err.message, 'error'); }
   }
   document.querySelectorAll('[data-blank]').forEach(b => b.addEventListener('click', () => openBlank(b.dataset.blank)));

@@ -29,6 +29,20 @@
   #text(size: 20pt, weight: "bold")[#label]#h(0.25cm)#value#_leader
 ]
 
+// "ส่วนราชการ" ต้องอยู่บรรทัดเดียว (เช่น "สำนัก... (กอง... โทร... โทรสาร ...)")
+// ถ้ายาวเกิน บีบตัวอักษรแนวนอนได้ถึง 85% แบบเดียวกับ Word (w:w) ก่อนยอมขึ้นบรรทัดใหม่
+#let _field_one_line(label, value) = layout(size => context {
+  let head = text(size: 20pt, weight: "bold")[#label]
+  let room = size.width - measure(head).width - 0.25cm - 0.3cm
+  let w = measure(value).width
+  if w <= room or w == 0pt {
+    _field(label, value)
+  } else {
+    let ratio = calc.max(85%, room / w * 100%)
+    [#head#h(0.25cm)#box(scale(x: ratio, origin: left, reflow: true)[#value])#_leader]
+  }
+})
+
 #let govdoc_internal(
   doc_number: "",
   dept_name: "",
@@ -88,7 +102,7 @@
     #align(center + horizon, text(size: title_size, weight: "bold")[บันทึกข้อความ])
   ]
 
-  #_field("ส่วนราชการ", dept_name)
+  #_field_one_line("ส่วนราชการ", dept_name)
 
   #grid(
     columns: (7.5cm, 1fr),

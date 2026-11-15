@@ -38,6 +38,7 @@ class FakeSupabase:
             }],
             "documents": [], "document_versions": [], "number_sequences": [],
             "outgoing_register": [], "incoming_register": [], "source_files": [], "legal_references": [],
+            "org_units": [],
         }
         self.storage: Dict[str, bytes] = {}
         self.rpc_errors: Dict[str, Dict[str, str]] = {}

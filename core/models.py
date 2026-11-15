@@ -16,12 +16,22 @@ from core.thai_segmenter import to_thai_numerals
 DOC_NUMBER_PLACEHOLDER = "[✏️ เลขที่หนังสือ]"
 
 
+# ช่องว่างสำหรับเขียนเลขด้วยลายมือ: ใช้ non-breaking space ซึ่ง Typst/Word/HTML ไม่ยุบรวม
+# (ช่องว่างธรรมดาหลายตัวจะถูกยุบเหลือตัวเดียวเวลาจัดหน้า)
+HANDWRITE_GAP = "\u00a0" * 10
+
+
 def is_blank_doc_number(number: Optional[str]) -> bool:
-    """ตรวจว่าเลขที่ยังเป็นช่องว่างให้เขียนด้วยมือ เช่น '......../2569'"""
-    text = (number or "").strip()
+    """ตรวจว่าเลขที่ยังเป็นช่องว่างให้เขียนด้วยมือ
+
+    เช่น '......../2569', '          /2569' (เว้นว่างไม่มีจุด) หรือ 'กท 1205/' (เว้นเลขลำดับไว้)
+    """
+    text = (number or "").replace("\u00a0", " ").strip()
     if not text:
         return True
     if DOC_NUMBER_PLACEHOLDER in text:
+        return True
+    if text.startswith("/") or text.endswith("/"):
         return True
     return bool(re.match(r"^[.…_\-]+\s*/", text))
 
@@ -150,6 +160,50 @@ class MemoHierarchyLevel(str, Enum):
         return "จึงเรียนมาเพื่อโปรดพิจารณา"
 
 
+class IssuingUnit(BaseModel):
+    """หน่วยออกหนังสือ: แต่ละหน่วยมีบรรทัดส่วนราชการ รูปแบบเลขที่ และผู้ประสานของตัวเอง
+
+    รูปแบบเลขที่ (doc_number_format) ใช้ตัวแทน:
+      {gap}  = ช่องว่างให้เจ้าหน้าที่เขียนเลขด้วยลายมือ (ไม่มีจุด)
+      {year} = ปี พ.ศ. ปัจจุบันตามเวลาประเทศไทย
+    เช่น "{gap}/{year}" -> "          /2569" และ "กท 1205/{gap}" -> "กท 1205/          "
+    เขียนตัวเลขเป็นเลขอารบิก ระบบแปลงเป็นเลขไทยตอนส่งออกตามการตั้งค่าเอกสาร
+    """
+
+    key: str
+    label: str = Field(description="ชื่อที่แสดงให้เลือก เช่น กลุ่มงานส่งเสริมกีฬา")
+    dept_name: str = Field(description="บรรทัด 'ส่วนราชการ' ของบันทึกข้อความ")
+    doc_number_format: str = Field(default="{gap}/{year}")
+    contact_dept: str = ""
+    contact_tel: str = ""
+    contact_fax: str = ""
+    blank_day: bool = Field(default=True, description="เว้นเลขวันที่ไว้ให้ลงตอนลงนาม (เช่น '      สิงหาคม ๒๕๖๘')")
+    is_default: bool = False
+
+
+def default_issuing_units() -> List["IssuingUnit"]:
+    """หน่วยออกหนังสือตั้งต้นของกองการกีฬา สำนักวัฒนธรรม กีฬา และการท่องเที่ยว"""
+    tel, fax = "๐ ๒๒๔๖ ๘๐๗๙", "๐ ๒๒๔๖ ๐๒๘๒"
+    return [
+        IssuingUnit(
+            key="sport-promotion",
+            label="กลุ่มงานส่งเสริมกีฬา",
+            dept_name=f"กองการกีฬา (กลุ่มงานส่งเสริมกีฬา โทร.{tel} โทรสาร {fax})",
+            doc_number_format="{gap}/{year}",
+            contact_dept="กองการกีฬา (กลุ่มงานส่งเสริมกีฬา)",
+            contact_tel=tel, contact_fax=fax, is_default=True,
+        ),
+        IssuingUnit(
+            key="sports-division",
+            label="กองการกีฬา",
+            dept_name=f"สำนักวัฒนธรรม กีฬา และการท่องเที่ยว (กองการกีฬา โทร.{tel} โทรสาร {fax})",
+            doc_number_format="กท 1205/{gap}",
+            contact_dept="กองการกีฬา",
+            contact_tel=tel, contact_fax=fax,
+        ),
+    ]
+
+
 class UserProfileSchema(BaseModel):
     """โปรไฟล์ข้อมูลหน่วยงานและผู้มีอำนาจลงนามของผู้ใช้งาน (User Organization Profile)"""
     dept_name: str = Field(
@@ -187,6 +241,10 @@ class UserProfileSchema(BaseModel):
     contact_tel: str = Field(
         default="๐ ๒๒๔๖ ๘๐๗๙",
         description="เบอร์โทรศัพท์ติดต่อ"
+    )
+    issuing_units: List[IssuingUnit] = Field(
+        default_factory=default_issuing_units,
+        description="หน่วยออกหนังสือที่เลือกได้ (ส่วนราชการ + รูปแบบเลขที่)",
     )
     contact_fax: str = Field(
         default="๐ ๒๒๔๖ ๐๒๘๒",

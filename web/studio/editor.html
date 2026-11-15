@@ -98,7 +98,12 @@
       <span class="font-medium text-slate-700 flex items-center gap-1"><i class="fa-regular fa-clipboard text-brand-600"></i><span>หัวข้อเสริม:</span></span>
       <div id="section-toggles" class="flex items-center gap-2 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs"></div>
       <span id="section-count" class="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium"></span>
-      <label class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+      <label id="unit-wrap" class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-600" title="เปลี่ยนหน่วยออกหนังสือ: ส่วนราชการ เลขที่ (เว้นเขียนมือ) วันที่ และผู้ประสาน">
+        <i class="fa-solid fa-sitemap text-brand-600"></i>
+        <span class="sr-only">หน่วยออกหนังสือ</span>
+        <select id="unit-select" class="border border-slate-200 rounded-md bg-white py-0.5 pl-2 pr-7 text-[11px] focus:ring-0"></select>
+      </label>
+      <label class="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
         <input id="toggle-thai-num" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5"> เลขไทย ๑๒๓
       </label>
     </div>

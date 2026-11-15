@@ -317,6 +317,23 @@
   });
   $('toggle-thai-num').addEventListener('change', (e) => commit(d => { d.use_thai_numerals = e.target.checked; }));
 
+  // ---------- หน่วยออกหนังสือ (บันทึกข้อความ) ----------
+  const UNIT_FIELDS = ['dept_name', 'doc_number', 'doc_date', 'contact_dept', 'contact_tel', 'contact_fax'];
+  api.units().then((units) => {
+    const current = entry.unitKey || units.find(u => u.is_default)?.key;
+    $('unit-select').innerHTML = units.map(u =>
+      `<option value="${esc(u.key)}" ${u.key === current ? 'selected' : ''}>${esc(u.label)}</option>`).join('');
+  }).catch(() => { $('unit-wrap').hidden = true; });
+  $('unit-select').addEventListener('change', async (e) => {
+    const key = e.target.value;
+    try {
+      const updated = await api.applyUnit(st.doc, key);
+      commit(d => { UNIT_FIELDS.forEach(f => { d[f] = updated[f]; }); });
+      entry.unitKey = key;
+      toast('เปลี่ยนส่วนราชการและเลขที่ตามหน่วยแล้ว');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
   // ---------- สถานะ / ผลตรวจ ----------
   async function runCheck() {
     try {
@@ -354,6 +371,7 @@
     $('checks-count').textContent = toThai(c.ph + n);
     $('btn-undo').disabled = !st.undo.length; $('btn-redo').disabled = !st.redo.length;
     $('toggle-thai-num').checked = !!d.use_thai_numerals;
+    $('unit-wrap').hidden = !isMemo();
     $('version-count').textContent = toThai(st.versions.length + 1);
     const words = [d.subject, d.paragraph_reason, d.paragraph_details, d.paragraph_purpose, d.memo_law].filter(Boolean).join(' ');
     $('footer-words').textContent = `ความยาว ${toThai(words.replace(/\s+/g, '').length)} ตัวอักษร`;

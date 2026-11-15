@@ -25,7 +25,9 @@
   const api = {
     profile: () => request('/studio/profile').then(r => r.json()),
     draft: (formData) => request('/studio/draft', { method: 'POST', body: formData }).then(r => r.json()),
-    blank: (docType) => postJSON('/studio/blank', { doc_type: docType }).then(r => r.json()),
+    blank: (docType, unitKey) => postJSON('/studio/blank', { doc_type: docType, unit_key: unitKey || null }).then(r => r.json()),
+    units: () => request('/studio/units').then(r => r.json()),
+    applyUnit: (doc, unitKey) => postJSON('/studio/apply-unit', { doc, unit_key: unitKey }).then(r => r.json()),
     check: (doc) => postJSON('/studio/check', doc).then(r => r.json()),
     refine: (text, command) => postJSON('/copilot/refine', { text, command }).then(r => r.json()),
     exportDocx: (doc) => postJSON('/export/docx', doc).then(r => r.blob()),

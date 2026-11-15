@@ -34,6 +34,9 @@ end $$;
 grant execute on function pg_temp.expect_error(text, text) to public;
 grant execute on function pg_temp.check(boolean, text) to public;
 
+insert into public.org_units (org_id, key, label, dept_name, doc_number_format, is_default) values
+    ('11111111-1111-1111-1111-111111111111', 'sport-promotion', 'กลุ่มงานส่งเสริมกีฬา', 'กองการกีฬา (กลุ่มงานส่งเสริมกีฬา)', '{gap}/{year}', true);
+
 -- ---------------------------------------------------------------- ผู้ใช้ A
 begin;
 set local role authenticated;
@@ -92,6 +95,10 @@ insert into storage.objects (bucket_id, name) values ('sources', '11111111-1111-
 select pg_temp.expect_error($$insert into storage.objects (bucket_id, name)
     values ('sources', '22222222-2222-2222-2222-222222222222/x.pdf')$$, 'อัปโหลดเข้าโฟลเดอร์หน่วยงานอื่น');
 
+-- หน่วยออกหนังสือ: drafter อ่านได้แต่เพิ่มไม่ได้ (admin เท่านั้น)
+select pg_temp.expect_error($$insert into public.org_units (org_id, key, label, dept_name)
+    values ('11111111-1111-1111-1111-111111111111', 'x-unit', 'X', 'X')$$, 'drafter เพิ่มหน่วยออกหนังสือ');
+
 select pg_temp.check((select ok from public.verify_audit_chain()), 'audit chain ถูกต้อง');
 select pg_temp.check((select count(*) from public.audit_log) >= 10, 'มี audit อัตโนมัติ');
 commit;
@@ -105,6 +112,7 @@ select pg_temp.check((select count(*) from public.outgoing_register) = 0, 'B ม
 select pg_temp.check((select count(*) from public.audit_log) = 0, 'B มองไม่เห็น audit ของ ก');
 select pg_temp.check((select count(*) from storage.objects) = 0, 'B มองไม่เห็นไฟล์ของ ก');
 select pg_temp.check((public.reserve_outgoing_number('ABC/', 'ของ ข')).doc_number = 'ABC/1', 'B มีตัวนับของตัวเอง');
+select pg_temp.check((select count(*) from public.org_units) = 0, 'B มองไม่เห็นหน่วยของ ก');
 select pg_temp.expect_error($$select public.save_document_version('33333333-3333-3333-3333-333333333333', '{}')$$,
     'B บันทึกเวอร์ชันเอกสารของ ก');
 commit;

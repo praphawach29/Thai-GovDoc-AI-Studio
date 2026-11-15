@@ -1,12 +1,13 @@
 """API ของหน้าเว็บ GovDoc Studio (หน้าแรก + หน้าแก้ไขเอกสาร)"""
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from core.models import DocType, GovDocumentSchema, SecretLevel, UrgencyLevel
+from core.issuing_units import apply_issuing_unit, pick_unit
+from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, UrgencyLevel
 from core.profile_manager import get_user_profile
 from core.studio import (
     StudioCheck,
@@ -33,6 +34,53 @@ class StudioDraftResponse(StudioDraftResult):
 
 class BlankRequest(BaseModel):
     doc_type: DocType = DocType.INTERNAL
+    unit_key: Optional[str] = None
+
+
+class ApplyUnitRequest(BaseModel):
+    doc: GovDocumentSchema
+    unit_key: Optional[str] = None
+
+
+_UNIT_COLUMNS = ("key,label,dept_name,doc_number_format,contact_dept,contact_tel,contact_fax,"
+                 "blank_day,is_default")
+
+
+def load_units(user: Optional[CurrentUser], settings: Settings) -> List[IssuingUnit]:
+    """หน่วยออกหนังสือ: โหมด Supabase อ่านตาราง org_units ของหน่วยงาน, โหมดเครื่องเดียวอ่านโปรไฟล์"""
+    if isinstance(user, CurrentUser):
+        rows = get_supabase(user, settings).select(
+            "org_units", {"select": _UNIT_COLUMNS, "order": "sort_order.asc,label.asc"}
+        )
+        if rows:
+            return [IssuingUnit(**row) for row in rows]
+    return get_user_profile().issuing_units
+
+
+def _apply_unit(doc: GovDocumentSchema, unit_key: Optional[str], user, settings) -> GovDocumentSchema:
+    unit = pick_unit(load_units(user, settings), unit_key)
+    if unit_key and (unit is None or unit.key != unit_key):
+        raise HTTPException(status_code=404, detail="ไม่พบหน่วยออกหนังสือนี้")
+    return apply_issuing_unit(doc, unit) if unit else doc
+
+
+@router.get("/api/v1/studio/units")
+def studio_units(
+    user: Optional[CurrentUser] = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
+    """หน่วยออกหนังสือที่เลือกได้ (ส่วนราชการ + รูปแบบเลขที่)"""
+    return [u.model_dump() for u in load_units(user, settings)]
+
+
+@router.post("/api/v1/studio/apply-unit", response_model=GovDocumentSchema)
+def studio_apply_unit(
+    req: ApplyUnitRequest,
+    user: Optional[CurrentUser] = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
+    """เปลี่ยนหน่วยออกหนังสือของเอกสาร: ส่วนราชการ, เลขที่ (เว้นเขียนมือ), วันที่, ผู้ประสาน"""
+    return _apply_unit(req.doc, req.unit_key, user, settings)
 
 
 @router.get("/api/v1/studio/profile")
@@ -50,6 +98,7 @@ async def studio_draft(
     file: Optional[UploadFile] = File(None),
     source_path: Optional[str] = Form(None),     # โหมด Supabase: ไฟล์ที่อัปโหลดตรงเข้า Storage แล้ว
     source_name: Optional[str] = Form(None),
+    unit_key: Optional[str] = Form(None),        # หน่วยออกหนังสือ (ไม่ระบุ = หน่วยตั้งต้น)
     settings: Settings = Depends(get_settings),
     user: Optional[CurrentUser] = Depends(get_current_user),
 ):
@@ -95,6 +144,9 @@ async def studio_draft(
             saved_path.unlink(missing_ok=True)
 
     response = StudioDraftResponse(**result.model_dump())
+    if response.document is not None and response.document.doc_type == DocType.INTERNAL:
+        # บันทึกข้อความ: ส่วนราชการ/เลขที่/วันที่ ตามหน่วยออกหนังสือที่เลือก
+        response.document = _apply_unit(response.document, unit_key, user, settings)
     display_name = Path(file.filename).name if has_file else (Path(stored[1]).name if stored else None)
     if response.context is not None and display_name:
         response.context.source_filename = display_name
@@ -107,9 +159,16 @@ async def studio_draft(
 
 
 @router.post("/api/v1/studio/blank", response_model=GovDocumentSchema)
-def studio_blank(req: BlankRequest):
+def studio_blank(
+    req: BlankRequest,
+    user: Optional[CurrentUser] = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
     """เอกสารเปล่า (บันทึกข้อความ / หนังสือภายนอก) พร้อม placeholder"""
-    return normalize_for_editor(create_blank_document(req.doc_type))
+    doc = normalize_for_editor(create_blank_document(req.doc_type))
+    if req.doc_type == DocType.INTERNAL:
+        doc = _apply_unit(doc, req.unit_key, user, settings)
+    return doc
 
 
 @router.get("/api/v1/studio/templates")
