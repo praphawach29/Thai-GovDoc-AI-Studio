@@ -161,9 +161,9 @@
     renderRecent();
     if (!showArchived) renderPending(recent);
     $('unit').innerHTML = units.map(u =>
-      `<option value="${esc(u.key)}" ${u.is_default ? 'selected' : ''}>หน่วย: ${esc(u.label)}</option>`).join('');
+      `<option value="${esc(u.key)}" ${u.is_default ? 'selected' : ''}>${esc(u.label)}</option>`).join('');
     fitSelect($('unit'));
-  }).catch(() => { $('unit').innerHTML = '<option value="">หน่วย: ตั้งต้น</option>'; fitSelect($('unit')); });
+  }).catch(() => { $('unit').innerHTML = '<option value="">หน่วยตั้งต้น</option>'; fitSelect($('unit')); });
 
   // ---------- ไฟล์แนบ ----------
   const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
@@ -226,8 +226,8 @@
   function renderClassifyBadges() {
     const u = URGENCY[state.urgency], s = SECRET[state.secret];
     $('classify-badges').innerHTML =
-      `<span class="px-1 rounded text-[10px] font-semibold border leading-tight ${u.cls}">${u.label}</span>` +
-      `<span class="px-1 rounded text-[10px] font-medium border leading-tight ${s.cls}">${state.secret === 'normal' ? 'ไม่มีชั้นลับ' : s.label}</span>`;
+      `<span class="px-1.5 py-0.5 rounded text-xs font-semibold border leading-tight ${u.cls}">${u.label}</span>` +
+      `<span class="px-1.5 py-0.5 rounded text-xs font-medium border leading-tight ${s.cls}">${state.secret === 'normal' ? 'ไม่มีชั้นลับ' : s.label}</span>`;
   }
   renderClassifyBadges();
 
@@ -341,7 +341,11 @@
     sel.style.width = Math.ceil(measurer.getBoundingClientRect().width) + 46 + 'px';   // + ระยะขวาและลูกศรของ select
   }
   ['doc-type', 'unit'].forEach((id) => $(id).addEventListener('change', () => fitSelect($(id))));
-  document.fonts?.ready.then(() => { fitSelect($('doc-type')); fitSelect($('unit')); });
+  // วัดใหม่เมื่อฟอนต์เว็บโหลดเสร็จ (วัดก่อนฟอนต์มาจะได้ความกว้างของฟอนต์สำรอง ข้อความถูกตัด)
+  const refitSelects = () => { fitSelect($('doc-type')); fitSelect($('unit')); };
+  document.fonts?.ready.then(refitSelects);
+  document.fonts?.addEventListener?.('loadingdone', refitSelects);
+  window.addEventListener('load', refitSelects);
   fitSelect($('doc-type'));
 
   // ---------- ตัวอย่างคำสั่ง (ในช่องพิมพ์ แสดงเฉพาะตอนยังว่าง) ----------
@@ -354,7 +358,7 @@
       text: 'ร่างหนังสือภายนอกตอบสมาคมกีฬา แจ้งอนุญาตให้ใช้ลานกีฬากลาง ในวันที่ ๑๕ มกราคม ๒๕๗๐ เวลา ๐๘.๐๐ – ๑๖.๐๐ น. โดยให้ประสานเจ้าหน้าที่สนามล่วงหน้า' },
   ];
   $('examples').innerHTML = EXAMPLES.map((x, i) => `
-    <button type="button" data-example="${i}" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 text-[11px] text-slate-600 hover:text-emerald-800 transition">
+    <button type="button" data-example="${i}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 text-xs text-slate-600 hover:text-emerald-800 transition">
       <i class="fa-regular ${x.attach ? 'fa-file-lines' : 'fa-lightbulb'} text-emerald-600"></i>${esc(x.label)}</button>`).join('');
   $('examples').addEventListener('click', (e) => {
     const b = e.target.closest('[data-example]');
