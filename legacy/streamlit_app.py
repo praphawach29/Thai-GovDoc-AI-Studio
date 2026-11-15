@@ -2308,7 +2308,7 @@ def render_left_pane():
                 )
                 if not allow_cloud:
                     st.warning("โหมดข้อมูลอ่อนไหว: ระบบจะไม่ส่งเนื้อหาไปยัง AI ภายนอก และจะใช้ Rule-based/local OCR")
-                ai_prov = st.selectbox("AI Engine:", ["Gemini 2.5 Flash (Google)", "OpenAI GPT-4o-mini"], index=0)
+                ai_prov = st.selectbox("AI Engine:", ["Gemini 3.8 Flash (Google)", "OpenAI GPT-4o-mini"], index=0)
                 ai_key_input = st.text_input("API Key (เว้นว่างเพื่อใช้ Local OCR / Rule-based)", value=st.session_state.get("ai_api_key", ""), type="password")
                 if ai_key_input:
                     st.session_state["ai_api_key"] = ai_key_input
@@ -2362,7 +2362,8 @@ def render_left_pane():
                             )
                             draft_author = "Special template (local)"
                         elif use_cloud:
-                            draft = draft_from_context_llm(ctx, doc_type=target_doc_type, intent=intent_choice[0], provider=prov, api_key=key, secret=secret_value, allow_cloud=allow_cloud_now)
+                            m_name = os.getenv("GEMINI_MODEL") or "gemini-3.8-flash" if prov == "gemini" else None
+                            draft = draft_from_context_llm(ctx, doc_type=target_doc_type, intent=intent_choice[0], provider=prov, model_name=m_name, api_key=key, secret=secret_value, allow_cloud=allow_cloud_now)
                             draft_author = f"AI Studio ({prov.upper()})"
                         else:
                             draft = draft_from_context_rule_based(ctx, doc_type=target_doc_type, intent=intent_choice[0])
@@ -3296,7 +3297,23 @@ def render_welcome_hero():
             if not ctx.extraction_failed:
                 progress.update(label="กำลังเตรียมร่างให้ตรวจทาน...", state="running")
                 target_type = cls.doc_type
-                draft = draft_from_context_rule_based(ctx, doc_type=target_type, intent=cls.intent)
+                key = st.session_state.get("ai_api_key") or os.getenv("GEMINI_API_KEY")
+                allow_cloud_now = st.session_state.get("allow_cloud_ai", True)
+                use_cloud = bool(key) and bool(allow_cloud_now) and cloud_ai_allowed(hero_secret)
+                if use_cloud:
+                    m_name = os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
+                    draft = draft_from_context_llm(
+                        ctx,
+                        doc_type=target_type,
+                        intent=cls.intent,
+                        provider="gemini",
+                        model_name=m_name,
+                        api_key=key,
+                        secret=hero_secret,
+                        allow_cloud=allow_cloud_now,
+                    )
+                else:
+                    draft = draft_from_context_rule_based(ctx, doc_type=target_type, intent=cls.intent)
                 draft.secret = hero_secret
                 st.session_state.doc_data = draft
                 st.session_state.initial_ai_draft = draft.model_copy(deep=True)
@@ -3316,7 +3333,23 @@ def render_welcome_hero():
             cls = classify_source_document(ctx)
             st.session_state.classification = cls
             st.session_state.classification_confirmed = True
-            draft = draft_from_context_rule_based(ctx, doc_type=cls.doc_type, intent=cls.intent)
+            key = st.session_state.get("ai_api_key") or os.getenv("GEMINI_API_KEY")
+            allow_cloud_now = st.session_state.get("allow_cloud_ai", True)
+            use_cloud = bool(key) and bool(allow_cloud_now) and cloud_ai_allowed(hero_secret)
+            if use_cloud:
+                m_name = os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
+                draft = draft_from_context_llm(
+                    ctx,
+                    doc_type=cls.doc_type,
+                    intent=cls.intent,
+                    provider="gemini",
+                    model_name=m_name,
+                    api_key=key,
+                    secret=hero_secret,
+                    allow_cloud=allow_cloud_now,
+                )
+            else:
+                draft = draft_from_context_rule_based(ctx, doc_type=cls.doc_type, intent=cls.intent)
             draft.secret = hero_secret
             clean_p = hero_prompt.strip().replace("\n", " ")
             draft.subject = clean_p[:60] if len(clean_p) <= 60 else clean_p[:60] + "..."

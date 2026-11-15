@@ -4,14 +4,21 @@ profile_manager.py — ระบบจัดการโปรไฟล์หน
 บันทึกและโหลดค่าการตั้งค่าหน่วยงานอย่างถาวรจาก data/user_profile.json
 """
 
+import os
 import json
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 from core.models import UserProfileSchema, MemoHierarchyLevel
 
-
-PROFILE_FILE = Path(__file__).resolve().parent.parent / "data" / "user_profile.json"
+_ROOT_DIR = Path(__file__).resolve().parent.parent
+if os.environ.get("VERCEL") or not os.access(_ROOT_DIR, os.W_OK):
+    PROFILE_FILE = Path(tempfile.gettempdir()) / "data" / "user_profile.json"
+else:
+    PROFILE_FILE = _ROOT_DIR / "data" / "user_profile.json"
+# ไฟล์ที่มากับโค้ด: บนคลาวด์ (เขียนได้เฉพาะ /tmp) ใช้อ่านเมื่อยังไม่มีสำเนาที่แก้ไว้
+BUNDLED_PROFILE_FILE = _ROOT_DIR / "data" / "user_profile.json"
 
 
 def get_default_profile() -> UserProfileSchema:
@@ -37,6 +44,11 @@ def get_user_profile() -> UserProfileSchema:
     โหลดโปรไฟล์หน่วยงานของผู้ใช้จาก data/user_profile.json
     หากยังไม่มีไฟล์ จะบันทึกค่าเริ่มต้นแล้วส่งคืน
     """
+    if not PROFILE_FILE.exists() and PROFILE_FILE != BUNDLED_PROFILE_FILE and BUNDLED_PROFILE_FILE.exists():
+        try:
+            return UserProfileSchema(**json.loads(BUNDLED_PROFILE_FILE.read_text(encoding="utf-8")))
+        except Exception as e:
+            print(f"Error loading bundled profile: {e}, using default")
     if not PROFILE_FILE.exists():
         default_prof = get_default_profile()
         save_user_profile(default_prof)
@@ -54,11 +66,14 @@ def save_user_profile(profile: UserProfileSchema) -> None:
     """
     บันทึกโปรไฟล์หน่วยงานลงไฟล์ data/user_profile.json
     """
-    PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PROFILE_FILE.write_text(
-        profile.model_dump_json(indent=2),
-        encoding="utf-8"
-    )
+    try:
+        PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PROFILE_FILE.write_text(
+            profile.model_dump_json(indent=2),
+            encoding="utf-8"
+        )
+    except OSError:
+        pass
 
 
 def reset_to_default_profile() -> UserProfileSchema:

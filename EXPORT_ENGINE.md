@@ -20,12 +20,10 @@
 #set page(
   paper: "a4",
   margin: (top: 2.5cm, bottom: 2.0cm, left: 3.0cm, right: 2.0cm),
-  header: locate(loc => {
-    // แสดงชั้นความลับกึ่งกลางหัวกระดาษ (ถ้ามี)
-    if secret != "normal" {
-      align(center)[#text(size: 16pt, weight: "bold", fill: red)[#secret_text]]
-    }
-  })
+  // แสดงชั้นความลับกึ่งกลางหัวกระดาษ (ถ้ามี) — ไม่ต้องใช้ locate() ซึ่งถูกถอดออกใน Typst รุ่นใหม่
+  header: if secret != "normal" {
+    align(center)[#text(size: 16pt, weight: "bold", fill: red)[#secret_text]]
+  },
 )
 
 #set text(

@@ -75,8 +75,9 @@ def extract_ocr_gemini(pil_img: Image.Image, api_key: Optional[str] = None) -> s
             "โดยคงโครงสร้างข้อความ ส่วนราชการ, ที่, วันที่, เรื่อง, เรียน, อ้างถึง, สิ่งที่ส่งมาด้วย, "
             "เนื้อหาทุกย่อหน้า, รายการข้อขอความอนุเคราะห์, และบันทึกข้อความสั่งการ/เกษียนหนังสือ/ตรายางรับหนังสือทั้งหมด"
         )
+        gemini_model = os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
         res = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=gemini_model,
             contents=[pil_img, prompt]
         )
         if res and res.text:

@@ -189,7 +189,7 @@ def test_gemini_request_shape(monkeypatch):
 
     monkeypatch.setattr(genai, "Client", FakeClient)
     assert llm_drafter._call_gemini("prompt", CFG, 15) == CONTENT
-    assert captured["model"] == "gemini-2.5-flash" and captured["timeout_ms"] == 15000
+    assert captured["model"] == "gemini-3.8-flash" and captured["timeout_ms"] == 15000
     assert captured["config"].response_schema is DraftContent
 
 
@@ -470,3 +470,13 @@ def test_ai_order_setting(monkeypatch):
     assert Settings().ai_order == ("claude", "gemini")
     monkeypatch.setenv("GOVDOC_AI_ORDER", "openai")
     assert Settings().ai_order == ("gemini", "claude")               # ค่าผิดใช้ค่าเริ่มต้น
+
+
+def test_gemini_model_setting_accepts_master_name(monkeypatch):
+    from server.settings import Settings
+
+    assert Settings().gemini_model == "gemini-3.8-flash"
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-x-flash")              # ชื่อที่ branch master ใช้
+    assert Settings().gemini_model == "gemini-x-flash"
+    monkeypatch.setenv("GOVDOC_GEMINI_MODEL", "gemini-y-flash")       # ชื่อหลักมาก่อน
+    assert Settings().gemini_model == "gemini-y-flash"

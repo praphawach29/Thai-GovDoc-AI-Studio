@@ -30,3 +30,6 @@ ui_state*.png
 # Test/export artifacts
 pytest-of-*/
 /tmp*.docx
+
+.vercel
+.env*

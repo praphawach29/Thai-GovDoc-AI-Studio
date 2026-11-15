@@ -74,7 +74,8 @@ class Settings:
     gemini_api_key: str = field(default_factory=lambda: _first_env(("GEMINI_API_KEY", "GOOGLE_API_KEY")))
     claude_model: str = field(default_factory=lambda: os.environ.get("GOVDOC_CLAUDE_MODEL", "claude-opus-5-5").strip())
     claude_effort: str = field(default_factory=lambda: os.environ.get("GOVDOC_CLAUDE_EFFORT", "medium").strip())
-    gemini_model: str = field(default_factory=lambda: os.environ.get("GOVDOC_GEMINI_MODEL", "gemini-2.5-flash").strip())
+    # GEMINI_MODEL = ชื่อที่ branch master ใช้ รับไว้ด้วย
+    gemini_model: str = field(default_factory=lambda: _first_env(("GOVDOC_GEMINI_MODEL", "GEMINI_MODEL")) or "gemini-3.8-flash")
     # ลำดับผู้ให้บริการ AI เช่น "gemini,claude" (ค่าเริ่มต้น: Gemini ก่อนเพื่อประหยัด) หรือ "claude,gemini"
     ai_order: tuple = field(default_factory=lambda: tuple(
         n for n in _split_csv(os.environ.get("GOVDOC_AI_ORDER", "gemini,claude").lower()) if n in ("gemini", "claude")

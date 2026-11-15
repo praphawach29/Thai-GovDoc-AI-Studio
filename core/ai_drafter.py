@@ -341,7 +341,7 @@ def draft_from_context_llm(ctx: SourceDocumentContext,
         try:
             from google import genai
             client = genai.Client(api_key=key)
-            m = model_name or "gemini-2.5-flash"
+            m = model_name or os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
             prompt = _build_llm_prompt(ctx, doc_type, intent)
             res = client.models.generate_content(
                 model=m,

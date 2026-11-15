@@ -57,7 +57,7 @@ class LLMConfig:
     gemini_api_key: str = ""
     claude_model: str = "claude-opus-5-5"
     claude_effort: str = "medium"
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     # เวลาที่ให้ AI ร่าง (วินาที) — คำขอทั้งหมด (อ่านไฟล์ + ร่าง) ต้องน้อยกว่า maxDuration 120 วินาทีใน vercel.json
     total_timeout_s: float = 75.0
     claude_timeout_s: float = 50.0

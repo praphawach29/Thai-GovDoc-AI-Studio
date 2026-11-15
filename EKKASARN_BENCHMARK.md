@@ -96,7 +96,7 @@ This confirms the practical recipe for Word fidelity: embed the font, use `thaiD
 - `tests/test_step0_grounding.py` + `tests/test_step0_security.py`: 12 tests for no invented facts/laws and fail-closed secret/allow_cloud enforcement.
 - `tests/test_step1_intake.py`: five tests for intake questions, entity extraction/unclear spans, and the JSON legal library.
 
-Test suite after Sprint 1–13: **164 tests collected — 159 passed, 5 skipped, 0 failed** (five environment-dependent browser/OCR tests skip under the current sandbox).
+Test suite after Sprint 1–13: **172 tests collected — 167 passed, 5 skipped, 0 failed** (re-run 15 Nov 2026) (five environment-dependent browser/OCR tests skip under the current sandbox).
 
 ## Recommended application sequence
 

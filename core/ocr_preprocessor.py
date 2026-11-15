@@ -31,6 +31,9 @@ def deskew_image(image_cv: np.ndarray) -> Tuple[np.ndarray, float]:
     ตรวจสอบและปรับมุมเอียงของเอกสารสแกนราชการให้ตั้งตรง (Deskewing)
     ใช้วิธี Hough Line Transform และ MinAreaRect
     """
+    if cv2 is None or image_cv is None:
+        return image_cv, 0.0
+
     if len(image_cv.shape) == 3:
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
     else:
@@ -71,6 +74,9 @@ def enhance_document_contrast(image_cv: np.ndarray) -> np.ndarray:
     ปรับปรุง Contrast และลดสัญญาณรบกวนสำหรับเอกสารสแกน/ถ่ายเอกสาร (CLAHE)
     ช่วยให้อ่านตัวหนังสือไทย TH Sarabun ที่มัวหรือบางให้คมชัดขึ้น
     """
+    if cv2 is None or image_cv is None:
+        return image_cv
+
     if len(image_cv.shape) == 3:
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
     else:
@@ -87,6 +93,9 @@ def enhance_document_contrast(image_cv: np.ndarray) -> np.ndarray:
 
 def binarize_adaptive(image_cv: np.ndarray) -> np.ndarray:
     """แปลงภาพเป็นขาวดำแบบ Adaptive Thresholding เพื่อแยกตัวอักษรออกจากรอยประทับหรือพื้นหลัง"""
+    if cv2 is None or image_cv is None:
+        return image_cv
+
     if len(image_cv.shape) == 3:
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
     else:
