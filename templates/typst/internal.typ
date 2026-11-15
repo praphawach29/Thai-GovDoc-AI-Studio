@@ -50,7 +50,7 @@
 ) = [
   #set page(
     paper: "a4",
-    margin: (top: 2.0cm, bottom: 2.0cm, left: 3.0cm, right: 2.0cm),
+    margin: (top: 1.5cm, bottom: 2.0cm, left: 3.0cm, right: 2.0cm),
     header: context {
       let n = counter(page).get().first()
       if n > 1 {

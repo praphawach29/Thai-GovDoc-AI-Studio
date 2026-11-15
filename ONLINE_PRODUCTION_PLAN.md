@@ -245,7 +245,7 @@
 - **Staging:** เหมือน production ขนาดย่อ, ข้อมูล anonymize
 - **Production:** HA, backup, monitoring
 - Pipeline:
-  1. Lint + unit tests (135 tests)
+  1. Lint + unit tests (172 tests)
   2. Build Docker image (API, worker, web)
   3. Scan dependency/image (Trivy)
   4. Deploy staging + smoke test

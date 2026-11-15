@@ -101,16 +101,15 @@
 │   └── legal_references.json # คลังข้อกฎหมาย/ระเบียบที่ผู้ใช้เพิ่มและยืนยันแหล่ง
 │
 ├── templates/              # แม่แบบเอกสาร
-│   ├── typst/              # external.typ, internal.typ
-│   └── docx/               # default_template.docx
+│   └── typst/              # external.typ, internal.typ (Word สร้างจากโค้ดใน core/word_exporter.py + layout_profile.py)
 │
 ├── assets/                 # ทรัพยากรภาพและฟอนต์
 │   ├── garuda.svg          # ตราครุฑเวกเตอร์มาตรฐาน
 │   └── fonts/              # TH Sarabun New / IT9 / PSK (ครบ 4 น้ำหนัก)
 │
-├── tests/                  # ชุดทดสอบ 164 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
+├── tests/                  # ชุดทดสอบ 172 รายการ (0 failed; ข้ามเทส browser/OCR ตามสภาพแวดล้อม)
 └── web/                    # เว็บแอปพลิเคชัน (Streamlit UI Workspace)
-    └── app.py              # หน้าจอหลัก 3 แท็บ (ร่างหนังสือ, สมุดทะเบียน, ตั้งค่าหน่วยงาน)
+    └── app.py              # หน้าจอหลัก 5 เมนู (ร่างหนังสือ, คลังแม่แบบ, คลังกฎหมาย, สมุดทะเบียน, ตั้งค่า)
 ```
 
 ---
@@ -142,7 +141,7 @@
 
 ## 🏆 สถานะการพัฒนาและการทดสอบ (Development & Testing Status)
 
-- **สถานะชุดทดสอบ:** **164 tests — ผ่าน 159 / ข้าม 5 / ล้มเหลว 0**
+- **สถานะชุดทดสอบ:** **172 tests — ผ่าน 167 / ข้าม 5 / ล้มเหลว 0** (รันล่าสุด ๑๕ พ.ย. ๒๕๖๙)
   - เทส PDF (headless browser) และ OCR จะ **ข้ามอัตโนมัติ** เมื่อเครื่องไม่มี browser/API key/Docker โดยใช้ marker กลางใน `tests/conftest.py` (ไม่ถูกนับเป็น fail)
 - **ระยะการพัฒนาที่แล้วเสร็จ:**
   - ✅ **Phase 1:** Core Foundation, ZWSP Word Exporter & Typst Exporter
@@ -166,6 +165,7 @@
 - ✅ **Phase 8.11 (Step 1):** Intake — สกัด entity พร้อมหลักฐาน, ถามข้อมูลที่ขาด, เลือกหัวข้อ กฎหมาย/อ้างถึง/แนบ, คลังข้อกฎหมาย JSON + UI ยืนยันแหล่ง
 - ✅ **Phase 8.12 (Step 2):** Source Verification — ตรวจร่างเทียบต้นเรื่อง (ชื่อ/หน่วยงาน/วันที่/เลขที่/จำนวนเงิน/กฎหมาย) พร้อมหลักฐานและสถานะ พบ/ไม่พบ/ต้องยืนยัน
 - ✅ **Phase 8.13 (Step 3):** Text Checks — ตรวจคำสะกดและความสอดคล้อง แยก critical/warning/info โดยไม่แก้ข้อความอัตโนมัติ
+- *หมายเหตุ:* ชื่อไฟล์เทส `tests/test_phaseN_*.py` เป็นลำดับรอบพัฒนา ไม่ตรงกับเลข Phase ใน roadmap (เช่น `test_phase9`–`test_phase15` คืองานใน Phase 8.1–8.9 ส่วน `test_step0`–`test_step3` คือ Phase 8.10–8.13)
 - **แผนงานระยะถัดไป (Roadmap):**
   - 🚩 **Phase 9:** Curated Legal Knowledge Base (คลังข้อกฎหมายและระเบียบมาตรฐาน)
   - 🚩 **Phase 10:** Multi-Document Review, Hierarchical Approval & E-Office Integration
