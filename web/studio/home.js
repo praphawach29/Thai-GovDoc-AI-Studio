@@ -132,10 +132,34 @@
   });
   auth.ready.then(loadRecent);
 
+  // ---------- งานค้าง (หน้าหลัก) ----------
+  // จากรายการงานล่าสุด: ยังมีจุดต้องแก้ หรือยังไม่ได้ส่งออก Word/PDF — ฉบับที่เก็บไว้ไม่นับ
+  const isPending = (e) => e.todo > 0 || e.editStatus !== 'saved';
+  function renderPending(list) {
+    if (!list) return;                                    // กำลังดู "ที่เก็บไว้": คงกล่องเดิม
+    const items = list.filter(isPending);
+    $('pending').hidden = !items.length;
+    $('pending-count').textContent = toThai(items.length) + ' ฉบับ';
+    $('pending-list').innerHTML = items.slice(0, 4).map(e => `
+      <li><a href="editor.html?id=${encodeURIComponent(e.id)}" data-pending="${esc(e.id)}" class="h-full flex flex-col gap-1.5 p-3 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm transition text-left">
+        <span class="text-xs font-medium text-slate-800 leading-snug line-clamp-2" title="${esc(e.title)}">${esc(e.title || 'ไม่มีชื่อเรื่อง')}</span>
+        <span class="mt-auto flex items-center gap-1.5 text-[11px] text-slate-500 min-w-0">
+          ${e.todo > 0
+            ? `<span class="shrink-0 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-medium">ต้องแก้ ${toThai(e.todo)} จุด</span>`
+            : '<span class="shrink-0 px-1.5 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600">ยังไม่ส่งออก</span>'}
+          <span class="truncate">${[TYPE_SHORT[e.docType], e.unitKey && unitLabels[e.unitKey]].filter(Boolean).map(esc).join(' · ')}</span>
+          <span class="ml-auto shrink-0 text-slate-400">${esc(relTime(e.updated))}</span>
+        </span>
+      </a></li>`).join('')
+      + (items.length > 4 ? `<li class="sm:col-span-2 text-[11px] text-slate-400 px-1">และอีก ${toThai(items.length - 4)} ฉบับในรายการงานล่าสุดด้านซ้าย</li>` : '');
+  }
+  window.addEventListener('govdoc:recent', (ev) => renderPending(ev.detail));
+
   // ---------- หน่วยออกหนังสือ (ส่วนราชการ + รูปแบบเลขที่ของบันทึกข้อความ) ----------
   auth.ready.then(() => api.units()).then((units) => {
     units.forEach((u) => { unitLabels[u.key] = u.label; });
     renderRecent();
+    if (!showArchived) renderPending(recent);
     $('unit').innerHTML = units.map(u =>
       `<option value="${esc(u.key)}" ${u.is_default ? 'selected' : ''}>หน่วย: ${esc(u.label)}</option>`).join('');
   }).catch(() => { $('unit').innerHTML = '<option value="">หน่วย: ตั้งต้น</option>'; });

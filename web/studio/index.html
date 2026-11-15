@@ -178,6 +178,15 @@
       </button>
     </section>
 
+    <!-- งานค้าง: เอกสารที่ยังมีจุดต้องแก้ หรือยังไม่ได้ส่งออก -->
+    <section id="pending" class="w-full mb-8" aria-labelledby="pending-title" hidden>
+      <div class="flex items-center justify-between mb-2.5 px-1">
+        <h2 id="pending-title" class="text-sm font-semibold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-list-check text-amber-600"></i><span>งานค้าง</span><span id="pending-count" class="text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"></span></h2>
+        <span class="text-[11px] text-slate-400">ยังมีจุดต้องแก้ หรือยังไม่ได้ส่งออก</span>
+      </div>
+      <ul id="pending-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></ul>
+    </section>
+
     <footer class="text-center text-xs text-slate-400 flex items-center justify-center gap-1.5 font-body">
       <i class="fa-solid fa-circle-info text-[11px] text-slate-300"></i>
       <span>ระบบไม่สร้างเลขที่หนังสือ วันที่ หรือข้อกฎหมายเอง — จุดที่ขาดจะแสดงเป็น <span class="ph-chip !text-[11px]">[✏️ ระบุ...]</span> ให้กรอก</span>
