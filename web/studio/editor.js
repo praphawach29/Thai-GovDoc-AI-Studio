@@ -504,6 +504,61 @@
     if (st.editOn) setTimeout(() => el.focus(), 250);
   }
 
+  // ---------- ฉบับจริง (ไฟล์ Word/PDF ที่แก้เสร็จแล้วอัปโหลดกลับ) ----------
+  const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  const plainText = (s) => String(s || '').replace(/[​\s]+/g, '');
+  const fmtTime = (iso) => { try { return num(new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })); } catch (_) { return iso; } };
+  const finalsEnabled = (await window.GovDoc.auth.serverMode()) === true;
+  async function loadFinals() {
+    if (!finalsEnabled) {
+      $('finals-local').classList.remove('hidden');
+      $('finals-form').querySelectorAll('input,button').forEach(el => { el.disabled = true; });
+      return;
+    }
+    try {
+      const rows = await api.finals.list(entry.id);
+      $('finals-count').textContent = toThai(rows.length);
+      $('finals-list').innerHTML = rows.length ? rows.map((r) => {
+        const subjectDiffers = r.subject && plainText(r.subject) !== plainText(st.doc.subject);
+        return `<li class="bg-white border border-slate-200 rounded-xl p-3 space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium shrink-0">ฉบับที่ ${toThai(r.revision)}</span>
+            <span class="truncate font-medium text-slate-800" title="${esc(r.filename)}">${esc(r.filename)}</span>
+            <button type="button" data-final="${esc(r.id)}" class="ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-300 hover:bg-slate-50 text-slate-700"><i class="fa-solid fa-download"></i>ดาวน์โหลด</button>
+          </div>
+          <div class="text-slate-500">${fmtTime(r.created_at)} · ${fmtSize(r.size_bytes)} · SHA-256 <code title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</code></div>
+          ${r.doc_number || r.subject ? `<div class="text-slate-600">${r.doc_number ? `ที่ ${esc(r.doc_number)}` : ''}${r.doc_number && r.subject ? ' · ' : ''}${r.subject ? `เรื่อง ${esc(r.subject)}` : ''}</div>` : ''}
+          ${subjectDiffers ? '<div class="text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> เรื่องในไฟล์ไม่ตรงกับร่างในระบบ — ตรวจว่าอัปโหลดถูกไฟล์</div>' : ''}
+          ${r.note ? `<div class="text-slate-600">หมายเหตุ: ${esc(r.note)}</div>` : ''}
+        </li>`;
+      }).join('') : '<li class="text-slate-400 text-center py-4">ยังไม่มีฉบับจริง</li>';
+    } catch (err) { $('finals-list').innerHTML = `<li class="text-rose-600">${esc(err.message)}</li>`; }
+  }
+  $('finals-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = $('finals-file').files[0];
+    if (!file) { toast('เลือกไฟล์ Word หรือ PDF ก่อน', 'warn'); return; }
+    if (!/\.(docx|pdf)$/i.test(file.name)) { toast('รับเฉพาะไฟล์ .docx หรือ .pdf (ไฟล์ .doc รุ่นเก่าให้บันทึกเป็น .docx ก่อน)', 'error'); return; }
+    if (file.size > 50 * 1024 * 1024) { toast('ไฟล์ใหญ่เกิน 50 MB', 'error'); return; }
+    const btn = $('finals-submit'), html = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>กำลังอัปโหลด...</span>';
+    try {
+      await persist();
+      const row = await api.finals.upload(entry.id, file, $('finals-note').value.trim());
+      $('finals-file').value = ''; $('finals-note').value = '';
+      toast(`เก็บเป็นฉบับจริงฉบับที่ ${toThai(row.revision)} แล้ว`);
+      loadFinals();
+    } catch (err) { toast('อัปโหลดไม่สำเร็จ: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = html; }
+  });
+  $('finals-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-final]');
+    if (!b) return;
+    try { location.href = await api.finals.downloadUrl(entry.id, b.dataset.final); }
+    catch (err) { toast('ดาวน์โหลดไม่สำเร็จ: ' + err.message, 'error'); }
+  });
+  loadFinals();
+
   // ---------- แท็บซ้าย ----------
   function selectTab(name) {
     document.querySelectorAll('[data-tab]').forEach(t => {
@@ -511,7 +566,7 @@
       t.setAttribute('aria-selected', String(on));
       t.className = 'pb-2 border-b-2 ' + (on ? 'border-brand-600 text-slate-900 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800');
     });
-    ['chat', 'source', 'checks'].forEach(n => { $('tab-' + n).hidden = n !== name; });
+    ['chat', 'source', 'checks', 'finals'].forEach(n => { $('tab-' + n).hidden = n !== name; });
   }
   document.querySelectorAll('[data-tab]').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
   $('btn-lint').addEventListener('click', () => { showLeft(); selectTab('checks'); });

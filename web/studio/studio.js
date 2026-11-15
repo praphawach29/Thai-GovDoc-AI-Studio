@@ -22,6 +22,17 @@
   });
   const postJSON = (path, body) => sendJSON('POST', path, body);
 
+  // เบราว์เซอร์ส่งไฟล์ตรงเข้า Supabase Storage ด้วย URL ที่เซ็นแล้ว (ไฟล์ไม่ผ่าน Vercel)
+  async function putToStorage(uploadUrl, file, failMessage) {
+    const body = new FormData();
+    body.append('cacheControl', '3600');
+    body.append('', file);
+    // ส่ง apikey (publishable key ซึ่งเปิดเผยได้) แบบเดียวกับ supabase-js; สิทธิ์อัปโหลดมาจาก token ใน URL
+    const { supabase_publishable_key: apikey } = await auth.config();
+    const res = await fetch(uploadUrl, { method: 'PUT', body, headers: { 'x-upsert': 'false', apikey } });
+    if (!res.ok) throw new Error(failMessage);
+  }
+
   const api = {
     profile: () => request('/studio/profile').then(r => r.json()),
     draft: (formData) => request('/studio/draft', { method: 'POST', body: formData }).then(r => r.json()),
@@ -41,14 +52,20 @@
     // โหมดเซิร์ฟเวอร์: อัปโหลดไฟล์ต้นเรื่องตรงเข้า Supabase Storage (ไม่ผ่าน API ซึ่งรับไฟล์ใหญ่ไม่ได้)
     async uploadSource(file) {
       const { path, upload_url } = await postJSON('/sources/upload-url', { filename: file.name, size_bytes: file.size }).then(r => r.json());
-      const body = new FormData();
-      body.append('cacheControl', '3600');
-      body.append('', file);
-      // ส่ง apikey (publishable key ซึ่งเปิดเผยได้) แบบเดียวกับ supabase-js; สิทธิ์อัปโหลดมาจาก token ใน URL
-      const { supabase_publishable_key: apikey } = await auth.config();
-      const res = await fetch(upload_url, { method: 'PUT', body, headers: { 'x-upsert': 'false', apikey } });
-      if (!res.ok) throw new Error('อัปโหลดไฟล์ต้นเรื่องไม่สำเร็จ');
+      await putToStorage(upload_url, file, 'อัปโหลดไฟล์ต้นเรื่องไม่สำเร็จ');
       return path;
+    },
+    // ฉบับจริง: ไฟล์ Word/PDF ที่แก้เสร็จแล้ว (โหมดเซิร์ฟเวอร์เท่านั้น)
+    finals: {
+      list: (docId) => request(`/documents/${encodeURIComponent(docId)}/finals`).then(r => r.json()),
+      async upload(docId, file, note) {
+        const base = `/documents/${encodeURIComponent(docId)}/finals`;
+        const { path, upload_url } = await postJSON(base + '/upload-url', { filename: file.name, size_bytes: file.size }).then(r => r.json());
+        await putToStorage(upload_url, file, 'อัปโหลดไฟล์ฉบับจริงไม่สำเร็จ');
+        return postJSON(base, { path, filename: file.name, note: note || null }).then(r => r.json());
+      },
+      downloadUrl: (docId, fileId) => request(`/documents/${encodeURIComponent(docId)}/finals/${encodeURIComponent(fileId)}/download`)
+        .then(r => r.json()).then(r => r.url),
     },
   };
 

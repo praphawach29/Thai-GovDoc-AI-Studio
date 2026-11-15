@@ -38,7 +38,7 @@ class FakeSupabase:
             }],
             "documents": [], "document_versions": [], "number_sequences": [],
             "outgoing_register": [], "incoming_register": [], "source_files": [], "legal_references": [],
-            "org_units": [],
+            "org_units": [], "final_files": [],
         }
         self.storage: Dict[str, bytes] = {}
         self.rpc_errors: Dict[str, Dict[str, str]] = {}
@@ -128,8 +128,14 @@ class FakeSupabase:
 
         if request.method == "GET":
             out = [r for r in rows if match(r)]
+            if "order" in query:
+                key, _, direction = query["order"].split(",")[0].partition(".")
+                out.sort(key=lambda r: str(r.get(key)), reverse=direction == "desc")
             if "limit" in query:
                 out = out[: int(query["limit"])]
+            cols = query.get("select", "*")
+            if cols != "*" and "(" not in cols:                       # คอลัมน์ธรรมดา (ไม่มี embed)
+                out = [{c: r[c] for c in cols.split(",") if c in r} for r in out]   # ไม่มีในแถวจำลอง = ค่าตั้งต้นของคอลัมน์
             return self._json(200, out)
         body = json.loads(request.content or b"{}")
         if request.method == "POST":
@@ -172,6 +178,22 @@ class FakeSupabase:
             row = {"id": n, "reg_no": n, "subject": p["p_subject"]}
             self.tables["incoming_register"].append(row)
             return self._json(200, row)
+        if name == "register_final_file":
+            doc = next((d for d in self.tables["documents"] if d["id"] == p["p_document_id"]), None)
+            if doc is None:
+                return self._json(403, {"code": "42501", "message": "ไม่พบเอกสารนี้ในหน่วยงาน"})
+            if not p["p_storage_path"].startswith(ORG_ID + "/finals/"):
+                return self._json(403, {"code": "42501", "message": "path ของไฟล์ฉบับจริงไม่ถูกต้อง"})
+            revision = 1 + max([r["revision"] for r in self.tables["final_files"]
+                                if r["document_id"] == doc["id"]], default=0)
+            row = {"id": str(uuid.uuid4()), "org_id": ORG_ID, "document_id": doc["id"], "revision": revision,
+                   "storage_path": p["p_storage_path"], "filename": p["p_filename"], "mime": p["p_mime"],
+                   "size_bytes": p["p_size_bytes"], "sha256": p["p_sha256"], "extracted_text": p.get("p_extracted_text"),
+                   "doc_number": p.get("p_doc_number"), "doc_date": p.get("p_doc_date"),
+                   "subject": p.get("p_subject"), "note": p.get("p_note"),
+                   "uploaded_by": self._caller(request), "created_at": "2026-11-15T00:00:00Z"}
+            self.tables["final_files"].append(row)
+            return self._json(200, row)
         return self._json(404, {"message": f"no function {name}"})
 
     # ---------------------------------------------------------------- Storage
@@ -184,11 +206,19 @@ class FakeSupabase:
         if path.startswith("/storage/v1/object/upload/sign/"):
             obj = path[len("/storage/v1/object/upload/sign/"):]
             return self._json(200, {"url": f"/object/upload/sign/{obj}?token=signed-token"})
+        if path.startswith("/storage/v1/object/sign/") and request.method == "POST":
+            obj = path[len("/storage/v1/object/sign/"):]
+            if obj not in self.storage:
+                return self._json(404, {"error": "not_found", "message": "Object not found"})
+            return self._json(200, {"signedURL": f"/object/sign/{obj}?token=download-token"})
         if path.startswith("/storage/v1/object/authenticated/"):
             obj = path[len("/storage/v1/object/authenticated/"):]
             if obj not in self.storage:
                 return self._json(404, {"error": "not_found", "message": "Object not found"})
             return httpx.Response(200, content=self.storage[obj])
+        if request.method == "DELETE" and path.startswith("/storage/v1/object/"):
+            self.storage.pop(path[len("/storage/v1/object/"):], None)
+            return self._json(200, {"message": "Successfully deleted"})
         if request.method == "POST" and path.startswith("/storage/v1/object/"):
             self.storage[path[len("/storage/v1/object/"):]] = request.content
             return self._json(200, {"Key": path})

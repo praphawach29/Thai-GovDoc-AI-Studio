@@ -114,6 +114,20 @@ class SupabaseClient:
             headers={"Content-Type": content_type or "application/octet-stream", "x-upsert": "false"},
         )
 
+    def signed_download_url(self, bucket: str, path: str, filename: str = "", expires_in: int = 300) -> str:
+        """URL ชั่วคราวให้เบราว์เซอร์ดาวน์โหลดตรงจาก Storage (ไฟล์ใหญ่ได้ ไม่ผ่าน Vercel)"""
+        res = self._request("POST", f"/storage/v1/object/sign/{bucket}/{quote(path)}", json={"expiresIn": expires_in})
+        signed = res.json().get("signedURL", "")
+        if not signed:
+            raise SupabaseError(502, "ขอ URL ดาวน์โหลดไม่สำเร็จ")
+        url = f"{self.url}/storage/v1{signed}"
+        if filename:
+            url += ("&" if "?" in url else "?") + "download=" + quote(filename)
+        return url
+
+    def remove(self, bucket: str, path: str) -> None:
+        self._request("DELETE", f"/storage/v1/object/{bucket}/{quote(path)}")
+
     def download(self, bucket: str, path: str) -> bytes:
         return self._request("GET", f"/storage/v1/object/authenticated/{bucket}/{quote(path)}").content
 

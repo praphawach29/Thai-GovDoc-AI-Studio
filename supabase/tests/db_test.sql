@@ -96,6 +96,32 @@ select pg_temp.expect_error($$select public.mark_outgoing_issued(2)$$, 'ใช�
 select pg_temp.check((public.register_incoming('สธ ๐๑/๑', '๑ พ.ย. ๒๕๖๙', 'กระทรวง ก', 'ขอเชิญประชุม')).reg_no = 1, 'ทะเบียนรับเลข 1');
 select pg_temp.check((public.register_incoming('สธ ๐๑/๒', '๒ พ.ย. ๒๕๖๙', 'กระทรวง ก', 'ขอข้อมูล')).reg_no = 2, 'ทะเบียนรับเลข 2');
 
+-- ฉบับจริง (ไฟล์ Word ที่แก้เสร็จ): เลขฉบับต่อเนื่อง, path ต้องอยู่ใน <org>/finals/
+select pg_temp.check((public.register_final_file('33333333-3333-3333-3333-333333333333',
+    '11111111-1111-1111-1111-111111111111/finals/11111111111111111111111111111111.docx', 'ฉบับจริง.docx', 'application/x', 100, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).revision = 1,
+    'ฉบับจริงฉบับที่ 1');
+select pg_temp.check((public.register_final_file('33333333-3333-3333-3333-333333333333',
+    '11111111-1111-1111-1111-111111111111/finals/22222222222222222222222222222222.docx', 'แก้ครั้งที่ 2.docx', 'application/x', 120, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'ข้อความ', 'กท 1205/45', null, 'เรื่องทดสอบ', 'แก้คำผิด')).revision = 2, 'อัปโหลดใหม่ = ฉบับที่ 2');
+select pg_temp.expect_error($$select public.register_final_file('33333333-3333-3333-3333-333333333333',
+    '11111111-1111-1111-1111-111111111111/33333333333333333333333333333333.docx', 'x.docx', 'm', 1, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')$$,
+    'ฉบับจริงนอกโฟลเดอร์ finals');
+select pg_temp.expect_error($$insert into public.final_files (org_id, document_id, revision, storage_path, filename, mime,
+    size_bytes, sha256, uploaded_by) values ('11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333',
+    9, '11111111-1111-1111-1111-111111111111/finals/x.docx', 'x', 'm', 1, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', auth.uid())$$,
+    'เพิ่มฉบับจริงตรงโดยไม่ผ่านฟังก์ชัน');
+select pg_temp.expect_error($$update public.final_files set filename = 'แก้ชื่อ'$$, 'แก้ข้อมูลฉบับจริง');
+select pg_temp.check((select count(*) from public.audit_log where entity = 'final_files') = 2, 'audit ฉบับจริง');
+-- ไฟล์ฉบับจริงใน Storage ลบไม่ได้แม้เป็นคนอัปโหลด (ไฟล์ต้นเรื่องยังลบของตัวเองได้)
+insert into storage.objects (bucket_id, name) values ('sources', '11111111-1111-1111-1111-111111111111/finals/11111111111111111111111111111111.docx');
+insert into storage.objects (bucket_id, name) values ('sources', '11111111-1111-1111-1111-111111111111/finals/rejected.docx');
+insert into storage.objects (bucket_id, name) values ('sources', '11111111-1111-1111-1111-111111111111/tmp.pdf');
+delete from storage.objects where name like '%/finals/%';
+select pg_temp.check((select count(*) from storage.objects where name like '%/finals/1111%') = 1, 'ลบไฟล์ฉบับจริงที่บันทึกแล้วไม่ได้');
+select pg_temp.check((select count(*) from storage.objects where name like '%/finals/rejected.docx') = 0, 'ลบไฟล์ที่ตรวจไม่ผ่านได้');
+delete from storage.objects where name like '%/tmp.pdf';
+select pg_temp.check((select count(*) from storage.objects where name like '%/tmp.pdf') = 0, 'ลบไฟล์ต้นเรื่องของตัวเองได้');
+
 -- Storage: อัปโหลดได้เฉพาะโฟลเดอร์หน่วยงานตัวเอง
 insert into storage.objects (bucket_id, name) values ('sources', '11111111-1111-1111-1111-111111111111/a.pdf');
 select pg_temp.expect_error($$insert into storage.objects (bucket_id, name)
@@ -119,6 +145,10 @@ select pg_temp.check((select count(*) from public.audit_log) = 0, 'B มอง�
 select pg_temp.check((select count(*) from storage.objects) = 0, 'B มองไม่เห็นไฟล์ของ ก');
 select pg_temp.check((public.reserve_outgoing_number('ABC/', 'ของ ข')).doc_number = 'ABC/1', 'B มีตัวนับของตัวเอง');
 select pg_temp.check((select count(*) from public.org_units) = 0, 'B มองไม่เห็นหน่วยของ ก');
+select pg_temp.check((select count(*) from public.final_files) = 0, 'B มองไม่เห็นฉบับจริงของ ก');
+select pg_temp.expect_error($$select public.register_final_file('33333333-3333-3333-3333-333333333333',
+    '22222222-2222-2222-2222-222222222222/finals/44444444444444444444444444444444.docx', 'x.docx', 'm', 1, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')$$,
+    'B เพิ่มฉบับจริงให้เอกสารของ ก');
 select pg_temp.expect_error($$select public.save_document_version('33333333-3333-3333-3333-333333333333', '{}')$$,
     'B บันทึกเวอร์ชันเอกสารของ ก');
 commit;
@@ -141,6 +171,7 @@ select pg_temp.expect_error($$delete from public.incoming_register$$, 'ลบท
 select pg_temp.expect_error($$update public.document_versions set content = '{}'$$, 'แก้เวอร์ชันเก่า');
 select pg_temp.expect_error($$delete from public.audit_log$$, 'ลบ audit');
 select pg_temp.expect_error($$delete from public.documents$$, 'ลบเอกสาร');
+select pg_temp.expect_error($$delete from public.final_files$$, 'ลบฉบับจริง');
 
 -- ตรวจจับการแก้ audit ย้อนหลัง (จำลองผู้ไม่หวังดีที่ปิด trigger ได้)
 set session_replication_role = replica;
