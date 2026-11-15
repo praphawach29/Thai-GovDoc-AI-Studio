@@ -20,7 +20,8 @@ def test_draft_from_prompt_returns_document_and_checks():
     assert doc["urgency"] == "very_urgent"
     # บันทึกข้อความต้องมี memo_* ให้หน้าแก้ไขใช้ชุดเดียวกับ exporter
     assert doc["memo_intro"] and doc["memo_request"]
-    assert [s["key"] for s in body["steps"]] == ["extract", "classify", "draft"]
+    assert [s["key"] for s in body["steps"]] == ["extract", "classify", "ai", "draft"]
+    assert body["ai_provider"] is None                    # เทสต์ไม่มีคีย์ AI → ร่างตามกฎ
     assert "placeholders" in body["check"] and "lint" in body["check"]
     assert "วันที่" not in doc["doc_date"]
 

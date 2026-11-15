@@ -10,7 +10,8 @@
 # - ไม่ใส่ Streamlit/OpenCV ที่นี่ เพราะใหญ่ (~460 MB) และไม่ได้ใช้บนคลาวด์
 #   (Vercel จำกัดขนาด function ราว 250 MB)
 # - `typst` คือ Python binding ที่ฝัง compiler ไว้ในตัว ไม่ต้องลง Typst CLI
-# - `google-genai` / `openai` ใช้เมื่อตั้ง API key เท่านั้น
+# - `anthropic` / `google-genai` ใช้เมื่อตั้ง ANTHROPIC_API_KEY / GEMINI_API_KEY (ร่างด้วย Claude ก่อน แล้ว Gemini)
+# - `openai` ใช้กับ API เดิม /api/v1/draft เท่านั้น
 
 # --- Web API ---
 fastapi==0.138.0
@@ -34,3 +35,4 @@ typst==0.15.2
 # --- AI providers ---
 google-genai==2.10.0
 openai==2.48.0
+anthropic==2.8.0   # Claude ร่างเนื้อความ (ตัวแรก) — สำรองด้วย Gemini แล้วร่างตามกฎ

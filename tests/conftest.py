@@ -144,3 +144,16 @@ def _isolated_server(test_settings, test_registry):
     app.dependency_overrides[get_registry] = lambda: test_registry
     yield
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_ai_calls(monkeypatch):
+    """เทสต์ต้องไม่เรียก Claude/Gemini จริง (เสียเงินและไม่แน่นอน) แม้เครื่องตั้งคีย์ไว้
+    เทสต์ที่ต้องการ AI ให้ส่ง providers จำลองเข้า draft_content_with_llm เอง"""
+    for name in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    from server.settings import get_settings
+
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

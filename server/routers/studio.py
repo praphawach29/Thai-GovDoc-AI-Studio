@@ -21,7 +21,7 @@ from core.templates_library import get_preset_template, list_preset_templates
 from server import source_store
 from server.auth import CurrentUser, get_current_user, get_profile, get_supabase
 from server.deps import save_upload
-from server.settings import Settings, get_settings
+from server.settings import Settings, get_settings, llm_config
 from server.supabase import SupabaseClient
 
 router = APIRouter(tags=["studio"])
@@ -148,6 +148,8 @@ async def studio_draft(
             client.upload(settings.source_bucket, path, data, source_store.MIME_BY_SUFFIX[saved_path.suffix])
             stored = (path, file.filename, data)
 
+    # ผู้รับและชื่อผู้พิจารณาของหน่วยที่เลือก ช่วยให้ AI เขียนข้อพิจารณาได้ตรงขั้นการเสนอ
+    unit = pick_unit(load_units(user, settings), unit_key)
     try:
         result = start_draft(
             prompt=prompt,
@@ -155,6 +157,9 @@ async def studio_draft(
             doc_type_hint=doc_type,
             urgency=urgency,
             secret=secret,
+            llm=llm_config(settings),
+            recipient=unit.recipient if unit and doc_type != DocType.EXTERNAL else "",
+            review_party=unit.review_party if unit and doc_type != DocType.EXTERNAL else "",
         )
     finally:
         if user is not None and saved_path is not None:

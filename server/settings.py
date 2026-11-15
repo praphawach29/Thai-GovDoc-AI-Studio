@@ -67,9 +67,27 @@ class Settings:
     require_auth: bool = field(
         default_factory=lambda: os.environ.get("GOVDOC_REQUIRE_AUTH", "1" if _ON_SERVERLESS else "0") == "1"
     )
+    # AI ร่างหนังสือ: ลอง Claude ก่อน แล้ว Gemini; ไม่ตั้งคีย์เลย = ร่างตามกฎอย่างเดียว
+    # คีย์เป็นความลับ ตั้งใน Vercel → Settings → Environment Variables เท่านั้น
+    anthropic_api_key: str = field(default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    gemini_api_key: str = field(default_factory=lambda: _first_env(("GEMINI_API_KEY", "GOOGLE_API_KEY")))
+    claude_model: str = field(default_factory=lambda: os.environ.get("GOVDOC_CLAUDE_MODEL", "claude-opus-5-5").strip())
+    claude_effort: str = field(default_factory=lambda: os.environ.get("GOVDOC_CLAUDE_EFFORT", "medium").strip())
+    gemini_model: str = field(default_factory=lambda: os.environ.get("GOVDOC_GEMINI_MODEL", "gemini-2.5-flash").strip())
     web_dir: Path = ROOT_DIR / "web" / "studio"
     assets_dir: Path = ROOT_DIR / "assets"
     typst_templates_dir: Path = ROOT_DIR / "templates" / "typst"
+
+
+def llm_config(settings: "Settings"):
+    """ค่าตั้ง AI สำหรับ core (core ไม่อ่านตัวแปรสภาพแวดล้อมเอง)"""
+    from core.llm_drafter import LLMConfig
+
+    return LLMConfig(
+        anthropic_api_key=settings.anthropic_api_key, gemini_api_key=settings.gemini_api_key,
+        claude_model=settings.claude_model, claude_effort=settings.claude_effort,
+        gemini_model=settings.gemini_model,
+    )
 
 
 def supabase_enabled(settings: "Settings") -> bool:

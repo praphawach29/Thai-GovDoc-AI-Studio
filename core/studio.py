@@ -15,6 +15,7 @@ from core.ai_drafter import draft_from_context_rule_based
 from core.classifier import ClassificationResult, classify_source_document
 from core.extractor import extract_from_raw_text, extract_source_document
 from core.linter import LintResult, lint_gov_document
+from core.llm_drafter import LLMConfig, apply_draft_content, draft_content_with_llm
 from core.models import (
     DocType,
     GovDocumentSchema,
@@ -37,6 +38,23 @@ class StudioStep(BaseModel):
     detail: str = ""
 
 
+_PROVIDER_LABEL = {"claude": "Claude", "gemini": "Gemini"}
+
+
+def _ai_step(ai) -> StudioStep:
+    """สรุปการใช้ AI เป็นขั้นตอนเดียว เช่น 'Claude หมดเวลารอคำตอบ → ร่างด้วย Gemini'"""
+    failed = [f"{_PROVIDER_LABEL.get(a.provider, a.provider)} {a.error}" for a in ai.attempts if not a.ok]
+    if ai.content is not None:
+        used = f"{_PROVIDER_LABEL.get(ai.provider, ai.provider)} ({ai.model})"
+        detail = " · ".join(failed + [f"เรียบเรียงด้วย {used}"])
+        if ai.truncated:
+            detail += " · ต้นเรื่องยาวมาก ส่งเฉพาะส่วนต้น"
+        return StudioStep(key="ai", label="AI เรียบเรียงเนื้อความ", detail=detail)
+    reason = ai.skipped_reason or " · ".join(failed) or "ไม่สำเร็จ"
+    return StudioStep(key="ai", label="ใช้ร่างตามกฎแทน AI", ok=not failed,
+                      detail=reason + (" — เนื้อความเป็นโครงให้กรอกเอง" if failed or ai.skipped_reason else ""))
+
+
 class StudioCheck(BaseModel):
     """ผลตรวจเอกสาร: placeholder ที่ค้าง + Linter ระเบียบสารบรรณ"""
     placeholders: List[str] = Field(default_factory=list)
@@ -50,6 +68,7 @@ class StudioDraftResult(BaseModel):
     check: Optional[StudioCheck] = None
     steps: List[StudioStep] = Field(default_factory=list)
     cloud_ai_blocked: bool = False
+    ai_provider: Optional[str] = None      # "claude" | "gemini" | None (ร่างตามกฎ)
 
 
 def normalize_for_editor(doc: GovDocumentSchema) -> GovDocumentSchema:
@@ -114,6 +133,9 @@ def start_draft(
     urgency: UrgencyLevel = UrgencyLevel.NORMAL,
     secret: SecretLevel = SecretLevel.NORMAL,
     api_key: Optional[str] = None,
+    llm: Optional[LLMConfig] = None,
+    recipient: str = "",
+    review_party: str = "",
 ) -> StudioDraftResult:
     """
     เริ่มร่างจากคำสั่งที่พิมพ์และ/หรือไฟล์ต้นเรื่อง
@@ -166,6 +188,19 @@ def start_draft(
     )
     doc.urgency = urgency
     doc.secret = secret
+
+    # AI เรียบเรียงเนื้อความ (Claude → Gemini) ไม่สำเร็จ/ไม่ได้ตั้งค่า = ใช้ร่างตามกฎข้างบน
+    if llm is not None:
+        ai = draft_content_with_llm(
+            doc_type=doc.doc_type,
+            instruction=prompt if file_path else "",
+            source_text=ctx.raw_text or "",
+            config=llm, secret=secret, recipient=recipient, review_party=review_party,
+        )
+        result.ai_provider = ai.provider or None
+        if ai.content is not None:
+            doc = apply_draft_content(doc, ai.content)
+        result.steps.append(_ai_step(ai))
     result.document = normalize_for_editor(doc)
     result.check = check_document(doc)
     result.steps.append(StudioStep(
