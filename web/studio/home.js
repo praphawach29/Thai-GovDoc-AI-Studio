@@ -162,7 +162,8 @@
     if (!showArchived) renderPending(recent);
     $('unit').innerHTML = units.map(u =>
       `<option value="${esc(u.key)}" ${u.is_default ? 'selected' : ''}>หน่วย: ${esc(u.label)}</option>`).join('');
-  }).catch(() => { $('unit').innerHTML = '<option value="">หน่วย: ตั้งต้น</option>'; });
+    fitSelect($('unit'));
+  }).catch(() => { $('unit').innerHTML = '<option value="">หน่วย: ตั้งต้น</option>'; fitSelect($('unit')); });
 
   // ---------- ไฟล์แนบ ----------
   const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
@@ -328,6 +329,21 @@
     $('prompt').value = ''; $('file-input').value = ''; setFile(null);
     $('progress').hidden = true; $('error-box').hidden = true; setSidebar(false); syncExamples(); $('prompt').focus();
   });
+  // ---------- ช่องเลือกในแถบเครื่องมือ: กว้างเท่าตัวเลือกที่เลือกอยู่ (select ปกติกว้างเท่าตัวเลือกที่ยาวที่สุด) ----------
+  const measurer = document.createElement('span');
+  measurer.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;left:-9999px';
+  document.body.appendChild(measurer);
+  function fitSelect(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt) return;
+    measurer.style.font = getComputedStyle(sel).font;
+    measurer.textContent = opt.textContent;
+    sel.style.width = Math.ceil(measurer.getBoundingClientRect().width) + 46 + 'px';   // + ระยะขวาและลูกศรของ select
+  }
+  ['doc-type', 'unit'].forEach((id) => $(id).addEventListener('change', () => fitSelect($(id))));
+  document.fonts?.ready.then(() => { fitSelect($('doc-type')); fitSelect($('unit')); });
+  fitSelect($('doc-type'));
+
   // ---------- ตัวอย่างคำสั่ง (ในช่องพิมพ์ แสดงเฉพาะตอนยังว่าง) ----------
   const EXAMPLES = [
     { label: 'สรุปไฟล์แนบแล้วร่างบันทึกเสนอ', type: 'internal', attach: true,
@@ -346,6 +362,7 @@
     const x = EXAMPLES[+b.dataset.example];
     $('prompt').value = x.text;
     $('doc-type').value = x.type;
+    fitSelect($('doc-type'));
     syncExamples();
     $('prompt').focus();
     if (x.attach && !state.file) toast('แนบไฟล์ต้นเรื่องด้วยปุ่ม "แนบไฟล์" หรือลากไฟล์มาวางในกล่องนี้');
