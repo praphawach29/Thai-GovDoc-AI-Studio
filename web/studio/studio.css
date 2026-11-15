@@ -70,6 +70,8 @@
 }
 .flash-ok { animation: flashOk 2.2s ease-out; }
 @keyframes flashOk { 0% { background: #d1fae5; } 100% { background: transparent; } }
+.flash-warn { animation: flashWarn 2.4s ease-out; }
+@keyframes flashWarn { 0%, 40% { background: #fef3c7; box-shadow: 0 0 0 2px #f59e0b; } 100% { background: transparent; box-shadow: none; } }
 
 /* ไฟล์ต้นเรื่องจริง (pdf.js): หน้า + ชั้นข้อความโปร่งใสสำหรับค้นคำ */
 .pdf-page { position: relative; margin: 0 auto; background: #fff; box-shadow: 0 1px 3px rgb(15 23 42 / .15); }

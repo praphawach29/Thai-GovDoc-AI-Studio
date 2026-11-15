@@ -33,14 +33,13 @@
     <header class="h-14 px-5 border-b border-slate-200 bg-white flex items-center justify-between shrink-0 gap-2">
       <h1 id="doc-title" class="text-sm font-medium text-slate-800 truncate">กำลังโหลด...</h1>
       <div class="flex items-center gap-2 shrink-0">
-        <span id="left-status" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs text-emerald-700 bg-emerald-50 border border-emerald-300">เอกสารพร้อมตรวจ</span>
         <a href="./" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs text-slate-600 bg-white border border-slate-300 hover:bg-slate-50"><i class="fa-regular fa-file text-[10px]"></i>เอกสารใหม่</a>
       </div>
     </header>
     <div class="px-5 pt-3 bg-white border-b border-slate-200 flex gap-4 text-xs shrink-0" role="tablist">
       <button type="button" role="tab" data-tab="chat" aria-selected="true" class="pb-2 border-b-2 border-brand-600 text-slate-900 font-medium">บทสนทนา</button>
       <button type="button" role="tab" data-tab="source" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ต้นเรื่อง</button>
-      <button type="button" role="tab" data-tab="checks" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ผลตรวจ <span id="checks-count" class="ml-0.5 text-[10px] px-1.5 rounded-full bg-slate-100 text-slate-600">0</span></button>
+      <button type="button" role="tab" data-tab="checks" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ผลตรวจ</button>
       <button type="button" role="tab" data-tab="finals" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ฉบับจริง <span id="finals-count" class="ml-0.5 text-[10px] px-1.5 rounded-full bg-slate-100 text-slate-600">0</span></button>
     </div>
 
@@ -130,8 +129,8 @@
         <select id="unit-select" class="min-w-[8.5rem] max-w-[13rem] border border-slate-200 rounded-md bg-white py-1 pl-2 pr-7 text-xs focus:ring-0"></select>
       </label>
       <button id="btn-next-level" type="button" hidden class="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-medium" title="สร้างบันทึกฉบับเสนอขั้นถัดไปจากฉบับนี้ (แก้ไขแยกได้)"><i class="fa-solid fa-turn-up"></i><span id="next-level-label" class="tb-h4">เสนอขั้นถัดไป</span></button>
-      <span id="status-chip" class="shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border"></span>
-      <button id="btn-lint" type="button" class="shrink-0 whitespace-nowrap flex items-center gap-1 px-2 py-0.5 hover:bg-slate-100 rounded text-[11px]"></button>
+      <!-- ป้ายเดียวของจุดที่ต้องแก้ (ต้องระบุ + ข้อควรแก้ตามระเบียบ): กดแล้วไปทีละจุด -->
+      <button id="todo-badge" type="button" class="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border"></button>
       <span id="save-indicator" class="tb-h1 inline-flex items-center gap-1.5 text-[11px] text-slate-500 truncate"></span>
       <div class="ml-auto flex items-center gap-1 shrink-0">
         <button id="btn-undo" type="button" class="tb-h2 w-7 h-7 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 disabled:opacity-30" title="เลิกทำ (Ctrl+Z)" aria-label="เลิกทำ"><i class="fa-solid fa-rotate-left text-xs"></i></button>
@@ -199,7 +198,7 @@
     <!-- ปุ่มลัด -->
     <div class="absolute bottom-12 right-6 z-20 no-print">
       <div id="quick-menu" class="absolute bottom-full right-0 mb-2 w-60 bg-white rounded-xl shadow-lg border border-slate-200 p-1.5 text-xs animate-fadeIn" hidden>
-        <button type="button" data-quick="jump" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-location-crosshairs text-amber-600 w-4"></i>ไปยังจุดที่ต้องระบุถัดไป</button>
+        <button type="button" data-quick="jump" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-location-crosshairs text-amber-600 w-4"></i>ไปยังจุดที่ต้องแก้ถัดไป</button>
         <button type="button" data-quick="formal" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-wand-magic-sparkles text-emerald-600 w-4"></i>เกลาทุกย่อหน้าให้เป็นทางการ</button>
         <button type="button" data-quick="lint" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-list-check text-brand-600 w-4"></i>ตรวจระเบียบงานสารบรรณ</button>
         <button type="button" data-quick="print" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-print text-slate-500 w-4"></i>พิมพ์ตัวอย่างจากเบราว์เซอร์</button>

@@ -347,6 +347,7 @@
     const shown = FIELDS[key].get(st.doc);
     el.innerHTML = el.classList.contains('lines') ? linesHTML(shown) : displayHTML(shown);
     if (el.classList.contains('one-line')) fitOneLine();
+    renderTodo();
   });
   sheet.addEventListener('keydown', (e) => {
     const el = e.target.closest('[data-field]');
@@ -507,7 +508,7 @@
   async function runCheck() {
     try {
       st.check = await api.check(st.doc);
-      renderChrome(); renderChecks();
+      renderChrome(); renderChecks(); renderTodo();
       persist();
     } catch (err) { /* ตรวจไม่สำเร็จ: คงผลเดิม */ }
   }
@@ -517,29 +518,12 @@
     return { ph, errors: issues.filter(i => i.severity === 'error').length, warnings: issues.filter(i => i.severity !== 'error').length };
   }
   function renderChrome() {
-    const d = st.doc, c = counts();
+    const d = st.doc;
     $('type-label').textContent = DOC_TYPE_LABEL[d.doc_type] || 'เอกสาร';
     $('type-select').value = d.doc_type;
     $('doc-title').textContent = d.subject || 'ไม่มีชื่อเรื่อง';
     $('doc-title').title = d.subject || '';
     document.title = `${d.subject || 'เอกสาร'} — GovDoc Studio`;
-    const chip = $('status-chip');
-    if (c.ph === 0 && c.errors === 0) {
-      chip.className = 'shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border text-emerald-700 bg-emerald-50 border-emerald-300';
-      chip.innerHTML = '<i class="fa-solid fa-check text-[9px]"></i>ร่างสมบูรณ์';
-    } else {
-      chip.className = 'shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border text-amber-800 bg-amber-50 border-amber-300';
-      chip.innerHTML = `<i class="fa-solid fa-pen text-[9px]"></i><span class="tb-h3">ต้องระบุ </span>${toThai(c.ph)}<span class="tb-h3"> จุด</span>`;
-      chip.title = `ต้องระบุ ${toThai(c.ph)} จุด`;
-    }
-    $('left-status').textContent = c.ph ? `เหลือ ${toThai(c.ph)} จุดที่ต้องระบุ` : 'เอกสารพร้อมตรวจ';
-    $('left-status').className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs border ' + (c.ph ? 'text-amber-800 bg-amber-50 border-amber-300' : 'text-emerald-700 bg-emerald-50 border-emerald-300');
-    const lint = $('btn-lint');
-    const n = c.errors + c.warnings;
-    lint.innerHTML = n === 0
-      ? '<i class="fa-solid fa-circle-check text-brand-600"></i><span class="tb-h3 font-medium text-emerald-800">ตรวจระเบียบผ่าน</span>'
-      : `<i class="fa-solid fa-triangle-exclamation ${c.errors ? 'text-rose-600' : 'text-amber-600'}"></i><span class="font-medium ${c.errors ? 'text-rose-700' : 'text-amber-800'}"><span class="tb-h3">พบข้อควรแก้ </span>${toThai(n)}<span class="tb-h3"> จุด</span></span>`;
-    $('checks-count').textContent = toThai(c.ph + n);
     $('btn-undo').disabled = !st.undo.length; $('btn-redo').disabled = !st.redo.length;
     $('toggle-thai-num').checked = !!d.use_thai_numerals;
     $('font-select').value = d.font_family || 'it9';
@@ -574,13 +558,104 @@
   }
   $('tab-checks').addEventListener('click', (e) => { const b = e.target.closest('[data-jump]'); if (b) jumpToPlaceholder(b.dataset.jump); });
 
+  // ---------- ป้ายเดียว "ต้องแก้": จุดที่ต้องระบุ + ข้อควรแก้ตามระเบียบ ไล่ทีละจุดตามลำดับบนกระดาษ ----------
+  // ข้อควรแก้ของ linter อ้างชื่อฟิลด์ในสคีมา — แปลงเป็นช่องบนกระดาษ (บันทึกข้อความใช้ช่อง memo_*)
+  const LINT_FIELD = (f) => {
+    if (f === 'salutation') return 'salutation_to';
+    if (isMemo()) return { paragraph_reason: 'memo_intro', paragraph_details: 'memo_facts', paragraph_purpose: 'memo_request' }[f] || f;
+    return f;
+  };
+  // จุดทั้งหมดเรียงตามตำแหน่งบนกระดาษ: { field: ช่อง, ord: ลำดับในช่อง, text, issue? }
+  function todoPoints() {
+    const pts = [];
+    sheet.querySelectorAll('[data-field]').forEach((el) => {
+      el.querySelectorAll('.ph-chip').forEach((chip, ord) => pts.push({ field: el, ord, text: chip.textContent }));
+    });
+    (st.check?.lint?.issues || []).forEach((issue, i) => {
+      const el = sheet.querySelector(`[data-field="${LINT_FIELD(issue.field)}"]`);
+      pts.push({ field: el, ord: 1000 + i, text: issue.message, issue });
+    });
+    return pts.sort((a, b) => {
+      if (a.field === b.field) return a.ord - b.ord;
+      if (!a.field) return 1;
+      if (!b.field) return -1;
+      return a.field.compareDocumentPosition(b.field) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
+  }
+  const todo = { last: null };
+  function renderTodo() {
+    const pts = todoPoints();
+    const ph = pts.filter(p => !p.issue).length, issues = pts.length - ph;
+    const errors = pts.some(p => p.issue?.severity === 'error');
+    const b = $('todo-badge');
+    const base = 'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition ';
+    if (!pts.length) {
+      b.className = base + 'text-emerald-700 bg-emerald-50 border-emerald-300 hover:bg-emerald-100';
+      b.innerHTML = '<i class="fa-solid fa-check text-[10px]"></i><span class="tb-h4">พร้อมส่งออก</span>';
+      b.title = 'ไม่มีจุดที่ต้องระบุ และผ่านการตรวจระเบียบงานสารบรรณ';
+      todo.last = null;
+    } else {
+      b.className = base + (errors ? 'text-rose-700 bg-rose-50 border-rose-300 hover:bg-rose-100' : 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100');
+      b.innerHTML = `<i class="fa-solid ${errors ? 'fa-triangle-exclamation' : 'fa-pen'} text-[10px]"></i><span><span class="tb-h4">ต้องแก้ </span>${toThai(pts.length)}<span class="tb-h4"> จุด</span></span><span class="tb-h3 opacity-70">· ถัดไป</span><i class="fa-solid fa-chevron-right text-[9px] opacity-70"></i>`;
+      b.title = [ph && `ต้องระบุ ${toThai(ph)} จุด`, issues && `ข้อควรแก้ตามระเบียบ ${toThai(issues)} จุด`].filter(Boolean).join(' · ') + ' — กดเพื่อไปทีละจุด';
+    }
+    b.setAttribute('aria-label', b.title);
+    fitToolbar();
+  }
+  // จุดถัดจากจุดที่ไปล่าสุด (กรอกจุดนั้นแล้ว จุดถัดไปในช่องเดียวกันจะเลื่อนมาอยู่ลำดับเดิม)
+  function nextTodo() {
+    const pts = todoPoints();
+    if (!pts.length) { toast('ไม่มีจุดที่ต้องแก้แล้ว — พร้อมส่งออก'); return; }
+    const last = todo.last;
+    let idx = 0;
+    if (last && last.field?.isConnected) {
+      const after = pts.findIndex((p) => {
+        if (p.field === last.field) return p.ord > last.ord || (p.ord === last.ord && p.text !== last.text);
+        if (!p.field) return true;
+        return !!(last.field.compareDocumentPosition(p.field) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      idx = after < 0 ? 0 : after;
+    }
+    const p = pts[idx];
+    todo.last = { field: p.field, ord: p.ord, text: p.text };
+    goToPoint(p);
+  }
+  function goToPoint(p) {
+    if (p.issue) {
+      toast(`${p.issue.message} — ${p.issue.suggestion}`, p.issue.severity === 'error' ? 'error' : 'warn');
+      if (!p.field) return;
+      p.field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      p.field.classList.remove('flash-warn'); void p.field.offsetWidth; p.field.classList.add('flash-warn');
+      return;
+    }
+    p.field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => { p.field.focus(); selectPlaceholder(p.field, p.ord); }, 250);
+  }
+  // เลือก placeholder ลำดับที่ ord ในช่อง (หลังโฟกัส ช่องแสดงข้อความดิบ) ให้พิมพ์ทับได้ทันที
+  function selectPlaceholder(el, ord) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let n = 0;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (const m of node.data.matchAll(PH_RE)) {
+        if (n++ !== ord) continue;
+        const r = document.createRange(); r.setStart(node, m.index); r.setEnd(node, m.index + m[0].length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        return;
+      }
+    }
+  }
+  $('todo-badge').addEventListener('mousedown', (e) => e.preventDefault());
+  $('todo-badge').addEventListener('click', () => {
+    // ช่องที่กำลังพิมพ์บันทึกก่อน แล้วค่อยไปจุดถัดไป
+    if (document.activeElement?.closest?.('[data-field]')) document.activeElement.blur();
+    nextTodo();
+  });
   function jumpToPlaceholder(text) {
-    const chips = [...sheet.querySelectorAll('.ph-chip')];
-    const chip = chips.find(c => !text || c.textContent === text || c.textContent === num(text)) || chips[0];
-    if (!chip) { toast('ไม่มีจุดที่ต้องระบุแล้ว'); return; }
-    const el = chip.closest('[data-field]');
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    if (st.editOn) setTimeout(() => el.focus(), 250);
+    const pts = todoPoints().filter(p => !p.issue);
+    const p = pts.find(q => !text || q.text === text || q.text === num(text)) || pts[0];
+    if (!p) { toast('ไม่มีจุดที่ต้องระบุแล้ว'); return; }
+    todo.last = { field: p.field, ord: p.ord, text: p.text };
+    goToPoint(p);
   }
 
   // ---------- ฉบับจริง (ไฟล์ Word/PDF ที่แก้เสร็จแล้วอัปโหลดกลับ) ----------
@@ -648,7 +723,6 @@
     ['chat', 'source', 'checks', 'finals'].forEach(n => { $('tab-' + n).hidden = n !== name; });
   }
   document.querySelectorAll('[data-tab]').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
-  $('btn-lint').addEventListener('click', () => { showLeft(); selectTab('checks'); });
   $('rail-source').addEventListener('click', () => { showLeft(); selectTab('source'); });
   function showLeft() { $('left-pane').classList.remove('max-lg:hidden'); }
   $('btn-left-toggle').addEventListener('click', () => $('left-pane').classList.toggle('max-lg:hidden'));
@@ -656,7 +730,6 @@
   // บทสนทนา: สร้างจากขั้นตอนที่ระบบทำจริง (ไม่ใช่ข้อความจำลอง)
   const avatar = '<div class="w-6 h-6 rounded bg-brand-600 text-white flex items-center justify-center shrink-0 mt-0.5 text-[10px]"><i class="fa-solid fa-file"></i></div>';
   function renderChat() {
-    const c = counts();
     const steps = entry.steps || [];
     const user = entry.prompt ? `
       <div class="flex justify-end"><div class="max-w-[85%] bg-white border border-slate-200 rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-slate-800 font-body leading-relaxed whitespace-pre-wrap">${esc(entry.prompt)}</div></div>` : '';
@@ -675,8 +748,8 @@
       <div class="flex items-start gap-2.5">${avatar}
         <div class="flex-1 space-y-3 min-w-0">
           <div class="text-xs font-medium text-slate-500">GovDoc AI</div>
-          <div><p class="font-medium text-slate-900">${c.ph ? 'ร่างเอกสารแล้ว เหลือจุดที่ต้องระบุ' : 'ร่างเอกสารเสร็จแล้ว'}</p>
-          <p class="text-slate-600 text-xs mt-0.5">${c.ph ? `มี ${toThai(c.ph)} จุดที่ระบบไม่มีข้อมูล จึงเว้นไว้ให้กรอก — คลิกที่ช่องสีเหลืองบนกระดาษเพื่อพิมพ์ทับ` : 'ตรวจทานข้อเท็จจริงอีกครั้งก่อนส่งออก'}</p></div>
+          <div><p class="font-medium text-slate-900">ร่างเอกสารแล้ว</p>
+          <p class="text-slate-600 text-xs mt-0.5">ข้อมูลที่ต้นเรื่องไม่มี ระบบเว้นเป็นช่องสีเหลืองให้กรอก — กดป้าย "ต้องแก้" มุมขวาบนเพื่อไปทีละจุด แล้วตรวจทานข้อเท็จจริงก่อนส่งออก</p></div>
           <button type="button" id="card-open" class="w-full bg-white border-2 border-emerald-500/70 rounded-xl p-3 shadow-sm hover:border-emerald-600 transition flex items-center justify-between gap-2 text-left group">
             <span class="flex items-center gap-3 min-w-0">
               <span class="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0"><i class="fa-regular fa-file-lines"></i></span>
@@ -685,7 +758,6 @@
             </span>
             <i class="fa-solid fa-chevron-right text-slate-400 text-xs group-hover:translate-x-0.5 transition"></i>
           </button>
-          ${c.ph ? `<button type="button" id="card-jump" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-3 py-1.5 rounded-lg"><i class="fa-solid fa-location-crosshairs mr-1"></i>ไปยังจุดที่ต้องระบุ</button>` : ''}
         </div>
       </div>`;
     const summary = entry.context?.summary ? `
@@ -695,7 +767,6 @@
       </div>` : '';
     $('tab-chat').innerHTML = user + file + tools + ready + summary;
     $('card-open')?.addEventListener('click', () => $('doc-viewport').scrollTo({ top: 0, behavior: 'smooth' }));
-    $('card-jump')?.addEventListener('click', () => jumpToPlaceholder());
   }
 
   // ---------- ต้นเรื่อง: ไฟล์จริง (PDF/ภาพ) + ข้อความที่อ่านได้ + ค้นคำ ----------
@@ -848,7 +919,7 @@
     const b = e.target.closest('[data-quick]'); if (!b) return;
     $('quick-menu').hidden = true;
     const act = b.dataset.quick;
-    if (act === 'jump') jumpToPlaceholder();
+    if (act === 'jump') nextTodo();
     if (act === 'lint') { showLeft(); selectTab('checks'); runCheck(); }
     if (act === 'print') window.print();
     if (act === 'formal') {
@@ -1000,6 +1071,7 @@
     renderChrome();
     renderChecks();
     renderChat();
+    renderTodo();
     fitSheet();
   }
 
