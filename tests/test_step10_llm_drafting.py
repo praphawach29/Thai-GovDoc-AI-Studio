@@ -298,3 +298,48 @@ def test_studio_draft_scanned_pdf_end_to_end(tmp_path, monkeypatch):
     assert steps["extract"]["ok"] and "Gemini" in steps["extract"]["detail"]
     assert "วิ่งเปี้ยว" in body["context"]["raw_text"]
     assert body["ai_provider"] == "claude" and body["document"]["subject"] == CONTENT.subject
+
+
+# ---------------------------------------------------------------- สาเหตุ error ที่แสดง/บันทึก
+class _AnthropicLikeError(Exception):
+    def __init__(self, status, message):
+        super().__init__(f"Error code: {status}")
+        self.status_code = status
+        self.body = {"type": "error", "error": {"type": "invalid_request_error", "message": message}}
+
+
+class _GoogleLikeError(Exception):
+    def __init__(self, code, message):
+        super().__init__(f"{code} {message}")
+        self.code, self.message = code, message
+
+
+@pytest.mark.parametrize("exc, expected", [
+    (_AnthropicLikeError(400, "Your credit balance is too low to access the Anthropic API."), "เครดิต"),
+    (_AnthropicLikeError(400, "messages.0.content.1: image too large"), "คำขอถูกปฏิเสธ (400): messages.0"),
+    (_AnthropicLikeError(401, "invalid x-api-key"), "API key ไม่ถูกต้อง (401)"),
+    (_GoogleLikeError(504, "Deadline expired before operation could complete."), "ไม่ทันเวลา (504)"),
+    (_GoogleLikeError(404, "models/gemini-x is not found"), "ไม่พบรุ่นโมเดล"),
+    (_GoogleLikeError(503, "The model is overloaded."), "ขัดข้องชั่วคราว (503)"),
+])
+def test_errors_are_described_by_status(exc, expected):
+    assert expected in llm_drafter._short_error(exc)
+
+
+def test_claude_retries_without_fallbacks_when_account_rejects_them():
+    calls = []
+
+    class Messages:
+        def create(self, **kw):
+            calls.append(kw)
+            if "fallbacks" in kw:
+                raise _AnthropicLikeError(400, "fallbacks: this beta is not available for your organization")
+            return "ok"
+
+    client = types.SimpleNamespace(beta=types.SimpleNamespace(messages=Messages()))
+    assert llm_drafter._claude_create(client, {"model": "m", "fallbacks": "default", "betas": ["b"]}) == "ok"
+    assert len(calls) == 2 and "fallbacks" not in calls[1] and "betas" not in calls[1]
+    with pytest.raises(_AnthropicLikeError):            # 400 อื่นไม่ลองซ้ำ
+        llm_drafter._claude_create(types.SimpleNamespace(beta=types.SimpleNamespace(messages=types.SimpleNamespace(
+            create=lambda **kw: (_ for _ in ()).throw(_AnthropicLikeError(400, "image too large"))))),
+            {"model": "m", "fallbacks": "default"})

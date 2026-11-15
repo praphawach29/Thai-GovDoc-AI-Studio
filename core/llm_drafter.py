@@ -14,6 +14,7 @@ core/ ไม่อ่านตัวแปรสภาพแวดล้อม: 
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
@@ -22,6 +23,8 @@ from pydantic import BaseModel, Field
 
 from core.models import DocType, GovDocumentSchema, SecretLevel
 from core.security import cloud_ai_allowed
+
+logger = logging.getLogger("govdoc.ai")
 
 MAX_SOURCE_CHARS = 100_000            # ต้นเรื่องยาวกว่านี้ส่งเฉพาะส่วนต้น (แจ้งผู้ใช้ในขั้นตอน)
 _FALLBACK_MODELS = {"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5-2"}
@@ -55,7 +58,7 @@ class LLMConfig:
     # เวลาที่ให้ AI ร่าง (วินาที) — คำขอทั้งหมด (อ่านไฟล์ + ร่าง) ต้องน้อยกว่า maxDuration 120 วินาทีใน vercel.json
     total_timeout_s: float = 75.0
     claude_timeout_s: float = 50.0
-    ocr_timeout_s: float = 35.0
+    ocr_timeout_s: float = 50.0
 
     @property
     def any_provider(self) -> bool:
@@ -139,6 +142,19 @@ class EmptyResult(RuntimeError):
     pass
 
 
+def _claude_create(client, kwargs: dict):
+    """เรียก Claude; ถ้าบัญชีใช้ตัวเลือก fallback (beta) ไม่ได้ (400 ที่พูดถึง fallback/beta) ลองใหม่โดยไม่ใส่"""
+    try:
+        return client.beta.messages.create(**kwargs)
+    except Exception as exc:
+        status, message = _status_and_message(exc)
+        if status == 400 and "fallbacks" in kwargs and ("fallback" in message.lower() or "beta" in message.lower()):
+            logger.warning("Claude rejected server-side fallbacks, retrying without: %s", message)
+            retry = {k: v for k, v in kwargs.items() if k not in ("fallbacks", "betas")}
+            return client.beta.messages.create(**retry)
+        raise
+
+
 def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftContent:
     import anthropic
 
@@ -154,7 +170,7 @@ def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
     if config.claude_model in _FALLBACK_MODELS:
         # ถ้าโมเดลปฏิเสธด้วยเหตุผลด้านความปลอดภัย ให้ Anthropic สลับไปโมเดลสำรองในคำขอเดียวกัน
         kwargs.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
-    response = client.beta.messages.create(**kwargs)
+    response = _claude_create(client, kwargs)
     if response.stop_reason == "refusal":
         raise ProviderRefused("โมเดลปฏิเสธคำขอ")
     if response.stop_reason == "max_tokens":
@@ -183,24 +199,58 @@ def _call_gemini(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
     return DraftContent.model_validate_json(response.text or "")
 
 
+def _status_and_message(exc: Exception) -> Tuple[Optional[int], str]:
+    """รหัสสถานะ HTTP และข้อความจากผู้ให้บริการ (Anthropic: status_code/body, Google: code/message)"""
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    status = status if isinstance(status, int) else None
+    message = ""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error")
+        message = (err.get("message") if isinstance(err, dict) else None) or body.get("message") or ""
+    if not message:
+        message = str(getattr(exc, "message", "") or exc)
+    return status, " ".join(str(message).split())[:200]
+
+
 def _short_error(exc: Exception) -> str:
-    """สาเหตุที่แสดงให้ผู้ใช้ได้ (ไม่ส่งข้อความดิบที่อาจมีรายละเอียดภายใน)"""
+    """สาเหตุที่แสดงให้ผู้ใช้ได้ — อิงรหัสสถานะจากผู้ให้บริการ (ข้อความ error ของผู้ให้บริการไม่มีคีย์หรือข้อมูลลับ)"""
     name = type(exc).__name__
     if isinstance(exc, ProviderRefused):
         return "โมเดลปฏิเสธคำขอ"
     if isinstance(exc, EmptyResult):
         return "อ่านข้อความจากภาพไม่ได้"
-    if "Timeout" in name or "timeout" in str(exc).lower():
+    status, message = _status_and_message(exc)
+    lower = message.lower()
+    if status is not None:
+        if "credit balance" in lower or "billing" in lower:
+            return "เครดิตของบัญชีไม่พอ (เติมเครดิตที่หน้า Billing ของผู้ให้บริการ)"
+        if status == 401:
+            return "API key ไม่ถูกต้อง (401)"
+        if status == 403:
+            return "API key ไม่มีสิทธิ์ใช้งานรุ่นนี้ (403)"
+        if status == 404:
+            return "ไม่พบรุ่นโมเดลนี้ — ตรวจชื่อรุ่น (404)"
+        if status == 429:
+            return "ใช้งานเกินโควตา/อัตราที่กำหนด (429)"
+        if status in (408, 504):
+            return f"ผู้ให้บริการประมวลผลไม่ทันเวลา ({status})"
+        if status >= 500:
+            return f"ผู้ให้บริการขัดข้องชั่วคราว ({status})"
+        return f"คำขอถูกปฏิเสธ ({status}): {message[:140]}"
+    if "Timeout" in name or "timed out" in lower or "timeout" in lower:
         return "หมดเวลารอคำตอบ"
-    if "Authentication" in name or "PermissionDenied" in name or "API key" in str(exc):
-        return "API key ไม่ถูกต้องหรือไม่มีสิทธิ์"
-    if "RateLimit" in name or "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
-        return "ใช้งานเกินโควตา"
     if "Connection" in name:
         return "เชื่อมต่อไม่ได้"
     if "ValidationError" in name or isinstance(exc, (json.JSONDecodeError, ValueError)):
         return "คำตอบไม่อยู่ในรูปแบบที่กำหนด"
     return f"เรียกไม่สำเร็จ ({name})"
+
+
+def _log_failure(kind: str, name: str, model: str, exc: Exception) -> None:
+    """บันทึกสาเหตุเต็มไว้ใน log ของเซิร์ฟเวอร์ (ไว้ไล่ปัญหา) — ไม่มีคีย์หรือเนื้อหาเอกสาร"""
+    status, message = _status_and_message(exc)
+    logger.warning("AI %s via %s (%s) failed: %s status=%s %s", kind, name, model, type(exc).__name__, status, message)
 
 
 def _clean(content: DraftContent) -> DraftContent:
@@ -268,6 +318,7 @@ def draft_content_with_llm(
         try:
             content = _clean(call(prompt, config, budget))
         except Exception as exc:  # สลับไปตัวถัดไปเสมอ — เหตุผลบันทึกไว้แสดงในขั้นตอน
+            _log_failure("draft", name, model, exc)
             result.attempts.append(LLMAttempt(name, model, False, _short_error(exc), round(clock() - started, 1)))
             continue
         result.attempts.append(LLMAttempt(name, model, True, seconds=round(clock() - started, 1)))
@@ -332,7 +383,7 @@ def _ocr_claude(images: list, config: LLMConfig, timeout_s: float) -> str:
                   output_config={"effort": "low"})          # ถอดข้อความไม่ต้องคิดลึก เร็วกว่า
     if config.claude_model in _FALLBACK_MODELS:
         kwargs.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
-    response = client.beta.messages.create(**kwargs)
+    response = _claude_create(client, kwargs)
     if response.stop_reason == "refusal":
         raise ProviderRefused("โมเดลปฏิเสธคำขอ")
     return "".join(b.text for b in response.content if b.type == "text").strip()
@@ -344,7 +395,11 @@ def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float) -> str:
 
     client = genai.Client(api_key=config.gemini_api_key,
                           http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
-    response = client.models.generate_content(model=config.gemini_model, contents=[*images, OCR_PROMPT])
+    import base64
+
+    parts = [types.Part.from_bytes(data=base64.standard_b64decode(_jpeg_b64(img)), mime_type="image/jpeg")
+             for img in images]
+    response = client.models.generate_content(model=config.gemini_model, contents=[*parts, OCR_PROMPT])
     return (response.text or "").strip()
 
 
@@ -380,13 +435,14 @@ def ocr_images_with_llm(
         if remaining < 4:
             result.attempts.append(LLMAttempt(name, model, False, "หมดเวลารวม ข้ามไป"))
             continue
-        timeout = remaining if index == len(providers) - 1 else max(4.0, remaining * 0.6)
+        timeout = remaining if index == len(providers) - 1 else max(4.0, remaining * 0.7)
         started = clock()
         try:
             text = call(images, config, timeout)
             if len(text.strip()) < 20:
                 raise EmptyResult()
         except Exception as exc:
+            _log_failure("ocr", name, model, exc)
             result.attempts.append(LLMAttempt(name, model, False, _short_error(exc), round(clock() - started, 1)))
             continue
         result.attempts.append(LLMAttempt(name, model, True, seconds=round(clock() - started, 1)))
