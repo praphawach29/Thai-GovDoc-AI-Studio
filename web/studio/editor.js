@@ -322,7 +322,9 @@
     const raw = FIELDS[el.dataset.field].get(st.doc);
     if (el.classList.contains('lines')) { el.innerHTML = linesHTML(raw, true); lastLineField = el; } else el.textContent = raw;
     // ถ้าทั้งช่องเป็น placeholder ให้เลือกทั้งหมดเพื่อพิมพ์ทับได้ทันที
-    if (hasPlaceholder(el.textContent)) {
+    // (ช่องที่มีข้อความอื่นด้วย ไม่เลือกให้ — กันกดปุ่มแล้ว placeholder กลางย่อหน้าหายโดยไม่ตั้งใจ)
+    const onlyPlaceholder = hasPlaceholder(el.textContent) && !el.textContent.replace(PH_RE, '').replace(/[()\s]/g, '');
+    if (onlyPlaceholder) {
       const m = el.textContent.match(PH_RE);
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       let node = walker.nextNode();
