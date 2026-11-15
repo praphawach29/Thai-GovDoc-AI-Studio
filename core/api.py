@@ -10,7 +10,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional, List
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT_DIR = Path(__file__).resolve().parent.parent
+_ROOT = _ROOT_DIR
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
@@ -54,8 +55,18 @@ app.add_middleware(
 )
 
 registry = DocumentRegistry()
-uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
-uploads_dir.mkdir(exist_ok=True)
+
+# รองรับ Serverless / Read-only filesystem บน Vercel
+if os.environ.get("VERCEL") or not os.access(_ROOT_DIR, os.W_OK):
+    uploads_dir = Path(tempfile.gettempdir()) / "uploads"
+else:
+    uploads_dir = _ROOT_DIR / "uploads"
+
+try:
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+except OSError:
+    uploads_dir = Path(tempfile.gettempdir()) / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
 
 
 class DraftRequest(BaseModel):
@@ -443,10 +454,31 @@ def export_pdf(doc: GovDocumentSchema):
     return Response(content=pdf_bytes, media_type="application/pdf")
 
 
-app.mount("/studio", StaticFiles(directory=_ROOT_DIR / "web" / "studio", html=True), name="studio")
-app.mount("/assets", StaticFiles(directory=_ROOT_DIR / "assets"), name="assets")
+studio_dir = _ROOT_DIR / "web" / "studio"
+assets_dir = _ROOT_DIR / "assets"
+
+if studio_dir.is_dir():
+    app.mount("/studio", StaticFiles(directory=studio_dir, html=True), name="studio")
+else:
+    @app.get("/studio", include_in_schema=False)
+    @app.get("/studio/{path:path}", include_in_schema=False)
+    def studio_fallback(path: str = ""):
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "online",
+                "message": "Thai GovDoc AI Studio API is running",
+                "docs": "/docs",
+                "path": path,
+            }
+        )
+
+if assets_dir.is_dir():
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 
 @app.get("/", include_in_schema=False)
 def root_redirect():
-    return RedirectResponse(url="/studio/")
+    if studio_dir.is_dir():
+        return RedirectResponse(url="/studio/")
+    return RedirectResponse(url="/docs")

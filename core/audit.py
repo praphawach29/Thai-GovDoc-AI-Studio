@@ -3,6 +3,8 @@ audit.py — ระบบบันทึกประวัติการแก�
 รองรับ Human-in-the-loop Review สำหรับงานสารบรรณภาครัฐ
 """
 
+import os
+import tempfile
 import difflib
 import sqlite3
 import datetime
@@ -115,9 +117,22 @@ class AuditManager:
     """
     def __init__(self, db_path: Optional[str] = None):
         if not db_path:
-            db_dir = Path(__file__).resolve().parent.parent / "data"
-            db_dir.mkdir(exist_ok=True)
-            db_path = str(db_dir / "audit.db")
+            root_dir = Path(__file__).resolve().parent.parent
+            if os.environ.get("VERCEL") or not os.access(root_dir, os.W_OK):
+                db_dir = Path(tempfile.gettempdir()) / "data"
+            else:
+                db_dir = root_dir / "data"
+
+            try:
+                db_dir.mkdir(parents=True, exist_ok=True)
+                db_path = str(db_dir / "audit.db")
+                test_conn = sqlite3.connect(db_path)
+                test_conn.execute("CREATE TABLE IF NOT EXISTS _health (id INT)")
+                test_conn.close()
+            except (OSError, sqlite3.OperationalError):
+                db_dir = Path(tempfile.gettempdir()) / "data"
+                db_dir.mkdir(parents=True, exist_ok=True)
+                db_path = str(db_dir / "audit.db")
         self.db_path = db_path
         self._init_db()
 

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "core/api.py": {
+      "includeFiles": "{web/**,assets/**,templates/**,data/**}"
+    },
+    "main.py": {
+      "includeFiles": "{web/**,assets/**,templates/**,data/**}"
+    }
+  }
+}

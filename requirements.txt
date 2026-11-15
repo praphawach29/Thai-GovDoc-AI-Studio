@@ -22,7 +22,7 @@ pydantic==2.12.5
 pythainlp==5.4.0
 python-docx==1.2.0
 pdfplumber==0.11.10
-opencv-python==5.0.0.93
+opencv-python-headless>=4.8.0
 pillow==12.3.0
 
 # --- Rendering ---

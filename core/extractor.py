@@ -266,17 +266,23 @@ def extract_text_from_image_file(
     2. บันทึกภาพที่ปรับแต่งแล้ว
     3. ส่งเข้า OCR Multi-Engine
     """
-    import cv2
-    img_cv = cv2.imread(image_path)
     preview_path = image_path
-
-    if img_cv is not None:
-        deskewed, _ = deskew_image(img_cv)
-        enhanced = enhance_document_contrast(deskewed)
-        preview_dir = Path(image_path).parent / "previews"
-        preview_dir.mkdir(parents=True, exist_ok=True)
-        preview_path = str(preview_dir / f"{Path(image_path).stem}_enhanced.png")
-        cv2.imwrite(preview_path, enhanced)
+    try:
+        import cv2
+        img_cv = cv2.imread(image_path)
+        if img_cv is not None:
+            deskewed, _ = deskew_image(img_cv)
+            enhanced = enhance_document_contrast(deskewed)
+            preview_dir = Path(image_path).parent / "previews"
+            try:
+                preview_dir.mkdir(parents=True, exist_ok=True)
+                p_path = str(preview_dir / f"{Path(image_path).stem}_enhanced.png")
+                cv2.imwrite(p_path, enhanced)
+                preview_path = p_path
+            except OSError:
+                pass
+    except Exception:
+        pass
 
     pil_img = Image.open(preview_path)
     text, eng_name = try_extract_ocr_multi_engine(pil_img, api_key=api_key, allow_cloud=allow_cloud)

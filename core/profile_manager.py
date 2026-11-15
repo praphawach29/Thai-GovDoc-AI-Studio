@@ -4,14 +4,19 @@ profile_manager.py — ระบบจัดการโปรไฟล์หน
 บันทึกและโหลดค่าการตั้งค่าหน่วยงานอย่างถาวรจาก data/user_profile.json
 """
 
+import os
 import json
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 from core.models import UserProfileSchema, MemoHierarchyLevel
 
-
-PROFILE_FILE = Path(__file__).resolve().parent.parent / "data" / "user_profile.json"
+_ROOT_DIR = Path(__file__).resolve().parent.parent
+if os.environ.get("VERCEL") or not os.access(_ROOT_DIR, os.W_OK):
+    PROFILE_FILE = Path(tempfile.gettempdir()) / "data" / "user_profile.json"
+else:
+    PROFILE_FILE = _ROOT_DIR / "data" / "user_profile.json"
 
 
 def get_default_profile() -> UserProfileSchema:
@@ -54,11 +59,14 @@ def save_user_profile(profile: UserProfileSchema) -> None:
     """
     บันทึกโปรไฟล์หน่วยงานลงไฟล์ data/user_profile.json
     """
-    PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PROFILE_FILE.write_text(
-        profile.model_dump_json(indent=2),
-        encoding="utf-8"
-    )
+    try:
+        PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PROFILE_FILE.write_text(
+            profile.model_dump_json(indent=2),
+            encoding="utf-8"
+        )
+    except OSError:
+        pass
 
 
 def reset_to_default_profile() -> UserProfileSchema:
