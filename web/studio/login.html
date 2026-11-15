@@ -34,8 +34,15 @@
     </div>
     <div>
       <label for="password" class="block text-xs font-medium text-slate-600 mb-1.5">รหัสผ่าน</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" required
-             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+      <div class="relative">
+        <input id="password" name="password" type="password" autocomplete="current-password" required
+               class="w-full rounded-lg border border-slate-300 pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+        <button id="toggle-password" type="button" aria-label="แสดงรหัสผ่าน" aria-pressed="false" title="แสดงรหัสผ่าน"
+                class="absolute inset-y-0 right-0 w-10 flex items-center justify-center text-slate-400 hover:text-slate-700 focus:outline-none focus-visible:text-emerald-700">
+          <i class="fa-regular fa-eye" aria-hidden="true"></i>
+        </button>
+      </div>
+      <p id="password-hint" class="mt-1.5 text-[11px] text-amber-700" hidden></p>
     </div>
     <p id="login-error" class="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2" role="alert" hidden></p>
     <button id="login-submit" type="submit"
@@ -56,6 +63,28 @@
   const next = raw.startsWith('/') && !raw.startsWith('//') ? raw : './';
 
   const showError = (msg) => { $('login-error').textContent = msg; $('login-error').hidden = !msg; };
+
+  // ปุ่มรูปตา: สลับแสดง/ซ่อนรหัสผ่าน (ช่องรหัสผ่านยังโฟกัสอยู่ พิมพ์ต่อได้)
+  $('toggle-password').addEventListener('click', () => {
+    const input = $('password'), btn = $('toggle-password');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    const label = show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน';
+    btn.setAttribute('aria-pressed', String(show));
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+    btn.firstElementChild.className = show ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+    input.focus();
+  });
+  // เตือนเมื่อพิมพ์ด้วยแป้นภาษาไทยหรือเปิด Caps Lock อยู่ (สาเหตุรหัสผ่านผิดที่พบบ่อย)
+  const hint = (e) => {
+    const thai = /[\u0e00-\u0e7f]/.test($('password').value);
+    const caps = e && e.getModifierState && e.getModifierState('CapsLock');
+    const msg = thai ? 'รหัสผ่านมีตัวอักษรภาษาไทย — แป้นพิมพ์อาจเป็นภาษาไทยอยู่' : caps ? 'เปิด Caps Lock อยู่' : '';
+    $('password-hint').textContent = msg; $('password-hint').hidden = !msg;
+  };
+  $('password').addEventListener('input', hint);
+  $('password').addEventListener('keyup', hint);
   try {
     const cfg = await GovDocAuth.config();
     if (!cfg.auth_required) { location.replace(next); return; }   // โหมดเครื่องเดียว ไม่ต้องล็อกอิน
