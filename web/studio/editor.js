@@ -444,6 +444,7 @@
   function renderChrome() {
     const d = st.doc, c = counts();
     $('type-label').textContent = DOC_TYPE_LABEL[d.doc_type] || 'เอกสาร';
+    $('type-select').value = d.doc_type;
     $('doc-title').textContent = d.subject || 'ไม่มีชื่อเรื่อง';
     $('doc-title').title = d.subject || '';
     document.title = `${d.subject || 'เอกสาร'} — GovDoc Studio`;
@@ -731,32 +732,62 @@
   $('btn-pdf').addEventListener('click', (e) => exportAs('pdf', e.currentTarget));
 
   // ---------- ร่างใหม่จากข้อมูลเพิ่มเติม ----------
+  // ร่างใหม่ทั้งฉบับด้วย AI จากต้นเรื่องเดิม (ข้อความที่อ่านจากไฟล์แล้ว ไม่ต้องอ่านไฟล์ซ้ำ)
+  // ใช้ทั้งตอนเพิ่มข้อมูล และตอนเปลี่ยนประเภทหนังสือ
+  async function redraft({ extra = '', docType = st.doc.doc_type, note = 'ก่อนร่างใหม่' } = {}) {
+    const source = entry.context?.raw_text || '';
+    const parts = [entry.prompt, source !== entry.prompt ? source : '', extra].filter(Boolean);
+    if (!parts.length) throw new Error('ไม่มีต้นเรื่องเดิมให้ร่างใหม่ — พิมพ์ข้อมูลเพิ่มในช่องด้านล่าง');
+    const fd = new FormData();
+    fd.append('prompt', parts.join('\n\n'));
+    fd.append('doc_type', docType);
+    fd.append('urgency', st.doc.urgency);
+    fd.append('secret', st.doc.secret);
+    if (docType === 'internal' && entry.unitKey) fd.append('unit_key', entry.unitKey);
+    const res = await api.draft(fd);
+    if (!res.document) throw new Error(res.steps.find(s => !s.ok)?.detail || 'ร่างไม่สำเร็จ');
+    st.versions.push({ at: new Date().toISOString(), doc: st.doc, note });
+    snapshot(note);
+    st.undo = []; st.redo = [];
+    st.doc = res.document; st.check = res.check;
+    // ต้นเรื่องเดิมยังเป็นข้อความที่อ่านจากไฟล์ (คงไว้ ไม่แทนด้วยข้อความที่ส่งไปร่างใหม่)
+    entry.steps = res.steps;
+    if (!entry.context) entry.context = res.context;
+    if (extra) entry.prompt = [entry.prompt, extra].filter(Boolean).join('\n\n');
+    renderAll(); renderSource(); renderChat(); persist();
+  }
+
   $('redraft-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const extra = $('redraft-input').value.trim();
     if (!extra) { $('redraft-input').focus(); return; }
-    const base = entry.context?.raw_text || entry.prompt || '';
     if (!confirm('ร่างใหม่ทั้งฉบับจากต้นเรื่องเดิมรวมกับข้อมูลที่เพิ่ม? (ฉบับปัจจุบันจะเก็บไว้ในประวัติเวอร์ชัน)')) return;
     $('redraft-btn').disabled = true;
-    const fd = new FormData();
-    fd.append('prompt', [base, extra].filter(Boolean).join('\n\n'));
-    fd.append('doc_type', st.doc.doc_type);
-    fd.append('urgency', st.doc.urgency);
-    fd.append('secret', st.doc.secret);
     try {
-      const res = await api.draft(fd);
-      if (!res.document) throw new Error(res.steps.find(s => !s.ok)?.detail || 'ร่างไม่สำเร็จ');
-      st.versions.push({ at: new Date().toISOString(), doc: st.doc, note: 'ก่อนร่างใหม่' });
-      snapshot('ก่อนร่างใหม่');
-      st.undo = []; st.redo = [];
-      st.doc = res.document; st.check = res.check;
-      entry.steps = res.steps; entry.context = res.context;
-      entry.prompt = [entry.prompt, extra].filter(Boolean).join('\n\n');
+      await redraft({ extra });
       $('redraft-input').value = '';
-      renderAll(); renderSource(); persist();
       toast('ร่างใหม่แล้ว');
     } catch (err) { toast(err.message, 'error'); }
     finally { $('redraft-btn').disabled = false; }
+  });
+
+  // เปลี่ยนประเภทหนังสือ → AI ร่างใหม่เป็นประเภทนั้น (โครงสร้างต่างกันมาก แปลงช่องตรง ๆ ไม่ได้ผลดี)
+  $('type-select').addEventListener('change', async (e) => {
+    const target = e.target.value;
+    if (target === st.doc.doc_type) return;
+    const label = DOC_TYPE_LABEL[target];
+    if (!confirm(`ร่างใหม่เป็น${label}ด้วย AI จากต้นเรื่องเดิม? (ฉบับปัจจุบันเก็บไว้ในประวัติเวอร์ชัน กลับไปใช้ได้)`)) {
+      e.target.value = st.doc.doc_type; return;
+    }
+    e.target.disabled = true;
+    toast(`กำลังร่างใหม่เป็น${label}... อาจใช้เวลาราว ๑ นาที`);
+    try {
+      await redraft({ docType: target, note: `ก่อนเปลี่ยนเป็น${label}` });
+      toast(`เปลี่ยนเป็น${label}แล้ว`);
+    } catch (err) {
+      e.target.value = st.doc.doc_type;
+      toast(err.message, 'error');
+    } finally { e.target.disabled = false; }
   });
 
   // ---------- ประวัติเวอร์ชัน ----------

@@ -377,3 +377,40 @@ def test_gemini_low_thinking_with_retry_when_unsupported():
     assert llm_drafter._gemini_generate(client, "gemini-2.5-flash", "x", response_mime_type="application/json") == "ok"
     assert configs[0].thinking_config.thinking_level.value == "LOW" and configs[1].thinking_config is None
     assert configs[1].response_mime_type == "application/json"
+
+
+# ---------------------------------------------------------------- ประเภทหนังสือที่จะร่าง
+@pytest.mark.parametrize("hint, prompt, has_file, classified, expected", [
+    (DocType.EXTERNAL, "ช่วยร่างบันทึกข้อความ", True, DocType.INTERNAL, DocType.EXTERNAL),   # ผู้ใช้เลือกเองชนะ
+    (None, "ช่วยร่างบันทึกข้อความ เรื่องขอเป็นเจ้าภาพร่วม", True, DocType.EXTERNAL, DocType.INTERNAL),
+    (None, "ร่างหนังสือตอบสมาคม", True, DocType.INTERNAL, DocType.EXTERNAL),
+    (None, "", True, DocType.EXTERNAL, DocType.INTERNAL),        # ต้นเรื่องรับเข้า → บันทึกเสนอตามสายงาน
+    (None, "ขอใช้อาคาร", False, DocType.EXTERNAL, DocType.EXTERNAL),
+])
+def test_choose_output_type(hint, prompt, has_file, classified, expected):
+    from core.studio import choose_output_type
+
+    assert choose_output_type(hint, prompt, has_source_file=has_file, classified=classified)[0] == expected
+
+
+def test_incoming_letter_with_memo_request_drafts_memo(tmp_path, monkeypatch):
+    """ต้นเรื่องเป็นหนังสือภายนอกจากสมาคม + คำสั่ง 'ร่างบันทึกข้อความ' → ได้บันทึกข้อความ (ไม่ใช่หนังสือภายนอก)"""
+    from server.main import app
+    from server.settings import Settings, get_settings
+
+    monkeypatch.setattr(llm_drafter, "_ocr_gemini", lambda imgs, c, t:
+                        "ที่ สวปท.๑๔/๒๕๖๗ ด้วยสมาคมวิ่งเปี้ยวขอเชิญกรุงเทพมหานครเป็นเจ้าภาพร่วม จึงเรียนมาเพื่อโปรดพิจารณา ขอแสดงความนับถือ")
+    monkeypatch.setattr(llm_drafter, "_call_claude", _ok())
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        anthropic_api_key="k1", gemini_api_key="k2", upload_dir=tmp_path / "up")
+    try:
+        with open(_scanned_pdf(tmp_path), "rb") as f:
+            body = TestClient(app).post("/api/v1/studio/draft", data={
+                "prompt": "ช่วยร่างบันทึกข้อความ เรื่องขอเป็นเจ้าร่วมกีฬาวิ่งเปี้ยว"},
+                files={"file": ("งานวิ่งเปี้ยว.pdf", f, "application/pdf")}).json()
+    finally:
+        app.dependency_overrides.clear()
+    assert body["document"]["doc_type"] == "internal"
+    step = next(s for s in body["steps"] if s["key"] == "classify")
+    assert "บันทึกข้อความ" in step["detail"] and "คำสั่ง" in step["detail"]
+    assert body["document"]["salutation"] == "เรียน หัวหน้ากลุ่มงานส่งเสริมกีฬา"

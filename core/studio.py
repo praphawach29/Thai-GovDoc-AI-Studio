@@ -127,6 +127,37 @@ def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema
     )
 
 
+DOC_TYPE_THAI = {DocType.INTERNAL: "บันทึกข้อความ (หนังสือภายใน)", DocType.EXTERNAL: "หนังสือภายนอก"}
+_ASK_INTERNAL = ("บันทึกข้อความ", "หนังสือภายใน", "บันทึกเสนอ", "เสนอผู้บังคับบัญชา", "เสนอตามสายงาน",
+                 "เสนอ ผอ", "เสนอผู้อำนวยการ", "เสนอหัวหน้า", "เสนอปลัด")
+_ASK_EXTERNAL = ("หนังสือภายนอก", "หนังสือตอบ", "ตอบหนังสือ", "ตอบกลับ", "มีหนังสือถึง", "แจ้งตอบ")
+
+
+def requested_doc_type(prompt: str) -> Optional[DocType]:
+    """ประเภทที่ผู้ใช้ระบุในคำสั่ง เช่น 'ช่วยร่างบันทึกข้อความ...' (ไม่ระบุ = None)"""
+    text = (prompt or "").replace(" ", "")
+    internal = any(k.replace(" ", "") in text for k in _ASK_INTERNAL)
+    external = any(k.replace(" ", "") in text for k in _ASK_EXTERNAL)
+    if internal != external:
+        return DocType.INTERNAL if internal else DocType.EXTERNAL
+    return None
+
+
+def choose_output_type(hint: Optional[DocType], prompt: str, *, has_source_file: bool,
+                       classified: DocType) -> tuple:
+    """ประเภทหนังสือที่จะร่าง (ไม่ใช่ประเภทของต้นเรื่อง):
+    ผู้ใช้เลือก > คำสั่งที่พิมพ์ > มีไฟล์ต้นเรื่อง = บันทึกข้อความเสนอตามสายงาน > ตัวจำแนก"""
+    if hint is not None:
+        return hint, "ผู้ใช้เลือกเอง"
+    asked = requested_doc_type(prompt)
+    if asked is not None:
+        return asked, "ตามคำสั่งที่พิมพ์"
+    if has_source_file:
+        # ต้นเรื่องที่รับเข้ามา (มักเป็นหนังสือภายนอก) ต้องเสนอผู้บังคับบัญชาด้วยบันทึกข้อความก่อน
+        return DocType.INTERNAL, "ต้นเรื่องรับเข้า จึงร่างบันทึกเสนอตามสายงาน (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
+    return classified, "จำแนกจากเนื้อหา (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
+
+
 def start_draft(
     *,
     prompt: str = "",
@@ -186,11 +217,10 @@ def start_draft(
 
     cls = classify_source_document(ctx)
     result.classification = cls
-    doc_type = doc_type_hint or cls.doc_type
+    doc_type, why = choose_output_type(doc_type_hint, prompt, has_source_file=bool(file_path), classified=cls.doc_type)
     result.steps.append(StudioStep(
-        key="classify", label="จำแนกชนิดหนังสือ",
-        detail=f"แบบที่ {cls.form_no} · ความมั่นใจ {round(cls.confidence * 100)}%"
-        + (" · ผู้ใช้เลือกประเภทเอง" if doc_type_hint else ""),
+        key="classify", label="เลือกประเภทหนังสือที่จะร่าง",
+        detail=f"{DOC_TYPE_THAI[doc_type]} · {why}",
     ))
 
     doc = draft_from_context_rule_based(
@@ -214,7 +244,9 @@ def start_draft(
             budget_s=min(llm.total_timeout_s, max(0.0, request_budget - (time.monotonic() - started))),
             instruction=prompt if file_path else "",
             source_text=ctx.raw_text or "",
-            config=llm, secret=secret, recipient=recipient, review_party=review_party,
+            config=llm, secret=secret,
+            recipient=recipient if doc.doc_type == DocType.INTERNAL else "",
+            review_party=review_party if doc.doc_type == DocType.INTERNAL else "",
         )
         result.ai_provider = ai.provider or None
         if ai.content is not None:
