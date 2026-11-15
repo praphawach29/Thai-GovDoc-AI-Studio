@@ -261,7 +261,7 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
         ))
 
     # 5. ตรวจสอบข้อมูลผู้ลงนาม
-    if not doc.signatory_name.strip():
+    if not doc.signatory_name.strip() and not doc.signatory_stamp:
         issues.append(LintIssue(
             rule_id="RULE_MISSING_SIGNATORY_NAME",
             severity="error",

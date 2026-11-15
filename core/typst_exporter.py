@@ -65,8 +65,8 @@ def _subject_words(subject: str) -> str:
 def _format_co_signers(data: GovDocumentSchema) -> str:
     """ผู้ลงนามเพิ่มเติมเป็น array ของ dictionary ใน Typst"""
     items = [
-        f"(name: {_escape_typst_string(x.name)}, position: {_escape_typst_string(x.position)})"
-        for x in (data.co_signers or [])
+        f"(name: {_escape_typst_string(name)}, position: {_escape_typst_string(position)})"
+        for name, position in data.signer_lines()[1:]
     ]
     return "(" + "".join(i + ", " for i in items) + ")"
 
@@ -105,8 +105,8 @@ def generate_typst_content(
   paragraph_details: {details_val},
   paragraph_purpose: {_escape_typst_string(fmt_purpose)},
   closing: {_escape_typst_string(data.closing)},
-  signatory_name: {_escape_typst_string(data.signatory_name)},
-  signatory_position: {_escape_typst_string(data.signatory_position)},
+  signatory_name: {_escape_typst_string(data.signer_lines()[0][0])},
+  signatory_position: {_escape_typst_string(data.signer_lines()[0][1])},
   contact_dept: {_escape_typst_string(data.contact_dept)},
   contact_tel: {_escape_typst_string(data.contact_tel)},
   contact_fax: {_escape_typst_string(data.contact_fax)},
@@ -137,8 +137,8 @@ def generate_typst_content(
   paragraph_details: {details_val},
   paragraph_purpose: {_escape_typst_string(fmt_purpose)},
   memo_blocks: {_format_memo_blocks(data)},
-  signatory_name: {_escape_typst_string(data.signatory_name)},
-  signatory_position: {_escape_typst_string(data.signatory_position)},
+  signatory_name: {_escape_typst_string(data.signer_lines()[0][0])},
+  signatory_position: {_escape_typst_string(data.signer_lines()[0][1])},
   co_signers: {_format_co_signers(data)},
   urgency: "{data.urgency.value}",
   secret: "{data.secret.value}",

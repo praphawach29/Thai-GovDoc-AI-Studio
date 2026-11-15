@@ -792,13 +792,13 @@ def _build_special_doc(
     p_sig = doc.add_paragraph()
     p_sig.paragraph_format.left_indent = Cm(8.0)
     p_sig.paragraph_format.space_after = Pt(2)
-    r_sig = p_sig.add_run(data.signatory_name)
+    r_sig = p_sig.add_run(data.signer_lines()[0][0])
     _set_run_thai_font(r_sig, size_pt=DEFAULT_FONT_SIZE)
 
     p_pos = doc.add_paragraph()
     p_pos.paragraph_format.left_indent = Cm(8.0)
     p_pos.paragraph_format.space_after = Pt(12)
-    r_pos = p_pos.add_run(data.signatory_position)
+    r_pos = p_pos.add_run(data.signer_lines()[0][1])
     _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
 
     if data.contact_dept or data.contact_tel:
@@ -946,13 +946,13 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
     p_sig = doc.add_paragraph()
     p_sig.paragraph_format.left_indent = Cm(8.0)
     p_sig.paragraph_format.space_after = Pt(2)
-    r_sig = p_sig.add_run(data.signatory_name)
+    r_sig = p_sig.add_run(data.signer_lines()[0][0])
     _set_run_thai_font(r_sig, size_pt=DEFAULT_FONT_SIZE)
 
     p_pos = doc.add_paragraph()
     p_pos.paragraph_format.left_indent = Cm(8.0)
     p_pos.paragraph_format.space_after = Pt(24)
-    r_pos = p_pos.add_run(data.signatory_position)
+    r_pos = p_pos.add_run(data.signer_lines()[0][1])
     _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
 
     # 8. ส่วนราชการเจ้าของเรื่อง (ชิดขอบล่างซ้าย)
@@ -1142,21 +1142,21 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     p_sig.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_sig.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
     p_sig.paragraph_format.space_after = Pt(2)
-    r_sig = p_sig.add_run(data.signatory_name)
+    r_sig = p_sig.add_run(data.signer_lines()[0][0])
     _set_run_thai_font(r_sig, size_pt=DEFAULT_FONT_SIZE)
 
     p_pos = doc.add_paragraph()
     p_pos.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_pos.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
     p_pos.paragraph_format.space_after = Pt(4)
-    r_pos = p_pos.add_run(data.signatory_position)
+    r_pos = p_pos.add_run(data.signer_lines()[0][1])
     _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
 
     # ผู้ลงนามถัดไป (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอเรื่อง) — เว้นที่ลงลายมือชื่อเท่ากัน
-    for co in data.co_signers or []:
+    for co_name, co_position in data.signer_lines()[1:]:
         p_gap = doc.add_paragraph()
         p_gap.paragraph_format.space_after = Pt(36)
-        for text, after in ((co.name, 2), (co.position, 4)):
+        for text, after in ((co_name, 2), (co_position, 4)):
             p_co = doc.add_paragraph()
             p_co.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p_co.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)

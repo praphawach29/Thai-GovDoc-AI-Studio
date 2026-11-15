@@ -136,6 +136,6 @@ def test_supabase_mode_author_comes_from_login_profile(tmp_path, monkeypatch, cl
         out = client.post("/api/v1/studio/apply-unit", json={"doc": doc}, headers=h).json()
         assert out["salutation"] == "เรียน หัวหน้ากลุ่มงาน"
         assert (out["signatory_name"], out["signatory_position"]) == ("(ผู้ทดสอบ)", "นักวิชาการ")
-        assert out["co_signers"] == [{"name": "(นายหัวหน้า ทดสอบ)", "position": "หัวหน้ากลุ่มงาน", "is_author": False}]
+        assert out["co_signers"] == [{"name": "(นายหัวหน้า ทดสอบ)", "position": "หัวหน้ากลุ่มงาน", "is_author": False, "stamp": False}]
     finally:
         app.dependency_overrides.clear()

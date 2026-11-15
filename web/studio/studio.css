@@ -113,6 +113,11 @@
   .animate-fadeIn { animation: none; }
 }
 
+/* ผู้ลงนามใช้ตราประทับ: กรอบเว้นที่ (สูงเท่าชื่อ + ตำแหน่ง ๒ บรรทัด) — ตอนพิมพ์จากเบราว์เซอร์เหลือที่ว่าง */
+.stamp-area { height: 2.6em; display: flex; align-items: center; justify-content: center; gap: .4em;
+  border: 1px dashed #cbd5e1; border-radius: 4px; color: #94a3b8; font-family: 'Prompt', sans-serif; font-size: 10pt; }
+@media print { .stamp-area { visibility: hidden; } }
+
 /* ย่อกระดาษให้พอดีจอแคบโดยยังคงสัดส่วนจริง */
 .sheet-scale { transform-origin: top center; }
 

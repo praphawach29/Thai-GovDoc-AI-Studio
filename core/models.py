@@ -5,7 +5,7 @@ models.py — Data Schemas for Thai Official Government Documents
 
 import re
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -165,6 +165,7 @@ class Signer(BaseModel):
     name: str = Field(default="", description="ชื่อในวงเล็บ เช่น (นายสมชาย ใจดี); ว่าง = เว้นให้กรอก")
     position: str = ""
     is_author: bool = Field(default=False, description="ผู้เสนอเรื่อง: ใช้ชื่อ/ตำแหน่งของผู้ใช้ที่ล็อกอินถ้ามี")
+    stamp: bool = Field(default=False, description="ใช้ตราประทับชื่อ-ตำแหน่ง: เว้นบรรทัดชื่อและตำแหน่งว่างไว้ประทับ")
 
 
 class IssuingUnit(BaseModel):
@@ -569,6 +570,10 @@ class GovDocumentSchema(BaseModel):
         default=None,
         description="ผู้ลงนามเพิ่มเติมของบันทึกข้อความ ต่อจากผู้ลงนามหลัก (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอ)",
     )
+    signatory_stamp: bool = Field(
+        default=False,
+        description="ผู้ลงนามหลักใช้ตราประทับชื่อ-ตำแหน่ง: เว้นบรรทัดชื่อและตำแหน่งว่าง (ระยะเท่าเดิม) ไว้ประทับ",
+    )
     
     # ส่วนติดต่อสอบถาม (ท้ายกระดาษสำหรับหนังสือภายนอก)
     contact_dept: str = Field(..., description="กลุ่มงาน/กองเจ้าของเรื่อง")
@@ -674,8 +679,8 @@ class GovDocumentSchema(BaseModel):
             ("ข้อพิจารณาและเสนอแนะ (บันทึกข้อความ)", self.memo_consideration or ""),
             ("ภาคความประสงค์ (บันทึกข้อความ)", self.memo_request or ""),
             ("คำลงท้าย", self.closing),
-            ("ชื่อผู้ลงนาม", self.signatory_name),
-            ("ตำแหน่งผู้ลงนาม", self.signatory_position),
+            ("ชื่อผู้ลงนาม", "" if self.signatory_stamp else self.signatory_name),
+            ("ตำแหน่งผู้ลงนาม", "" if self.signatory_stamp else self.signatory_position),
             ("กลุ่มงานเจ้าของเรื่อง", self.contact_dept or ""),
             ("โทรศัพท์", self.contact_tel or "")
         ]
@@ -685,6 +690,9 @@ class GovDocumentSchema(BaseModel):
         if self.attachments:
             for idx, att in enumerate(self.attachments, 1):
                 text_fields.append((f"สิ่งที่ส่งมาด้วย ({idx})", att))
+        for idx, co in enumerate(self.co_signers or [], 2):
+            if not co.stamp:
+                text_fields += [(f"ชื่อผู้ลงนาม ({idx})", co.name), (f"ตำแหน่งผู้ลงนาม ({idx})", co.position)]
                 
         for label, val in text_fields:
             if not val:
@@ -693,6 +701,13 @@ class GovDocumentSchema(BaseModel):
             for m in matches:
                 results.append(f"{label}: {m}")
         return results
+
+    def signer_lines(self) -> List[Tuple[str, str]]:
+        """ชื่อ-ตำแหน่งที่พิมพ์ในไฟล์ส่งออก (ผู้ลงนามหลักก่อน) — ใช้ตราประทับ = บรรทัดว่างระยะเท่าเดิม"""
+        blank = ("\u00a0", "\u00a0")
+        out = [blank if self.signatory_stamp else (self.signatory_name, self.signatory_position)]
+        out += [blank if co.stamp else (co.name, co.position) for co in (self.co_signers or [])]
+        return out
 
     def count_placeholders(self) -> int:
         """นับจำนวนจุดที่ยังมี Smart Placeholder ค้างอยู่"""

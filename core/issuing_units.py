@@ -95,8 +95,12 @@ def apply_issuing_unit(
     if unit.recipient:
         updated.salutation = f"เรียน {unit.recipient}"
     if unit.signers:
+        stamps = [doc.signatory_stamp] + [c.stamp for c in (doc.co_signers or [])]
         signers = [_resolve_signer(s, author) for s in unit.signers]
+        for i, s in enumerate(signers):
+            s.stamp = stamps[i] if i < len(stamps) else False
         updated.signatory_name, updated.signatory_position = signers[0].name, signers[0].position
+        updated.signatory_stamp = signers[0].stamp
         updated.co_signers = signers[1:] or None
     updated.memo_consideration = _swap_review_party(updated.memo_consideration, unit, units)
     if unit.request_text:

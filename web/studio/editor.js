@@ -214,13 +214,15 @@
     if (st.doc.urgency !== 'normal') out.push(`<div class="absolute top-[1.3cm] left-[3cm] text-red-600 font-bold leading-tight" style="font-size:32pt">${URGENCY[st.doc.urgency].label}</div>`);
     return out.join('');
   }
+  // ผู้ลงนามที่ใช้ตราประทับชื่อ-ตำแหน่ง: กรอบเว้นที่แทนช่องพิมพ์ (ไฟล์ส่งออกเว้นบรรทัดว่างระยะเท่าเดิม)
+  const stampArea = () => '<div class="stamp-area" contenteditable="false"><i class="fa-solid fa-stamp"></i>พื้นที่ประทับตราชื่อ-ตำแหน่ง</div>';
   function signature() {
+    const d = st.doc;
     return `<div class="mt-[1.2cm] ml-auto w-[9cm] text-center space-y-0.5">
       ${isMemo() ? '' : `<div>${field('closing')}</div><div class="h-[1.6cm]"></div>`}
-      <div>${field('signatory_name')}</div>
-      <div>${field('signatory_position')}</div>
-      ${isMemo() ? (st.doc.co_signers || []).slice(0, 3).map((_, i) =>
-        `<div class="h-[1.2cm]"></div><div>${field('co_name_' + i)}</div><div>${field('co_pos_' + i)}</div>`).join('') : ''}
+      ${d.signatory_stamp ? stampArea() : `<div>${field('signatory_name')}</div><div>${field('signatory_position')}</div>`}
+      ${isMemo() ? (d.co_signers || []).slice(0, 3).map((co, i) =>
+        `<div class="h-[1.2cm]"></div>${co.stamp ? stampArea() : `<div>${field('co_name_' + i)}</div><div>${field('co_pos_' + i)}</div>`}`).join('') : ''}
     </div>`;
   }
 
@@ -407,7 +409,24 @@
       </label>`).join('');
     const on = items.filter(o => st.doc[o.key] != null).length;
     $('section-count').textContent = `เปิด ${toThai(on)}/${toThai(items.length)}`;
+    // ผู้ลงนามแต่ละคน: ใช้ตราประทับชื่อ-ตำแหน่งหรือไม่ (ชื่อที่แสดง = ตำแหน่ง ถ้ายังไม่มีใช้ลำดับ)
+    const signers = [{ key: 'main', position: st.doc.signatory_position, stamp: !!st.doc.signatory_stamp },
+      ...(isMemo() ? (st.doc.co_signers || []).slice(0, 3).map((c, i) => ({ key: String(i), position: c.position, stamp: !!c.stamp })) : [])];
+    $('signer-toggles').innerHTML = signers.map((sg, i) => `
+      <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
+        <input type="checkbox" data-stamp="${sg.key}" ${sg.stamp ? 'checked' : ''} class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">
+        <span class="truncate">${esc(String(sg.position || '').replace(PH_RE, '').trim() || 'ผู้ลงนามคนที่ ' + toThai(i + 1))}</span>
+      </label>`).join('');
   }
+  $('signer-toggles').addEventListener('change', (e) => {
+    const key = e.target.dataset.stamp; if (!key) return;
+    const on = e.target.checked;
+    commit((d) => {
+      if (key === 'main') d.signatory_stamp = on;
+      else if (d.co_signers?.[+key]) d.co_signers[+key].stamp = on;
+    });
+    runCheck();
+  });
   $('section-toggles').addEventListener('change', (e) => {
     const key = e.target.dataset.opt; if (!key) return;
     const opt = OPTIONAL.find(o => o.key === key);
