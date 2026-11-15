@@ -56,6 +56,7 @@
       return path;
     },
     // ไฟล์ต้นเรื่องจริงสำหรับแสดงฝั่งซ้ายของหน้าแก้ไข → { url, filename, kind: pdf|image|text }
+    factCheck: (doc, sourceText) => postJSON('/studio/fact-check', { doc, source_text: sourceText }).then(r => r.json()),
     sourceViewUrl: (sourceFileId) => request(`/sources/${encodeURIComponent(sourceFileId)}/view-url`).then(r => r.json()),
     // ฉบับจริง: ไฟล์ Word/PDF ที่แก้เสร็จแล้ว (โหมดเซิร์ฟเวอร์เท่านั้น)
     finals: {
@@ -84,7 +85,7 @@
   // ค่าสรุปสำหรับรายการงาน (เหมือนที่ API ส่งในโหมดเซิร์ฟเวอร์)
   const summarize = (x) => ({
     ...x, docType: x.doc?.doc_type, editStatus: x.doc?.edit_status,
-    todo: (x.check?.placeholders?.length || 0) + (x.check?.lint?.issues?.length || 0),
+    todo: (x.check?.placeholders?.length || 0) + (x.check?.lint?.issues?.length || 0) + (x.check?.facts?.length || 0),
   });
   const localStore = {
     async list({ archived = false } = {}) {

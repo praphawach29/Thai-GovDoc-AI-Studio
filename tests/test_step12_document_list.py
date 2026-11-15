@@ -45,15 +45,16 @@ def test_list_summarises_workspace(fake, client):
         "unitKey": "division", "sourceName": "ต้นเรื่อง.pdf", "context": {"raw_text": "ต้นเรื่องยาวมาก " * 500},
         "check": {"placeholders": ["เรื่อง: [✏️ ระบุเรื่อง]", "เรียน: [✏️ ระบุผู้รับ]"],
                   "lint": {"is_valid": False, "issues": [{"rule_id": "x", "severity": "warning", "field": "doc_date",
-                                                         "message": "m", "suggestion": "s"}]}},
+                                                         "message": "m", "suggestion": "s"}]},
+                  "facts": [{"field": "memo_facts", "kind": "number", "text": "๕,๐๐๐", "message": "m"}]},
     })
     rows = client.get("/api/v1/documents", headers=h).json()
     assert len(rows) == 1
     row = rows[0]
     assert row["id"] == doc_id and row["doc_type"] == "internal"
     assert row["unit_key"] == "division" and row["source_name"] == "ต้นเรื่อง.pdf"
-    assert row["todo"] == 3                                   # ต้องระบุ ๒ + ข้อควรแก้ ๑
-    assert "workspace" not in row and "placeholders" not in row and "issues" not in row   # ไม่ส่งต้นเรื่องทั้งฉบับ
+    assert row["todo"] == 4                                   # ต้องระบุ ๒ + ข้อควรแก้ ๑ + ข้อเท็จจริง ๑
+    assert "workspace" not in row and not {"placeholders", "issues", "facts"} & set(row)   # ไม่ส่งต้นเรื่องทั้งฉบับ
     sent = [r for r in fake.requests if r.method == "GET" and r.url.path == "/rest/v1/documents"][-1]
     assert sent.url.params["status"] == "neq.archived"
 

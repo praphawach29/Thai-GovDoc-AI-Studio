@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from core.issuing_units import apply_issuing_unit, pick_unit
 from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, Signer, UrgencyLevel
 from core.profile_manager import get_user_profile
+from core.fact_check import check_facts
 from core.studio import (
     StudioCheck,
     StudioDraftResult,
@@ -208,6 +209,18 @@ def studio_template(template_id: str):
     if t is None:
         raise HTTPException(status_code=404, detail="ไม่พบแม่แบบ")
     return normalize_for_editor(t.schema.model_copy(deep=True))
+
+
+class FactCheckRequest(BaseModel):
+    doc: GovDocumentSchema
+    source_text: str = ""      # ข้อความที่อ่านจากต้นเรื่อง + คำสั่งที่ผู้ใช้พิมพ์
+
+
+@router.post("/api/v1/studio/fact-check")
+def studio_fact_check(req: FactCheckRequest):
+    """วันที่ เวลา ตัวเลขในร่างที่หาในต้นเรื่องไม่เจอ (AI อาจอ่านไฟล์สแกนคลาด)"""
+    issues = check_facts(req.doc, req.source_text)
+    return {"checked": len(req.source_text.strip()) >= 40, "issues": [i.model_dump() for i in issues]}
 
 
 @router.post("/api/v1/studio/check", response_model=StudioCheck)

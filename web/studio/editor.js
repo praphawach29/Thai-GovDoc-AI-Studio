@@ -507,11 +507,22 @@
   // ---------- สถานะ / ผลตรวจ ----------
   async function runCheck() {
     try {
-      st.check = await api.check(st.doc);
+      const source = sourceText();
+      const [check, facts] = await Promise.all([
+        api.check(st.doc),
+        source ? api.factCheck(st.doc, source).catch(() => null) : null,
+      ]);
+      check.facts = facts ? visibleFacts(facts.issues) : (st.check?.facts || []);
+      st.check = check;
       renderChrome(); renderChecks(); renderTodo();
       persist();
     } catch (err) { /* ตรวจไม่สำเร็จ: คงผลเดิม */ }
   }
+  // ต้นเรื่องสำหรับตรวจข้อเท็จจริง: ข้อความที่อ่านจากไฟล์ + คำสั่งที่ผู้ใช้พิมพ์ (ผู้ใช้ให้ข้อมูลเพิ่มเองได้)
+  const sourceText = () => [entry.context?.raw_text, entry.prompt].filter(Boolean).join('\n');
+  // ข้อเท็จจริงที่ผู้ใช้กด "ถูกต้องแล้ว" ไม่ต้องเตือนซ้ำ (เก็บกับเอกสาร)
+  const factKey = (f) => `${f.field}|${f.kind}|${f.text}`;
+  const visibleFacts = (list) => (list || []).filter(f => !(entry.factOk || []).includes(factKey(f)));
   function counts() {
     const ph = st.check?.placeholders?.length ?? 0;
     const issues = st.check?.lint?.issues || [];
@@ -552,11 +563,30 @@
         <i class="fa-solid ${i.severity === 'error' ? 'fa-circle-xmark text-rose-600' : 'fa-circle-exclamation text-amber-600'} text-xs mt-0.5"></i>
         <span class="text-xs"><span class="font-medium text-slate-800">${esc(i.message)}</span><span class="block text-slate-500 mt-0.5">${esc(i.suggestion)}</span></span>
       </div>`);
-    $('tab-checks').innerHTML = (phItems.length ? `<h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">จุดที่ต้องระบุ (${toThai(ph.length)})</h3>${phItems.join('')}` : '')
+    const facts = visibleFacts(st.check?.facts);
+    const factItems = facts.map((f, i) => `
+      <div class="p-3 rounded-xl bg-white border border-amber-200 text-xs space-y-2">
+        <div class="flex items-start gap-2.5"><i class="fa-solid fa-magnifying-glass-chart text-amber-600 mt-0.5"></i>
+          <span><span class="font-medium text-slate-800">${esc(FIELD_LABEL[f.field] || f.field)}: <span class="font-body">${esc(num(f.text))}</span></span>
+          <span class="block text-slate-500 mt-0.5">${esc(f.message)}</span></span></div>
+        <div class="flex gap-2 pl-6">
+          <button type="button" data-fact-source="${i}" class="px-2 py-1 rounded-md border border-slate-300 hover:bg-slate-50">ดูในต้นเรื่อง</button>
+          <button type="button" data-fact-ok="${i}" class="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white">ถูกต้องแล้ว</button>
+        </div>
+      </div>`);
+    $('tab-checks').innerHTML = (factItems.length ? `<h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">ตรวจกับต้นเรื่อง (${toThai(facts.length)})</h3>${factItems.join('')}` : '')
+      + (phItems.length ? `<h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">จุดที่ต้องระบุ (${toThai(ph.length)})</h3>${phItems.join('')}` : '')
       + (lintItems.length ? `<h3 class="text-[11px] font-semibold text-slate-400 tracking-wider pt-2">ระเบียบงานสารบรรณ (${toThai(issues.length)})</h3>${lintItems.join('')}` : '')
       || '<p class="text-xs text-emerald-700"><i class="fa-solid fa-circle-check mr-1"></i>ไม่พบจุดที่ต้องแก้ไข</p>';
   }
-  $('tab-checks').addEventListener('click', (e) => { const b = e.target.closest('[data-jump]'); if (b) jumpToPlaceholder(b.dataset.jump); });
+  $('tab-checks').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-jump]');
+    if (b) { jumpToPlaceholder(b.dataset.jump); return; }
+    const facts = visibleFacts(st.check?.facts);
+    const s = e.target.closest('[data-fact-source]'), k = e.target.closest('[data-fact-ok]');
+    if (s) showFactInSource(facts[+s.dataset.factSource]);
+    if (k) confirmFact(facts[+k.dataset.factOk]);
+  });
 
   // ---------- ป้ายเดียว "ต้องแก้": จุดที่ต้องระบุ + ข้อควรแก้ตามระเบียบ ไล่ทีละจุดตามลำดับบนกระดาษ ----------
   // ข้อควรแก้ของ linter อ้างชื่อฟิลด์ในสคีมา — แปลงเป็นช่องบนกระดาษ (บันทึกข้อความใช้ช่อง memo_*)
@@ -575,6 +605,10 @@
       const el = sheet.querySelector(`[data-field="${LINT_FIELD(issue.field)}"]`);
       pts.push({ field: el, ord: 1000 + i, text: issue.message, issue });
     });
+    visibleFacts(st.check?.facts).forEach((fact, i) => {
+      const el = sheet.querySelector(`[data-field="${fact.field}"]`);
+      pts.push({ field: el, ord: 2000 + i, text: factKey(fact), fact });
+    });
     return pts.sort((a, b) => {
       if (a.field === b.field) return a.ord - b.ord;
       if (!a.field) return 1;
@@ -585,7 +619,8 @@
   const todo = { last: null };
   function renderTodo() {
     const pts = todoPoints();
-    const ph = pts.filter(p => !p.issue).length, issues = pts.length - ph;
+    const ph = pts.filter(p => !p.issue && !p.fact).length, facts = pts.filter(p => p.fact).length;
+    const issues = pts.length - ph - facts;
     const errors = pts.some(p => p.issue?.severity === 'error');
     const b = $('todo-badge');
     const base = 'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition ';
@@ -597,7 +632,8 @@
     } else {
       b.className = base + (errors ? 'text-rose-700 bg-rose-50 border-rose-300 hover:bg-rose-100' : 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100');
       b.innerHTML = `<i class="fa-solid ${errors ? 'fa-triangle-exclamation' : 'fa-pen'} text-[10px]"></i><span><span class="tb-h4">ต้องแก้ </span>${toThai(pts.length)}<span class="tb-h4"> จุด</span></span><span class="tb-h3 opacity-70">· ถัดไป</span><i class="fa-solid fa-chevron-right text-[9px] opacity-70"></i>`;
-      b.title = [ph && `ต้องระบุ ${toThai(ph)} จุด`, issues && `ข้อควรแก้ตามระเบียบ ${toThai(issues)} จุด`].filter(Boolean).join(' · ') + ' — กดเพื่อไปทีละจุด';
+      b.title = [ph && `ต้องระบุ ${toThai(ph)} จุด`, issues && `ข้อควรแก้ตามระเบียบ ${toThai(issues)} จุด`,
+        facts && `ตรวจกับต้นเรื่อง ${toThai(facts)} จุด`].filter(Boolean).join(' · ') + ' — กดเพื่อไปทีละจุด';
     }
     b.setAttribute('aria-label', b.title);
     fitToolbar();
@@ -621,6 +657,8 @@
     goToPoint(p);
   }
   function goToPoint(p) {
+    closeFact();
+    if (p.fact) { openFact(p); return; }
     if (p.issue) {
       toast(`${p.issue.message} — ${p.issue.suggestion}`, p.issue.severity === 'error' ? 'error' : 'warn');
       if (!p.field) return;
@@ -650,8 +688,75 @@
     if (document.activeElement?.closest?.('[data-field]')) document.activeElement.blur();
     nextTodo();
   });
+  // ---------- ข้อเท็จจริงที่ไม่พบในต้นเรื่อง ----------
+  let factOpen = null;
+  function openFact(p) {
+    factOpen = p;
+    const pop = $('fact-pop');
+    $('fact-value').textContent = num(p.fact.text);
+    $('fact-message').textContent = p.fact.message;
+    if (p.field) {
+      p.field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      p.field.classList.remove('flash-warn'); void p.field.offsetWidth; p.field.classList.add('flash-warn');
+    }
+    pop.hidden = false;
+    setTimeout(() => {                       // รอเลื่อนเสร็จแล้ววางข้างช่อง
+      const host = pop.offsetParent.getBoundingClientRect();
+      const a = (p.field || sheet).getBoundingClientRect();
+      pop.style.left = Math.max(16, Math.min(a.left - host.left, host.width - pop.offsetWidth - 16)) + 'px';
+      const below = a.bottom - host.top + 8;
+      pop.style.top = (below + pop.offsetHeight < host.height - 40 ? below : Math.max(16, a.top - host.top - pop.offsetHeight - 8)) + 'px';
+      pop.querySelector('[data-fact="source"]').focus();
+    }, 320);
+  }
+  function closeFact() { $('fact-pop').hidden = true; factOpen = null; }
+  // คำค้นในต้นเรื่อง: ข้อความตามร่างก่อน แล้วค่อยกว้างขึ้น (ต้นเรื่องอาจใช้เลขไทย/อารบิก หรือเขียนเดือนย่อ)
+  const MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const toArabic = (t) => String(t).replace(/[๐-๙]/g, d => '๐๑๒๓๔๕๖๗๘๙'.indexOf(d));
+  function factProbes(f) {
+    const a = toArabic(f.text).replace(/^เวลา\s*/, '').replace(/\s*(น\.|นาฬิกา)$/, '').trim();
+    const out = [a, toThai(a)];
+    if (f.kind === 'date') {
+      const month = MONTHS.find(m => a.includes(m));
+      const day = a.match(/^\d{1,2}/)?.[0];
+      if (month && day) out.push(`${day} ${month}`, `${toThai(day)} ${month}`);
+      if (month) out.push(month);
+    }
+    if (f.kind === 'number') out.push(a.replace(/,/g, ''), toThai(a.replace(/,/g, '')));
+    if (f.kind === 'time') { const hh = a.split(/[.:]/)[0]; out.push(hh + '.', toThai(hh) + '.'); }
+    return [...new Set(out.filter(Boolean))];
+  }
+  async function showFactInSource(f) {
+    showLeft(); selectTab('source');
+    for (const q of factProbes(f)) {
+      $('source-search').value = q;
+      if ((await runSourceSearch()) > 0) return;
+      // ไฟล์สแกนไม่มีชั้นข้อความ: ค้นในข้อความที่อ่านได้
+      if (src.view === 'file' && src.viewer && !src.viewer.hasText) {
+        setSourceView('text');
+        if ((await runSourceSearch()) > 0) return;
+      }
+    }
+    toast('ไม่พบคำใกล้เคียงในต้นเรื่อง — เปิดไฟล์จริงแล้วตรวจด้วยตา', 'warn');
+  }
+  function confirmFact(f) {
+    entry.factOk = [...new Set([...(entry.factOk || []), factKey(f)])];
+    if (st.check) st.check.facts = visibleFacts(st.check.facts);
+    renderChecks(); renderTodo(); persist();
+    toast('บันทึกว่าถูกต้องแล้ว — ไม่เตือนจุดนี้อีก');
+  }
+  $('fact-pop').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-fact]');
+    if (!b || !factOpen) return;
+    const f = factOpen.fact;
+    if (b.dataset.fact === 'close') closeFact();
+    if (b.dataset.fact === 'source') showFactInSource(f);
+    if (b.dataset.fact === 'ok') { closeFact(); confirmFact(f); }
+    if (b.dataset.fact === 'next') { closeFact(); nextTodo(); }
+  });
+  $('fact-pop').addEventListener('mousedown', (e) => e.preventDefault());
   function jumpToPlaceholder(text) {
-    const pts = todoPoints().filter(p => !p.issue);
+    const pts = todoPoints().filter(p => !p.issue && !p.fact);
     const p = pts.find(q => !text || q.text === text || q.text === num(text)) || pts[0];
     if (!p) { toast('ไม่มีจุดที่ต้องระบุแล้ว'); return; }
     todo.last = { field: p.field, ord: p.ord, text: p.text };
@@ -822,9 +927,10 @@
     if (src.view === 'file' && src.viewer) {
       const n = await src.viewer.search(q);
       showHits(src.viewer.cur, n);
-      return;
+      return n;
     }
     highlightSource();
+    return src.textHits.length;
   }
   function stepHit(delta) {
     if (src.view === 'file' && src.viewer) {
@@ -910,7 +1016,7 @@
     const el = sheet.querySelector(`[data-field="${key}"]`);
     el?.classList.add('flash-ok'); setTimeout(() => el?.classList.remove('flash-ok'), 2300);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeRefine(); $('quick-menu').hidden = true; toggleSettings(false); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeRefine(); closeFact(); $('quick-menu').hidden = true; toggleSettings(false); } });
 
   // ---------- ปุ่มลัด ----------
   $('btn-quick').addEventListener('click', (e) => {
@@ -1091,5 +1197,6 @@
   setSourceView('text');
   // มีไฟล์ต้นเรื่องเก็บไว้: เปิดแท็บต้นเรื่องให้อ่านเทียบกับร่างทันที
   if (entry.sourceFileId && finalsEnabled) { selectTab('source'); loadSourceFile(); }
-  if (!st.check) runCheck();
+  // เอกสารเก่าที่ยังไม่เคยตรวจข้อเท็จจริง ตรวจครั้งแรกตอนเปิด
+  if (!st.check || (!st.check.facts && sourceText())) runCheck();
 })();

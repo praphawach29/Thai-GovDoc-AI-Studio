@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from core.ai_drafter import draft_from_context_rule_based
 from core.classifier import ClassificationResult, classify_source_document
 from core.extractor import extract_from_raw_text, extract_source_document
+from core.fact_check import FactIssue, check_facts, source_text_of
 from core.linter import LintResult, lint_gov_document
 import time
 
@@ -61,6 +62,8 @@ class StudioCheck(BaseModel):
     """ผลตรวจเอกสาร: placeholder ที่ค้าง + Linter ระเบียบสารบรรณ"""
     placeholders: List[str] = Field(default_factory=list)
     lint: LintResult
+    # ข้อเท็จจริงในร่าง (วันที่ เวลา ตัวเลข) ที่หาในต้นเรื่องไม่เจอ — ตรวจเมื่อมีต้นเรื่องเท่านั้น
+    facts: List[FactIssue] = Field(default_factory=list)
 
 
 class StudioDraftResult(BaseModel):
@@ -272,6 +275,7 @@ def start_draft(
         result.steps.append(_ai_step(ai))
     result.document = normalize_for_editor(doc)
     result.check = check_document(doc)
+    result.check.facts = check_facts(result.document, source_text_of(ctx.raw_text, prompt if file_path else ""))
     result.steps.append(StudioStep(
         key="draft", label="ร่างหนังสือตามโครงสร้าง ๓ ภาค",
         detail=f"เหลือจุดที่ต้องระบุ {len(result.check.placeholders)} จุด",

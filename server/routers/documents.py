@@ -16,7 +16,7 @@ _LIST_COLUMNS = "id,subject,kind,doc_type,status,doc_number,urgency,secret_level
 # ค่าสรุปจาก workspace สำหรับรายการงาน (เลือกเฉพาะส่วนที่ใช้ ไม่ดึงต้นเรื่องทั้งฉบับ)
 _SUMMARY_COLUMNS = (
     "unit_key:workspace->>unitKey,source_name:workspace->>sourceName,edit_status:workspace->doc->>edit_status,"
-    "placeholders:workspace->check->placeholders,issues:workspace->check->lint->issues"
+    "placeholders:workspace->check->placeholders,issues:workspace->check->lint->issues,facts:workspace->check->facts"
 )
 
 
@@ -55,11 +55,11 @@ class StatusIn(BaseModel):
 
 
 def _summary(row: Dict[str, Any]) -> Dict[str, Any]:
-    """รายการงาน: นับจุดที่ต้องแก้ (ต้องระบุ + ข้อควรแก้ตามระเบียบ) จากผลตรวจล่าสุดที่หน้าแก้ไขบันทึกไว้"""
-    out = {k: v for k, v in row.items() if k not in ("placeholders", "issues")}
-    placeholders: List[Any] = row.get("placeholders") or []
-    issues: List[Any] = row.get("issues") or []
-    out["todo"] = len(placeholders) + len(issues)
+    """รายการงาน: นับจุดที่ต้องแก้ (ต้องระบุ + ข้อควรแก้ตามระเบียบ + ข้อเท็จจริงที่ไม่พบในต้นเรื่อง)
+    จากผลตรวจล่าสุดที่หน้าแก้ไขบันทึกไว้"""
+    out = {k: v for k, v in row.items() if k not in ("placeholders", "issues", "facts")}
+    counted = ("placeholders", "issues", "facts")
+    out["todo"] = sum(len(row.get(k) or []) for k in counted)
     return out
 
 
