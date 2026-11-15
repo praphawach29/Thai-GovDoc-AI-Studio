@@ -4,10 +4,15 @@ api.py — REST API Backend สำหรับ Thai GovDoc AI Studio (FastAPI)
 """
 
 import os
+import sys
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional, List
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Response
 from fastapi.responses import FileResponse, PlainTextResponse, JSONResponse
