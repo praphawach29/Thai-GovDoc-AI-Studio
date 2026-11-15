@@ -26,6 +26,8 @@ from core.thai_segmenter import insert_zwsp, to_thai_numerals
 FONT_NAME = "TH Sarabun New"
 DEFAULT_FONT_SIZE = 16
 _ACTIVE_FONT: ContextVar[str] = ContextVar("govdoc_font", default=FONT_NAME)
+# ระยะห่างตัวอักษรของฉบับ (pt ต่อตัวอักษร) — Word บวกเพิ่มทุกตัวอักษร ต้องรวมตอนวัดความกว้าง
+_LETTER_SPACING: ContextVar[float] = ContextVar("govdoc_letter_spacing", default=0.0)
 _BODY_ALIGNMENT: ContextVar[str] = ContextVar("govdoc_body_alignment", default="thai_distribute")
 
 # ระเบียบงานสารบรรณ ข้อ 16: ชั้นความเร็วใช้ตัวอักษรสีแดงขนาดไม่เล็กกว่า 32 พอยท์
@@ -174,10 +176,11 @@ def _text_width_cm(text: str, font_size_pt: float = 16.0, bold: bool = False) ->
             font = _MEASURE_FONTS[name] = ImageFont.truetype(str(_FONT_DIR / name), 1000)
         except Exception:  # Pillow ไม่มี / อ่านฟอนต์ไม่ได้ → ใช้ค่าประมาณ
             font = None
+    extra = len(text) * _LETTER_SPACING.get() / 72 * 2.54   # นับทุกตัวอักษร (รวม ZWSP) เผื่อไว้
     if font is not None:
-        return font.getlength(text) / 1000 * font_size_pt / 72 * 2.54
+        return font.getlength(text) / 1000 * font_size_pt / 72 * 2.54 + extra
     spacing = sum(1 for ch in text if not ("\u0e31" <= ch <= "\u0e3a" or "\u0e47" <= ch <= "\u0e4e"))
-    return spacing * font_size_pt * 0.42 / 72 * 2.54
+    return spacing * font_size_pt * 0.42 / 72 * 2.54 + extra
 
 
 def _fit_run_to_width(run, text: str, available_cm: float, font_size_pt: float = 16.0):
@@ -383,11 +386,11 @@ def _drop_blank_thumbnail(doc: Document) -> None:
 
 def _split_first_line(text: str, room_cm: float, size_pt: float = 16.0):
     """แบ่งข้อความเป็น (ส่วนที่พอดีบรรทัดแรก, ส่วนที่เหลือ) ตัดที่ช่องว่าง/ZWSP ระหว่างคำ"""
-    if _text_width_cm(text.replace("\u200b", ""), size_pt) <= room_cm:
+    if _text_width_cm(text, size_pt) <= room_cm:
         return text, ""
     cut = 0
     for m in re.finditer(r"[\u200b ]", text):
-        if _text_width_cm(text[:m.start()].replace("\u200b", ""), size_pt) > room_cm:
+        if _text_width_cm(text[:m.start()], size_pt) > room_cm:
             break
         cut = m.end()
     if cut == 0:
@@ -467,6 +470,7 @@ def export_govdoc_to_docx(
     )
     token = _ACTIVE_FONT.set(_font_for_option(font_key))
     align_token = _BODY_ALIGNMENT.set(options.body_alignment)
+    spacing_token = _LETTER_SPACING.set(letter_spacing or 0.0)
     try:
         doc = Document()
         doc.core_properties.comments = (
@@ -516,6 +520,7 @@ def export_govdoc_to_docx(
 
         return str(out_file)
     finally:
+        _LETTER_SPACING.reset(spacing_token)
         _BODY_ALIGNMENT.reset(align_token)
         _ACTIVE_FONT.reset(token)
 
@@ -1005,7 +1010,7 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     r_dept = _memo_field(p_dept, "ส่วนราชการ", dept_value)
     # บรรทัดเดียวเสมอ: ความกว้างข้อความ - หัวข้อ 20 pt - ช่องว่าง - เผื่อท้ายเส้น
     room = TEXT_WIDTH_CM - _text_width_cm("ส่วนราชการ   ", MEMO_LABEL_SIZE, bold=True) - 0.3
-    _fit_run_to_width(r_dept, dept_value, room)
+    _fit_run_to_width(r_dept, insert_zwsp(dept_value), room)   # รวม ZWSP: Word เว้นระยะตัวอักษรให้ด้วย
     _line_run(p_dept, "\t")
     if profile.header_style == "solid":
         _apply_bottom_border(p_dept)

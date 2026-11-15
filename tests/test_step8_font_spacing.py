@@ -141,3 +141,20 @@ def test_docx_has_no_blank_thumbnail(tmp_path):
     with zipfile.ZipFile(out) as z:
         assert "thumbnail" not in z.read("_rels/.rels").decode()
         assert not any("thumbnail" in n for n in z.namelist())
+
+
+def test_width_measure_counts_letter_spacing():
+    """Word เว้นระยะตัวอักษร 0.4 pt ทุกตัว — ไม่นับจะตัดบรรทัดเรื่องเกินจริง (คำล้นไปบรรทัดที่ ๒ พร้อมเส้นประ)"""
+    from core import word_exporter as w
+    text = "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วย"
+    plain = w._text_width_cm(text)
+    tok = w._LETTER_SPACING.set(0.4)
+    try:
+        spaced = w._text_width_cm(text)
+    finally:
+        w._LETTER_SPACING.reset(tok)
+    assert abs(spaced - plain - len(text) * 0.4 / 72 * 2.54) < 1e-6
+    # เรื่องที่ Word ตัดบรรทัดหลัง "ชิงถ้วย" (ภาพจาก Word จริง) ต้องได้เส้นประเฉพาะส่วนนั้น
+    runs = _subject_runs(__import__("pathlib").Path(__import__("tempfile").mkdtemp()),
+                         "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วยพระราชทาน ประจำปี ๒๕๗๐")
+    assert runs[-1][0].startswith("\nพระราชทาน")
