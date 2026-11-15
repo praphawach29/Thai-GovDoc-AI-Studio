@@ -83,6 +83,14 @@
 [data-sview][aria-pressed="true"] { background: #fff; color: #0f172a; font-weight: 500; box-shadow: 0 1px 2px rgb(15 23 42 / .1); }
 [data-sview][aria-pressed="false"] { color: #64748b; }
 
+/* แถบเครื่องมือแถวเดียว: ที่ไม่พอก็ย่อเป็นขั้น — .tb-hN ซ่อนเมื่อ data-compact >= N (ไอคอนคงอยู่ มี title) */
+#toolbar[data-compact="1"] .tb-h1, #toolbar[data-compact="2"] .tb-h1, #toolbar[data-compact="3"] .tb-h1, #toolbar[data-compact="4"] .tb-h1, #toolbar[data-compact="5"] .tb-h1 { display: none; }
+#toolbar[data-compact="2"] .tb-h2, #toolbar[data-compact="3"] .tb-h2, #toolbar[data-compact="4"] .tb-h2, #toolbar[data-compact="5"] .tb-h2 { display: none; }
+#toolbar[data-compact="3"] .tb-h3, #toolbar[data-compact="4"] .tb-h3, #toolbar[data-compact="5"] .tb-h3 { display: none; }
+#toolbar[data-compact="4"] .tb-h4, #toolbar[data-compact="5"] .tb-h4 { display: none; }
+#toolbar[data-compact="5"] .tb-h5 { display: none; }
+#toolbar[data-compact="1"] #unit-select, #toolbar[data-compact="2"] #unit-select, #toolbar[data-compact="3"] #unit-select, #toolbar[data-compact="4"] #unit-select, #toolbar[data-compact="5"] #unit-select { max-width: 9.5rem; }
+
 /* ย่อกระดาษให้พอดีจอแคบโดยยังคงสัดส่วนจริง */
 .sheet-scale { transform-origin: top center; }
 

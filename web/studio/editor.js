@@ -382,18 +382,14 @@
     if (b) openRefine(b.dataset.refine, b);
   });
 
-  // ---------- โหมดแก้ไข ----------
-  function renderEditMode() {
-    const b = $('btn-edit-mode');
-    b.setAttribute('aria-pressed', String(st.editOn));
-    b.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition ' +
-      (st.editOn ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50');
-    b.innerHTML = st.editOn
-      ? '<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span></span><i class="fa-solid fa-pen"></i><span class="hidden md:inline">โหมดพิมพ์บนกระดาษ (เปิด)</span>'
-      : '<i class="fa-regular fa-eye"></i><span class="hidden md:inline">โหมดอ่านอย่างเดียว</span>';
-    sheet.classList.toggle('edit-on', st.editOn);
+  // ---------- ตั้งค่าเอกสาร (ฟอนต์ / เลขไทย / หัวข้อเสริม) ----------
+  // กระดาษแก้ไขได้เสมอ (ไม่มีโหมดอ่านอย่างเดียวแล้ว) — ช่องพิมพ์ทั้งหมดอยู่บนกระดาษ
+  function toggleSettings(open = $('settings-menu').hidden) {
+    $('settings-menu').hidden = !open;
+    $('btn-settings').setAttribute('aria-expanded', String(open));
   }
-  $('btn-edit-mode').addEventListener('click', () => { st.editOn = !st.editOn; renderEditMode(); fillFields(); });
+  $('btn-settings').addEventListener('click', (e) => { e.stopPropagation(); toggleSettings(); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#settings-menu, #btn-settings')) toggleSettings(false); });
 
   // ---------- หัวข้อเสริม ----------
   const OPTIONAL = [
@@ -403,14 +399,13 @@
   ];
   function renderToggles() {
     const items = OPTIONAL.filter(o => !o.memoOnly || isMemo());
-    $('section-toggles').innerHTML = items.map((o, i) => `
-      ${i ? '<span class="text-slate-300">|</span>' : ''}
-      <label class="inline-flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-slate-900">
+    $('section-toggles').innerHTML = items.map((o) => `
+      <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
         <input type="checkbox" data-opt="${o.key}" ${st.doc[o.key] != null ? 'checked' : ''} class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">
-        <span class="text-[11px] font-medium">${o.label}</span>
+        <span>${o.label}</span>
       </label>`).join('');
     const on = items.filter(o => st.doc[o.key] != null).length;
-    $('section-count').textContent = `${toThai(on)}/${toThai(items.length)} หัวข้อเปิดใช้งาน`;
+    $('section-count').textContent = `เปิด ${toThai(on)}/${toThai(items.length)}`;
   }
   $('section-toggles').addEventListener('change', (e) => {
     const key = e.target.dataset.opt; if (!key) return;
@@ -437,8 +432,13 @@
     const memo = isMemo() && units.length > 0;
     const next = memo ? units[unitIndex(currentUnitKey()) + 1] : null;
     $('btn-next-level').hidden = !next;
-    if (next) $('next-level-label').textContent = 'เสนอขั้นถัดไป: ' + next.label;
+    if (next) {
+      $('next-level-label').textContent = 'เสนอขั้นถัดไป';
+      $('btn-next-level').title = `สร้างบันทึกฉบับเสนอ${next.label}จากฉบับนี้ (แก้ไขแยกได้)`;
+      $('btn-next-level').setAttribute('aria-label', 'เสนอขั้นถัดไป: ' + next.label);
+    }
     $('btn-chain-pdf').hidden = !(memo && chainIds().length > 1);
+    fitToolbar();
   }
   api.units().then((list) => {
     units = list;
@@ -525,19 +525,20 @@
     document.title = `${d.subject || 'เอกสาร'} — GovDoc Studio`;
     const chip = $('status-chip');
     if (c.ph === 0 && c.errors === 0) {
-      chip.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border text-emerald-700 bg-emerald-50 border-emerald-300';
+      chip.className = 'shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border text-emerald-700 bg-emerald-50 border-emerald-300';
       chip.innerHTML = '<i class="fa-solid fa-check text-[9px]"></i>ร่างสมบูรณ์';
     } else {
-      chip.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border text-amber-800 bg-amber-50 border-amber-300';
-      chip.innerHTML = `<i class="fa-solid fa-pen text-[9px]"></i>ต้องระบุ ${toThai(c.ph)} จุด`;
+      chip.className = 'shrink-0 whitespace-nowrap inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border text-amber-800 bg-amber-50 border-amber-300';
+      chip.innerHTML = `<i class="fa-solid fa-pen text-[9px]"></i><span class="tb-h3">ต้องระบุ </span>${toThai(c.ph)}<span class="tb-h3"> จุด</span>`;
+      chip.title = `ต้องระบุ ${toThai(c.ph)} จุด`;
     }
     $('left-status').textContent = c.ph ? `เหลือ ${toThai(c.ph)} จุดที่ต้องระบุ` : 'เอกสารพร้อมตรวจ';
     $('left-status').className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs border ' + (c.ph ? 'text-amber-800 bg-amber-50 border-amber-300' : 'text-emerald-700 bg-emerald-50 border-emerald-300');
     const lint = $('btn-lint');
     const n = c.errors + c.warnings;
     lint.innerHTML = n === 0
-      ? '<i class="fa-solid fa-circle-check text-brand-600"></i><span class="font-medium text-emerald-800">ตรวจระเบียบผ่าน</span>'
-      : `<i class="fa-solid fa-triangle-exclamation ${c.errors ? 'text-rose-600' : 'text-amber-600'}"></i><span class="font-medium ${c.errors ? 'text-rose-700' : 'text-amber-800'}">พบข้อควรแก้ ${toThai(n)} จุด</span>`;
+      ? '<i class="fa-solid fa-circle-check text-brand-600"></i><span class="tb-h3 font-medium text-emerald-800">ตรวจระเบียบผ่าน</span>'
+      : `<i class="fa-solid fa-triangle-exclamation ${c.errors ? 'text-rose-600' : 'text-amber-600'}"></i><span class="font-medium ${c.errors ? 'text-rose-700' : 'text-amber-800'}"><span class="tb-h3">พบข้อควรแก้ </span>${toThai(n)}<span class="tb-h3"> จุด</span></span>`;
     $('checks-count').textContent = toThai(c.ph + n);
     $('btn-undo').disabled = !st.undo.length; $('btn-redo').disabled = !st.redo.length;
     $('toggle-thai-num').checked = !!d.use_thai_numerals;
@@ -550,6 +551,7 @@
     $('footer-words').textContent = `ความยาว ${toThai(words.replace(/\s+/g, '').length)} ตัวอักษร`;
     $('footer-format').textContent = `A4 · ${FONT_LABEL[d.font_family || 'it9']} ๑๖ pt · ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`;
     renderSaveState('saved');
+    fitToolbar();
   }
 
   function renderChecks() {
@@ -833,7 +835,7 @@
     const el = sheet.querySelector(`[data-field="${key}"]`);
     el?.classList.add('flash-ok'); setTimeout(() => el?.classList.remove('flash-ok'), 2300);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeRefine(); $('quick-menu').hidden = true; } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeRefine(); $('quick-menu').hidden = true; toggleSettings(false); } });
 
   // ---------- ปุ่มลัด ----------
   $('btn-quick').addEventListener('click', (e) => {
@@ -978,6 +980,18 @@
   }
   new ResizeObserver(fitSheet).observe($('doc-viewport'));
 
+  // แถบเครื่องมือแถวเดียว: ไม่พอที่ก็ย่อเป็นขั้น
+  // ๑ ปุ่มย่อหน้า/สถานะบันทึก + ช่องหน่วยแคบลง → ๒ เลิกทำ/ทำซ้ำ (ยังใช้ Ctrl+Z/Y ได้) → ๓ ข้อความในป้ายสถานะ
+  // → ๔ ป้ายปุ่ม (เสนอขั้นถัดไป ตั้งค่าเอกสาร ชุดเสนอ) → ๕ คำว่า Word/PDF
+  function fitToolbar() {
+    const bar = $('toolbar');
+    for (const level of ['0', '1', '2', '3', '4', '5']) {
+      bar.dataset.compact = level;
+      if (bar.scrollWidth <= bar.clientWidth + 1) return;
+    }
+  }
+  new ResizeObserver(fitToolbar).observe($('toolbar'));
+
   // ---------- เรนเดอร์ทั้งหมด ----------
   function renderAll() {
     sheet.innerHTML = sheetHTML();
@@ -995,7 +1009,6 @@
     $('rail-avatar').title = p.signatory_name || '';
   }).catch(() => {});
 
-  renderEditMode();
   renderAll();
   renderSource();
   setSourceView('text');
