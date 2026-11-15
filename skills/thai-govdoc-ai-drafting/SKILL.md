@@ -73,8 +73,9 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 - โมเดล: `gemini-3.8-flash` (thinking LOW, ถ้าถูกปฏิเสธลองใหม่โดยไม่ตั้ง), `claude-opus-5-5` effort medium (server-side fallback beta; ถูกปฏิเสธลองใหม่โดยไม่ใส่)
 - เวลา: request 105 วิ (Vercel maxDuration 120), OCR 60 วิ (ตัวแรก 70%), ร่าง ≤ 75 วิ, ตัวแรก ≤ 50 วิ
 - error แปลจาก status code + ข้อความผู้ให้บริการ, log ชื่อ `govdoc.ai` — อย่าเดาว่า "คีย์ผิด" จาก 400/504
-- `DraftContent` = subject, memo_intro, memo_facts, memo_consideration, paragraph_reason/details/purpose, **reference**
+- `DraftContent` = subject, memo_intro, memo_facts, memo_consideration, paragraph_reason/details/purpose, **reference**, **source_summary**
   - **ห้ามใส่ `default=` ใน field** — Gemini response_schema ไม่รับ default
+  - `source_summary` = สรุปต้นเรื่อง ๓–๔ บรรทัด (ใคร/ขออะไร/เมื่อไร-ที่ไหน/ต้องทำอะไร) → `ctx.summary` + `summary_by_ai=True` (`core/studio._clean_summary` ตัด placeholder/สัญลักษณ์, ไม่เกิน ๔ บรรทัด); หน้าแก้ไขแสดงเฉพาะสรุปจาก AI
   - `reference` (อ้างถึง) = "หนังสือ<องค์กรผู้ส่งบนหัวกระดาษ> ที่ <เลข> ลงวันที่ <วันลงหนังสือ>" ใช้แทนค่าที่ `parse_govdoc_metadata` เดา (เคยได้ตำแหน่งผู้ลงนาม + วันจัดงาน)
 - กฎใน `SYSTEM_PROMPT`: ใช้เฉพาะข้อเท็จจริงในต้นเรื่อง, ขาดให้ `[✏️ ระบุ...]`, ห้ามแต่งกฎหมาย, ไม่เขียนส่วนหัว/ผู้ลงนาม, เลขข้อ ๑. ๑.๑ ไม่ใช้ markdown, บันทึกไม่ต้องเขียน "จึงเรียนมาเพื่อ..." (ระบบเติมตามขั้นเสนอ)
 - AI OCR อธิบายภาพในวงเล็บ เช่น `[ตราสัญลักษณ์: ...]`, `[ตรายางมุมบนซ้าย:] ... เลขรับ` — ตัวสกัดผู้ส่งต้องใช้ชื่อไทยข้างใน และข้ามตรายางรับ

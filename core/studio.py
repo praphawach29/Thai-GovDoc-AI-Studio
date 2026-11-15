@@ -88,6 +88,17 @@ def normalize_for_editor(doc: GovDocumentSchema) -> GovDocumentSchema:
     return doc
 
 
+def _clean_summary(text: str) -> str:
+    """สรุปต้นเรื่องจาก AI: ตัดบรรทัดว่าง/สัญลักษณ์นำหน้า/placeholder, ไม่เกิน ๔ บรรทัด"""
+    lines = []
+    for raw in (text or "").splitlines():
+        line = raw.strip().lstrip("-*•·").strip()
+        if not line or "[✏️" in line or "ระบุ" in line and line.startswith("["):
+            continue
+        lines.append(line[:300])
+    return "\n".join(lines[:4])
+
+
 def check_document(doc: GovDocumentSchema) -> StudioCheck:
     return StudioCheck(placeholders=doc.find_placeholders(), lint=lint_gov_document(doc))
 
@@ -254,6 +265,10 @@ def start_draft(
         result.ai_provider = ai.provider or None
         if ai.content is not None:
             doc = apply_draft_content(doc, ai.content)
+            # สรุปต้นเรื่องที่ AI เขียนมาพร้อมร่าง (ไม่เรียก AI เพิ่ม) แทนบรรทัดที่ตัดมาจากต้นเรื่อง
+            summary = _clean_summary(ai.content.source_summary)
+            if summary:
+                ctx.summary, ctx.summary_by_ai = summary, True
         result.steps.append(_ai_step(ai))
     result.document = normalize_for_editor(doc)
     result.check = check_document(doc)

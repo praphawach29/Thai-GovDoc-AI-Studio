@@ -60,6 +60,14 @@
         <button id="source-prev" type="button" class="w-7 h-7 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="ผลก่อนหน้า (Shift+Enter)" aria-label="ผลค้นหาก่อนหน้า" disabled><i class="fa-solid fa-chevron-up text-[11px]"></i></button>
         <button id="source-next" type="button" class="w-7 h-7 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="ผลถัดไป (Enter)" aria-label="ผลค้นหาถัดไป" disabled><i class="fa-solid fa-chevron-down text-[11px]"></i></button>
       </div>
+      <!-- สรุปต้นเรื่องที่ AI เขียนมาพร้อมร่าง (อ่านเร็ว แล้วเทียบกับไฟล์จริงด้านล่าง) -->
+      <details id="source-summary" class="group px-3 py-2 bg-emerald-50/60 border-b border-emerald-100 text-xs shrink-0" open hidden>
+        <summary class="cursor-pointer list-none flex items-center gap-1.5 font-medium text-emerald-800 select-none">
+          <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>สรุปต้นเรื่อง<span class="font-normal text-emerald-700/70">· โดย AI ตรวจกับต้นฉบับเสมอ</span>
+          <i class="fa-solid fa-chevron-down ml-auto text-[10px] text-emerald-700/60 group-open:rotate-180 transition"></i>
+        </summary>
+        <p id="source-summary-text" class="mt-1.5 whitespace-pre-line leading-relaxed text-slate-700 font-body"></p>
+      </details>
       <div id="source-pagebar" class="px-3 py-1 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-[11px] text-slate-600 shrink-0" hidden>
         <div class="flex items-center gap-1">
           <button id="source-page-prev" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="หน้าก่อนหน้า"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>

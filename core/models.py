@@ -435,6 +435,7 @@ class SourceDocumentContext(BaseModel):
     preview_image_path: Optional[str] = Field(None, description="เส้นทางไฟล์รูปภาพพรีวิวหน้าแรก (ถ้ามี)")
     raw_text: str = Field(default="", description="ข้อความที่สกัดได้จากไฟล์ต้นเรื่อง")
     summary: str = Field(default="", description="สรุปสาระสำคัญของเรื่องเดิม")
+    summary_by_ai: bool = Field(default=False, description="True = สรุปโดย AI ตอนร่าง (ไม่ใช่บรรทัดที่ตัดมาจากต้นเรื่อง)")
     core_issues: List[str] = Field(default_factory=list, description="ประเด็นปัญหาหรือข้อเท็จจริง")
     requested_action: Optional[str] = Field(None, description="สิ่งที่ต้นเรื่องประสงค์หรือขอความร่วมมือ")
     extraction_failed: bool = Field(default=False, description="การสกัดข้อความล้มเหลวหรือไม่ (Fail-Safe)")

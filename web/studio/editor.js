@@ -760,12 +760,13 @@
           </button>
         </div>
       </div>`;
-    const summary = entry.context?.summary ? `
+    // แสดงเฉพาะสรุปที่ AI เขียน (สรุปแบบเดิมเป็นแค่บรรทัดที่ตัดมาจากต้นเรื่อง อ่านแล้วไม่ช่วย)
+    const summary = aiSummary() ? `
       <div class="flex items-start gap-2.5">${avatar}
-        <div class="flex-1 space-y-1 min-w-0"><div class="text-xs font-medium text-slate-500">สรุปต้นเรื่อง</div>
-          <p class="text-xs text-slate-700 leading-relaxed bg-white border border-slate-200/80 p-3 rounded-lg font-body">${esc(entry.context.summary)}</p></div>
+        <div class="flex-1 space-y-1 min-w-0"><div class="text-xs font-medium text-slate-500">สรุปต้นเรื่อง <span class="font-normal text-slate-400">· ตรวจกับต้นฉบับเสมอ</span></div>
+          <p id="chat-summary" class="text-xs text-slate-700 leading-relaxed bg-white border border-slate-200/80 p-3 rounded-lg font-body whitespace-pre-line">${esc(aiSummary())}</p></div>
       </div>` : '';
-    $('tab-chat').innerHTML = user + file + tools + ready + summary;
+    $('tab-chat').innerHTML = user + file + summary + tools + ready;
     $('card-open')?.addEventListener('click', () => $('doc-viewport').scrollTo({ top: 0, behavior: 'smooth' }));
   }
 
@@ -842,7 +843,10 @@
   $('source-next').addEventListener('click', () => stepHit(1));
   $('source-prev').addEventListener('click', () => stepHit(-1));
 
+  const aiSummary = () => (entry.context?.summary_by_ai && entry.context.summary) || '';
   function renderSource() {
+    $('source-summary').hidden = !aiSummary();
+    $('source-summary-text').textContent = aiSummary();
     const ctx = entry.context;
     if (!ctx) {
       $('source-meta').innerHTML = '';
@@ -974,6 +978,7 @@
     // ต้นเรื่องเดิมยังเป็นข้อความที่อ่านจากไฟล์ (คงไว้ ไม่แทนด้วยข้อความที่ส่งไปร่างใหม่)
     entry.steps = res.steps;
     if (!entry.context) entry.context = res.context;
+    else if (res.context?.summary_by_ai) entry.context = { ...entry.context, summary: res.context.summary, summary_by_ai: true };
     if (extra) entry.prompt = [entry.prompt, extra].filter(Boolean).join('\n\n');
     renderAll(); renderSource(); renderChat(); persist();
   }

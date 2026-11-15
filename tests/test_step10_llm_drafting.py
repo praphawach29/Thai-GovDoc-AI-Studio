@@ -22,6 +22,7 @@ CONTENT = DraftContent(
     memo_consideration="กลุ่มงานส่งเสริมกีฬาพิจารณาแล้ว เห็นว่า... จึงเห็นควรอนุญาต",
     paragraph_reason="", paragraph_details="", paragraph_purpose="",
     reference="หนังสือสมาคมกีฬา ลงวันที่ ๑ ตุลาคม ๒๕๖๙",
+    source_summary="สมาคมกีฬา มีหนังสือลงวันที่ ๑ ตุลาคม ๒๕๖๙\nขอใช้อาคารกีฬา",
 )
 CFG = LLMConfig(anthropic_api_key="k1", gemini_api_key="k2", total_timeout_s=45, claude_timeout_s=30)
 
@@ -508,3 +509,60 @@ def test_letter_date_line_preferred_over_event_date():
     text = ("บริษัท เซ็นทรัล จำกัด\nเรื่อง ขออนุญาตจัดกิจกรรม\nเรียน ผู้ว่าราชการกรุงเทพมหานคร\n"
             "ด้วยบริษัทจะจัดงานในวันอาทิตย์ที่ ๑๔ กันยายน ๒๕๖๘ ณ ลานหน้าศูนย์การค้า\n๒๒ กรกฎาคม ๒๕๖๘\n")
     assert parse_govdoc_metadata(text)["doc_date"] == "๒๒ กรกฎาคม ๒๕๖๘"
+
+
+# ---------------------------------------------------------------- สรุปต้นเรื่องจาก AI (มาพร้อมร่าง ไม่เรียกเพิ่ม)
+def test_draft_schema_asks_for_source_summary():
+    from core.llm_drafter import SYSTEM_PROMPT, _strict_schema
+    assert "source_summary" in _strict_schema()["required"]
+    assert "source_summary" in SYSTEM_PROMPT and "๓–๔ บรรทัด" in SYSTEM_PROMPT
+
+
+def test_studio_draft_uses_ai_source_summary(monkeypatch):
+    from server.main import app
+    from server.settings import Settings, get_settings
+
+    content = CONTENT.model_copy(update={"source_summary": (
+        "- สมาคมกีฬา มีหนังสือลงวันที่ ๑ ตุลาคม ๒๕๖๙\n\n• ขอใช้อาคารกีฬา\nวันที่ [✏️ ระบุวันที่]\n"
+        "จัดงานที่ลานกีฬากลาง\nต้องตอบภายใน ๗ วัน\nบรรทัดเกิน")})
+    calls = []
+
+    def call(prompt, config, timeout):
+        calls.append(prompt)
+        return _ok(content=content)(prompt, config, timeout)
+
+    monkeypatch.setattr(llm_drafter, "_call_gemini", call)
+    app.dependency_overrides[get_settings] = lambda: Settings(gemini_api_key="k2")
+    try:
+        body = TestClient(app).post("/api/v1/studio/draft", data={
+            "prompt": "สมาคมกีฬาขอใช้อาคารกีฬา", "doc_type": "internal"}).json()
+    finally:
+        app.dependency_overrides.clear()
+    assert len(calls) == 1                                    # สรุปมากับคำตอบเดียวกับร่าง
+    ctx = body["context"]
+    assert ctx["summary_by_ai"] is True
+    # ตัดสัญลักษณ์นำหน้า บรรทัดว่าง และบรรทัดที่มี placeholder; ไม่เกิน ๔ บรรทัด
+    assert ctx["summary"] == ("สมาคมกีฬา มีหนังสือลงวันที่ ๑ ตุลาคม ๒๕๖๙\nขอใช้อาคารกีฬา\n"
+                              "จัดงานที่ลานกีฬากลาง\nต้องตอบภายใน ๗ วัน")
+
+
+def test_studio_draft_without_ai_keeps_extractor_summary(monkeypatch):
+    from server.main import app
+
+    body = TestClient(app).post("/api/v1/studio/draft", data={
+        "prompt": "สมาคมกีฬาขอใช้อาคารกีฬา", "doc_type": "internal"}).json()
+    assert body["context"]["summary_by_ai"] is False
+
+
+def test_empty_ai_summary_does_not_replace(monkeypatch):
+    from server.main import app
+    from server.settings import Settings, get_settings
+
+    monkeypatch.setattr(llm_drafter, "_call_gemini", _ok(content=CONTENT.model_copy(update={"source_summary": "  \n"})))
+    app.dependency_overrides[get_settings] = lambda: Settings(gemini_api_key="k2")
+    try:
+        body = TestClient(app).post("/api/v1/studio/draft", data={
+            "prompt": "สมาคมกีฬาขอใช้อาคารกีฬา", "doc_type": "internal"}).json()
+    finally:
+        app.dependency_overrides.clear()
+    assert body["context"]["summary_by_ai"] is False
