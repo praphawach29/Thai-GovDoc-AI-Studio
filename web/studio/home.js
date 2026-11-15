@@ -11,27 +11,47 @@
   $('btn-menu').addEventListener('click', () => setSidebar(true));
   backdrop.addEventListener('click', () => setSidebar(false));
 
-  // ---------- โปรไฟล์ + สถานะระบบ ----------
-  auth.ready.then(async (cfg) => {
-    if (!cfg.auth_required) return;
-    $('btn-signout').hidden = false;
-    $('btn-signout').addEventListener('click', () => auth.signOut());
-    try {
-      const me = await api.me();
-      $('user-position').textContent = [me.position, me.organization?.name].filter(Boolean).join(' · ');
-    } catch (err) { toast(err.message, 'error'); }
-  });
-  auth.ready.then(() => api.profile()).then((p) => {
-    const full = String(p.signatory_name || '').replace(/[()]/g, '').trim();
+  // ---------- ผู้ใช้ + สถานะระบบ ----------
+  // แสดงผู้ใช้บนการ์ดมุมล่างซ้ายและคำทักทาย
+  //   โหมด Supabase: บัญชีที่ล็อกอิน (ชื่อในโปรไฟล์ ถ้ายังไม่ตั้งใช้อีเมล)
+  //   โหมดเครื่องเดียว: ผู้ลงนามในไฟล์ data/user_profile.json
+  function showUser({ name, greeting, initials, subtitle }) {
+    $('greeting').textContent = greeting || 'สวัสดีครับ';
+    $('user-name').textContent = name;
+    $('user-name').title = name;
+    $('user-position').textContent = subtitle || '';
+    $('user-position').title = subtitle || '';
+    $('user-avatar').textContent = initials || '–';
+  }
+  const personName = (raw) => {
+    const full = String(raw || '').replace(/[()]/g, '').trim();
     const bare = full.replace(/^(นางสาว|นาง|นาย|ดร\.|ว่าที่ร้อยตรี)\s*/, '');
-    const first = bare.split(/\s+/)[0] || '';
-    $('greeting').textContent = first ? `สวัสดี คุณ${first}` : 'สวัสดีครับ';
-    $('user-name').textContent = full || 'ยังไม่ได้ตั้งค่าผู้ลงนาม';
-    $('user-position').textContent = p.signatory_position || '';
-    const parts = bare.split(/\s+/);
-    $('user-avatar').textContent = (parts[0]?.[0] || '') + (parts[1]?.[0] || '') || '–';
-    state.profile = p;
-  }).catch(() => { $('user-name').textContent = 'โหลดโปรไฟล์ไม่สำเร็จ'; });
+    const parts = bare.split(/\s+/).filter(Boolean);
+    return { full, first: parts[0] || '', initials: (parts[0]?.[0] || '') + (parts[1]?.[0] || '') };
+  };
+  auth.ready.then(async (cfg) => {
+    store.where().then((w) => { $('recent-where').textContent = 'เก็บ' + w; }).catch(() => {});
+    if (cfg.auth_required) {
+      $('btn-signout').hidden = false;
+      $('btn-signout').addEventListener('click', () => auth.signOut());
+      const me = await api.me();
+      const person = personName(me.full_name);
+      const email = me.email || '';
+      const local = email.split('@')[0];
+      showUser({
+        name: person.full || email || 'ผู้ใช้',
+        greeting: person.first ? `สวัสดี คุณ${person.first}` : local ? `สวัสดี ${local}` : '',
+        initials: person.initials || local.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase(),
+        subtitle: [person.full ? email : '', me.position, me.organization?.name].filter(Boolean).join(' · '),
+      });
+    } else {
+      const p = await api.profile();
+      state.profile = p;
+      const person = personName(p.signatory_name);
+      showUser({ name: person.full || 'ยังไม่ได้ตั้งค่าผู้ลงนาม', greeting: person.first && `สวัสดี คุณ${person.first}`,
+                 initials: person.initials, subtitle: p.signatory_position });
+    }
+  }).catch((err) => { $('user-name').textContent = 'โหลดข้อมูลผู้ใช้ไม่สำเร็จ'; toast(err.message, 'error'); });
 
   api.health().then((ok) => {
     $('health').innerHTML = ok

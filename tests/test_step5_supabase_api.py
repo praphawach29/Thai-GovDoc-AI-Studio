@@ -98,6 +98,7 @@ def test_legacy_hs256_project_is_checked_with_auth_server(fake, client):
 def test_me_returns_org_and_requires_profile(fake, client):
     me = client.get("/api/v1/me", headers=_auth(fake)).json()
     assert me["organization"]["id"] == ORG_ID and me["role"] == "admin"
+    assert me["email"] == "a@test.local"           # แสดงบนหน้าแรกเมื่อยังไม่ได้ตั้งชื่อ
     res = client.get("/api/v1/me", headers=_auth(fake, sub=NO_PROFILE_USER))
     assert res.status_code == 403
 

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
-from server.auth import Profile, get_profile
+from server.auth import CurrentUser, Profile, get_profile, require_supabase_user
 from server.settings import Settings, get_settings, supabase_enabled
 
 router = APIRouter(tags=["account"])
@@ -30,10 +30,11 @@ def public_config(settings: Settings = Depends(get_settings)):
 
 
 @router.get("/api/v1/me")
-def me(profile: Profile = Depends(get_profile)):
+def me(profile: Profile = Depends(get_profile), user: CurrentUser = Depends(require_supabase_user)):
     """ผู้ใช้ที่ล็อกอิน + หน่วยงาน (โหมด Supabase)"""
     return {
         "user_id": profile.user_id,
+        "email": user.email,
         "full_name": profile.full_name,
         "position": profile.position,
         "role": profile.role,
