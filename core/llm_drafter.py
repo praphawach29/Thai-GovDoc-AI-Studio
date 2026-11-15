@@ -52,9 +52,10 @@ class LLMConfig:
     claude_model: str = "claude-opus-5-5"
     claude_effort: str = "medium"
     gemini_model: str = "gemini-2.5-flash"
-    # เวลารวมที่ให้ AI ทั้งหมด (วินาที) — ต้องน้อยกว่าเวลาสูงสุดของ function บน Vercel (60 วินาที)
-    total_timeout_s: float = 45.0
-    claude_timeout_s: float = 30.0
+    # เวลาที่ให้ AI ร่าง (วินาที) — คำขอทั้งหมด (อ่านไฟล์ + ร่าง) ต้องน้อยกว่า maxDuration 120 วินาทีใน vercel.json
+    total_timeout_s: float = 75.0
+    claude_timeout_s: float = 50.0
+    ocr_timeout_s: float = 35.0
 
     @property
     def any_provider(self) -> bool:
@@ -134,6 +135,10 @@ class ProviderRefused(RuntimeError):
     pass
 
 
+class EmptyResult(RuntimeError):
+    pass
+
+
 def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftContent:
     import anthropic
 
@@ -183,6 +188,8 @@ def _short_error(exc: Exception) -> str:
     name = type(exc).__name__
     if isinstance(exc, ProviderRefused):
         return "โมเดลปฏิเสธคำขอ"
+    if isinstance(exc, EmptyResult):
+        return "อ่านข้อความจากภาพไม่ได้"
     if "Timeout" in name or "timeout" in str(exc).lower():
         return "หมดเวลารอคำตอบ"
     if "Authentication" in name or "PermissionDenied" in name or "API key" in str(exc):
@@ -210,6 +217,7 @@ def _clean(content: DraftContent) -> DraftContent:
 def draft_content_with_llm(
     *,
     doc_type: DocType,
+    budget_s: Optional[float] = None,
     instruction: str,
     source_text: str,
     config: LLMConfig,
@@ -230,6 +238,10 @@ def draft_content_with_llm(
             providers.append(("claude", config.claude_model, _call_claude))
         if config.gemini_api_key:
             providers.append(("gemini", config.gemini_model, _call_gemini))
+        # เวลาเหลือน้อย (เช่น อ่านไฟล์สแกนไปนานแล้ว) ให้ Gemini ซึ่งเร็วกว่าลองก่อน
+        budget = config.total_timeout_s if budget_s is None else budget_s
+        if len(providers) == 2 and budget < 35:
+            providers.reverse()
     if not providers:
         result.skipped_reason = "ยังไม่ได้ตั้ง API key ของ AI"
         return result
@@ -243,7 +255,7 @@ def draft_content_with_llm(
     prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
                                recipient=recipient, review_party=review_party)
 
-    deadline = clock() + config.total_timeout_s
+    deadline = clock() + (config.total_timeout_s if budget_s is None else budget_s)
     for index, (name, model, call) in enumerate(providers):
         remaining = deadline - clock()
         if remaining < 5:
@@ -286,3 +298,98 @@ def apply_draft_content(doc: GovDocumentSchema, content: DraftContent) -> GovDoc
         if content.paragraph_purpose:
             updated.paragraph_purpose = content.paragraph_purpose
     return updated
+
+
+# ---------------------------------------------------------------- อ่านไฟล์สแกน (OCR) ด้วย AI
+OCR_PROMPT = (
+    "ถอดข้อความภาษาไทยทั้งหมดจากภาพหน้าเอกสารราชการเหล่านี้ให้ครบถ้วนตามที่เห็น "
+    "คงลำดับและการขึ้นบรรทัด/ย่อหน้าเดิม รวมส่วนราชการ ที่ วันที่ เรื่อง เรียน อ้างถึง สิ่งที่ส่งมาด้วย "
+    "เนื้อหาทุกย่อหน้า ตาราง ตรายางรับหนังสือ และข้อความเกษียน/ลายมือที่อ่านได้ "
+    "คำที่อ่านไม่ออกให้เขียนว่า [อ่านไม่ออก] ห้ามเดาหรือเติมข้อความที่ไม่มีในภาพ "
+    "ขึ้นต้นแต่ละหน้าด้วยบรรทัด '--- หน้าที่ N ---' ตอบเป็นข้อความล้วน ไม่ต้องอธิบายเพิ่ม"
+)
+OcrProvider = Callable[[list, LLMConfig, float], str]
+
+
+def _jpeg_b64(image) -> str:
+    import base64
+    import io
+
+    buf = io.BytesIO()
+    image.convert("RGB").save(buf, format="JPEG", quality=85)
+    return base64.standard_b64encode(buf.getvalue()).decode("ascii")
+
+
+def _ocr_claude(images: list, config: LLMConfig, timeout_s: float) -> str:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=config.anthropic_api_key, timeout=timeout_s, max_retries=1)
+    content = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": _jpeg_b64(img)}}
+               for img in images]
+    content.append({"type": "text", "text": OCR_PROMPT})
+    kwargs = dict(model=config.claude_model, max_tokens=16000,
+                  messages=[{"role": "user", "content": content}],
+                  output_config={"effort": "low"})          # ถอดข้อความไม่ต้องคิดลึก เร็วกว่า
+    if config.claude_model in _FALLBACK_MODELS:
+        kwargs.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
+    response = client.beta.messages.create(**kwargs)
+    if response.stop_reason == "refusal":
+        raise ProviderRefused("โมเดลปฏิเสธคำขอ")
+    return "".join(b.text for b in response.content if b.type == "text").strip()
+
+
+def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float) -> str:
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=config.gemini_api_key,
+                          http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
+    response = client.models.generate_content(model=config.gemini_model, contents=[*images, OCR_PROMPT])
+    return (response.text or "").strip()
+
+
+@dataclass
+class LLMOcrResult:
+    text: str = ""
+    provider: str = ""
+    model: str = ""
+    attempts: List[LLMAttempt] = field(default_factory=list)
+
+
+def ocr_images_with_llm(
+    images: list,
+    config: LLMConfig,
+    budget_s: float = 25.0,
+    providers: Optional[List[Tuple[str, str, OcrProvider]]] = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> LLMOcrResult:
+    """ถอดข้อความจากภาพทุกหน้าในคำขอเดียว: Gemini ก่อน (เร็ว ถูก) แล้ว Claude
+    ผู้เรียกต้องตรวจชั้นความลับก่อนเรียก (เอกสารลับห้ามส่งออก)"""
+    result = LLMOcrResult()
+    if providers is None:
+        providers = []
+        if config.gemini_api_key:
+            providers.append(("gemini", config.gemini_model, _ocr_gemini))
+        if config.anthropic_api_key:
+            providers.append(("claude", config.claude_model, _ocr_claude))
+    if not images or not providers:
+        return result
+    deadline = clock() + budget_s
+    for index, (name, model, call) in enumerate(providers):
+        remaining = deadline - clock()
+        if remaining < 4:
+            result.attempts.append(LLMAttempt(name, model, False, "หมดเวลารวม ข้ามไป"))
+            continue
+        timeout = remaining if index == len(providers) - 1 else max(4.0, remaining * 0.6)
+        started = clock()
+        try:
+            text = call(images, config, timeout)
+            if len(text.strip()) < 20:
+                raise EmptyResult()
+        except Exception as exc:
+            result.attempts.append(LLMAttempt(name, model, False, _short_error(exc), round(clock() - started, 1)))
+            continue
+        result.attempts.append(LLMAttempt(name, model, True, seconds=round(clock() - started, 1)))
+        result.text, result.provider, result.model = text.strip(), name, model
+        return result
+    return result

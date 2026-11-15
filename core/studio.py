@@ -15,7 +15,9 @@ from core.ai_drafter import draft_from_context_rule_based
 from core.classifier import ClassificationResult, classify_source_document
 from core.extractor import extract_from_raw_text, extract_source_document
 from core.linter import LintResult, lint_gov_document
-from core.llm_drafter import LLMConfig, apply_draft_content, draft_content_with_llm
+import time
+
+from core.llm_drafter import LLMConfig, apply_draft_content, draft_content_with_llm, ocr_images_with_llm
 from core.models import (
     DocType,
     GovDocumentSchema,
@@ -145,14 +147,30 @@ def start_draft(
     allow_cloud = cloud_ai_allowed(secret)
     result = StudioDraftResult(cloud_ai_blocked=not allow_cloud)
     profile = get_user_profile()
+    # เวลารวมของคำขอ (อ่านไฟล์ + ร่าง) ต้องทันเพดาน 120 วินาทีของ Vercel (vercel.json)
+    started = time.monotonic()
+    request_budget = 105.0
+
+    # ไฟล์สแกน: AI อ่านทุกหน้าในคำขอเดียว (Gemini → Claude)
+    ocr_attempts = []
+
+    def ai_ocr(images):
+        ocr = ocr_images_with_llm(images, llm, budget_s=llm.ocr_timeout_s)
+        ocr_attempts.extend(ocr.attempts)
+        label = {"gemini": "Gemini", "claude": "Claude"}.get(ocr.provider, ocr.provider)
+        return ocr.text, (f"{label} ({ocr.model})" if ocr.text else None)
+
+    use_ai_ocr = llm is not None and llm.any_provider and allow_cloud
 
     if file_path:
-        ctx = extract_source_document(file_path, api_key=api_key, allow_cloud=allow_cloud, secret=secret)
+        ctx = extract_source_document(file_path, api_key=api_key, allow_cloud=allow_cloud, secret=secret,
+                                      ocr_fn=ai_ocr if use_ai_ocr else None)
         engine = ctx.ocr_engine_used or "ข้อความในไฟล์"
+        failed_ocr = [f"{'Gemini' if a.provider == 'gemini' else 'Claude'} {a.error}" for a in ocr_attempts if not a.ok]
+        detail = (ctx.extraction_error or "อ่านไม่สำเร็จ") if ctx.extraction_failed else f"{ctx.page_count} หน้า · {engine}"
         result.steps.append(StudioStep(
             key="extract", label="อ่านไฟล์ต้นเรื่อง", ok=not ctx.extraction_failed,
-            detail=(ctx.extraction_error or "อ่านไม่สำเร็จ") if ctx.extraction_failed
-            else f"{ctx.page_count} หน้า · {engine}",
+            detail=" · ".join(failed_ocr + [detail]),
         ))
     elif prompt.strip():
         ctx = extract_from_raw_text(prompt.strip(), filename="คำสั่งผู้ใช้.txt")
@@ -193,6 +211,7 @@ def start_draft(
     if llm is not None:
         ai = draft_content_with_llm(
             doc_type=doc.doc_type,
+            budget_s=min(llm.total_timeout_s, max(0.0, request_budget - (time.monotonic() - started))),
             instruction=prompt if file_path else "",
             source_text=ctx.raw_text or "",
             config=llm, secret=secret, recipient=recipient, review_party=review_party,

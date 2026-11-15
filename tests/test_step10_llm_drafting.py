@@ -213,3 +213,88 @@ def test_studio_draft_uses_ai_and_reports_fallback(monkeypatch):
     # หน่วยตั้งต้น (กลุ่มงาน) ยังกำหนดหัวหนังสือ ผู้รับ และภาคความประสงค์
     assert doc["salutation"] == "เรียน หัวหน้ากลุ่มงานส่งเสริมกีฬา"
     assert doc["memo_request"].startswith("จึงเรียนมาเพื่อโปรดพิจารณานำเรียนผู้อำนวยการกองการกีฬา")
+
+
+# ---------------------------------------------------------------- อ่านไฟล์สแกนด้วย AI
+def _scanned_pdf(tmp_path, pages=2):
+    from PIL import Image, ImageDraw
+
+    imgs = []
+    for i in range(pages):
+        im = Image.new("RGB", (600, 850), "white")
+        ImageDraw.Draw(im).rectangle((50, 50 + i * 10, 300, 80 + i * 10), fill="black")
+        imgs.append(im)
+    path = tmp_path / "scan.pdf"
+    imgs[0].save(path, save_all=True, append_images=imgs[1:])
+    return path
+
+
+def test_ocr_gemini_first_then_claude():
+    order = []
+    ok = lambda name: (lambda imgs, c, t: order.append(name) or "--- หน้าที่ 1 ---\nข้อความที่อ่านได้จากภาพ ยาวพอ")
+    res = llm_drafter.ocr_images_with_llm(["img"], CFG, providers=[
+        ("gemini", "g", lambda imgs, c, t: (_ for _ in ()).throw(TimeoutError("timeout"))), ("claude", "c", ok("claude"))])
+    assert res.provider == "claude" and order == ["claude"]
+    assert res.attempts[0].error == "หมดเวลารอคำตอบ"
+    empty = llm_drafter.ocr_images_with_llm(["img"], CFG, providers=[("gemini", "g", lambda i, c, t: "  ")])
+    assert empty.text == "" and empty.attempts[0].error == "อ่านข้อความจากภาพไม่ได้"
+    default = llm_drafter.ocr_images_with_llm(["img"], LLMConfig())
+    assert default.text == "" and not default.attempts               # ไม่มีคีย์ = ไม่เรียก
+
+
+def test_extractor_sends_all_scanned_pages_in_one_ai_call(tmp_path):
+    from core.extractor import extract_source_document
+
+    calls = []
+
+    def ocr_fn(images):
+        calls.append(len(images))
+        return "--- หน้าที่ 1 ---\nสมาคมกีฬาขอใช้อาคาร\n--- หน้าที่ 2 ---\nรายละเอียด", "Gemini (gemini-2.5-flash)"
+
+    ctx = extract_source_document(str(_scanned_pdf(tmp_path)), ocr_fn=ocr_fn)
+    assert calls == [2] and not ctx.extraction_failed
+    assert "สมาคมกีฬาขอใช้อาคาร" in ctx.raw_text and ctx.ocr_engine_used.startswith("Gemini")
+    # ชั้นความลับ: ไม่เรียก AI เลย
+    calls.clear()
+    secret_ctx = extract_source_document(str(_scanned_pdf(tmp_path)), ocr_fn=ocr_fn, secret=SecretLevel.SECRET)
+    assert calls == [] and secret_ctx.extraction_failed
+
+
+def test_ai_ocr_failure_does_not_retry_page_by_page_in_cloud(tmp_path, monkeypatch):
+    from core import extractor
+
+    monkeypatch.setenv("GEMINI_API_KEY", "set-on-server")
+    per_page = []
+    monkeypatch.setattr(extractor, "extract_ocr_gemini", lambda img, api_key=None: per_page.append(1) or "x" * 50)
+    ctx = extractor.extract_source_document(str(_scanned_pdf(tmp_path)), ocr_fn=lambda imgs: ("", None))
+    assert per_page == [] and ctx.extraction_failed
+    assert "ANTHROPIC_API_KEY" in ctx.extraction_error
+
+
+def test_short_budget_puts_gemini_first(monkeypatch):
+    order = []
+    monkeypatch.setattr(llm_drafter, "_call_claude", lambda p, c, t: order.append("claude") or CONTENT)
+    monkeypatch.setattr(llm_drafter, "_call_gemini", lambda p, c, t: order.append("gemini") or CONTENT)
+    full = draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=CFG)
+    short = draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=CFG, budget_s=20)
+    assert full.provider == "claude" and short.provider == "gemini"
+
+
+def test_studio_draft_scanned_pdf_end_to_end(tmp_path, monkeypatch):
+    from server.main import app
+    from server.settings import Settings, get_settings
+
+    monkeypatch.setattr(llm_drafter, "_ocr_gemini", lambda imgs, c, t: "--- หน้าที่ 1 ---\nสมาคมวิ่งเปี้ยวขอเชิญเป็นเจ้าภาพร่วม")
+    monkeypatch.setattr(llm_drafter, "_call_claude", _ok())
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        anthropic_api_key="k1", gemini_api_key="k2", upload_dir=tmp_path / "up")
+    try:
+        with open(_scanned_pdf(tmp_path), "rb") as f:
+            body = TestClient(app).post("/api/v1/studio/draft", data={"prompt": "ร่างบันทึกเสนอ", "doc_type": "internal"},
+                                        files={"file": ("งานวิ่งเปี้ยว.pdf", f, "application/pdf")}).json()
+    finally:
+        app.dependency_overrides.clear()
+    steps = {s["key"]: s for s in body["steps"]}
+    assert steps["extract"]["ok"] and "Gemini" in steps["extract"]["detail"]
+    assert "วิ่งเปี้ยว" in body["context"]["raw_text"]
+    assert body["ai_provider"] == "claude" and body["document"]["subject"] == CONTENT.subject
