@@ -246,7 +246,7 @@
             <div class="flex items-baseline gap-2 flex-1 min-w-0"><span class="doc-bold">ที่</span>${field('doc_number', 'flex-1 dotted-fill')}</div>
             <div class="flex items-baseline gap-2 flex-1 min-w-0"><span class="doc-bold">วันที่</span>${field('doc_date', 'flex-1 dotted-fill')}</div>
           </div>
-          <div class="flex items-baseline gap-2"><span class="doc-bold shrink-0">เรื่อง</span><div class="group relative flex-1">${field('subject', 'block dotted-fill')}</div></div>
+          <div class="flex items-baseline gap-2"><span class="doc-bold shrink-0">เรื่อง</span><div class="group relative flex-1">${field('subject', 'block first-line-fill')}</div></div>
         </div>
         <div class="gap-6pt flex items-baseline gap-2"><span class="doc-bold">${esc((d.salutation || '').match(SAL_RE)?.[1] || 'เรียน')}</span>${field('salutation_to', 'flex-1')}</div>
         ${refs ? `<div class="mt-1 flex items-baseline gap-2"><span class="doc-bold shrink-0">อ้างถึง</span>${field('references', 'flex-1')}</div>` : ''}

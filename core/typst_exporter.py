@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 
+from core.thai_segmenter import insert_zwsp
 from core.docx_fonts import FONT_FILES
 from core.models import GovDocumentSchema, DocType
 from core.layout_profile import get_layout_profile
@@ -53,6 +54,12 @@ def _format_memo_blocks(data: GovDocumentSchema) -> str:
         return "()"
     # Typst ต้องมี comma ท้ายเมื่อ array มีสมาชิกเดียว
     return "(\n    " + ",\n    ".join(items) + ",\n  )"
+
+
+def _subject_words(subject: str) -> str:
+    """คำในชื่อเรื่อง (ตัดคำไทย) ให้ Typst หาจุดขึ้นบรรทัดที่ ๒ ได้ — เส้นประอยู่เฉพาะบรรทัดแรก"""
+    words = [w for w in insert_zwsp(subject or "").split("\u200b") if w]
+    return _format_typst_list(words)
 
 
 def _format_co_signers(data: GovDocumentSchema) -> str:
@@ -122,6 +129,7 @@ def generate_typst_content(
   dept_name: {_escape_typst_string(data.dept_name)},
   doc_date: {_escape_typst_string(fmt_date)},
   subject: {_escape_typst_string(data.subject)},
+  subject_words: {_subject_words(data.subject)},
   salutation: {_escape_typst_string(data.salutation)},
   references: {_format_typst_list(data.references)},
   attachments: {_format_typst_list(data.attachments)},

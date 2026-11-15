@@ -55,6 +55,12 @@
 .edit-on .editable:focus { background: #ecfdf5; box-shadow: 0 0 0 2px #34d399; }
 .editable:empty::before { content: attr(data-empty); color: #94a3b8; font-style: italic; }
 .dotted-fill { border-bottom: 1px dotted #cbd5e1; }
+/* "เรื่อง": เส้นประเฉพาะบรรทัดแรก (ยาวถึงขอบขวา) บรรทัดที่ ๒ ไม่มีเส้น — ตรงกับ Word / PDF */
+.first-line-fill {
+  background-image: linear-gradient(to right, #cbd5e1 50%, transparent 0);
+  background-size: 2px 1px; background-repeat: repeat-x;
+  background-position: 0 calc(1lh - 2px);
+}
 
 /* Placeholder [✏️ ระบุ...] */
 .ph-chip {

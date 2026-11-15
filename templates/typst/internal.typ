@@ -43,11 +43,29 @@
   }
 })
 
+// "เรื่อง": เส้นจุดเฉพาะบรรทัดแรก (ยาวถึงขอบขวา) ส่วนที่ยาวเกินขึ้นบรรทัดที่ ๒ เยื้องตรงข้อความ ไม่มีเส้น
+// words = คำที่ตัดแล้วจาก core/typst_exporter._subject_words (เหมือนไฟล์ Word)
+#let _field_first_line(label, words, indent: 1.25cm) = layout(size => context {
+  let head = text(size: 20pt, weight: "bold")[#label]
+  let room = size.width - measure(head).width - 0.25cm - 0.3cm
+  let k = words.len()
+  for i in range(1, words.len() + 1) {
+    if measure(words.slice(0, i).join("")).width > room { k = i - 1; break }
+  }
+  if k == words.len() or k == 0 {
+    par(hanging-indent: indent)[#_field(label, words.join(""))]
+  } else {
+    par[#head#h(0.25cm)#words.slice(0, k).join("").trim()#_leader]
+    pad(left: indent, par(justify: false, words.slice(k).join("").trim()))
+  }
+})
+
 #let govdoc_internal(
   doc_number: "",
   dept_name: "",
   doc_date: "",
   subject: "",
+  subject_words: none,
   salutation: "",
   references: (),
   attachments: (),
@@ -115,7 +133,11 @@
     _field("วันที่", doc_date),
   )
 
-  #par(hanging-indent: 1.25cm)[#_field("เรื่อง", subject)]
+  #if subject_words != none and subject_words.len() > 0 {
+    _field_first_line("เรื่อง", subject_words)
+  } else {
+    par(hanging-indent: 1.25cm)[#_field("เรื่อง", subject)]
+  }
 
   // 'เรียน' เว้นก่อนย่อหน้า 6 pt
   #v(6pt)
