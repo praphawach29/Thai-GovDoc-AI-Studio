@@ -75,6 +75,10 @@ class Settings:
     claude_model: str = field(default_factory=lambda: os.environ.get("GOVDOC_CLAUDE_MODEL", "claude-opus-5-5").strip())
     claude_effort: str = field(default_factory=lambda: os.environ.get("GOVDOC_CLAUDE_EFFORT", "medium").strip())
     gemini_model: str = field(default_factory=lambda: os.environ.get("GOVDOC_GEMINI_MODEL", "gemini-2.5-flash").strip())
+    # ลำดับผู้ให้บริการ AI เช่น "gemini,claude" (ค่าเริ่มต้น: Gemini ก่อนเพื่อประหยัด) หรือ "claude,gemini"
+    ai_order: tuple = field(default_factory=lambda: tuple(
+        n for n in _split_csv(os.environ.get("GOVDOC_AI_ORDER", "gemini,claude").lower()) if n in ("gemini", "claude")
+    ) or ("gemini", "claude"))
     web_dir: Path = ROOT_DIR / "web" / "studio"
     assets_dir: Path = ROOT_DIR / "assets"
     typst_templates_dir: Path = ROOT_DIR / "templates" / "typst"
@@ -88,7 +92,7 @@ def llm_config(settings: "Settings"):
         anthropic_api_key=settings.anthropic_api_key, gemini_api_key=settings.gemini_api_key,
         anthropic_workspace_id=settings.anthropic_workspace_id,
         claude_model=settings.claude_model, claude_effort=settings.claude_effort,
-        gemini_model=settings.gemini_model,
+        gemini_model=settings.gemini_model, provider_order=settings.ai_order,
     )
 
 

@@ -1,6 +1,7 @@
 """llm_drafter.py — ให้ AI เรียบเรียงเนื้อความหนังสือราชการ สลับผู้ให้บริการอัตโนมัติ
 
-ลำดับ: Claude (Anthropic) → Gemini (Google) → ร่างตามกฎ (ทำงานได้เสมอ)
+ลำดับ: ตาม provider_order (ค่าเริ่มต้น Gemini → Claude) → ร่างตามกฎ (ทำงานได้เสมอ)
+- ตัวที่อ่านไฟล์สแกนสำเร็จจะร่างต่อจนจบ (ใช้โมเดลเดียวทั้งงาน); ตัวที่ล้มเหลวไปไว้ท้ายสุด
 - ผู้ให้บริการที่ไม่มี API key ถูกข้าม; เรียกไม่สำเร็จ หมดเวลา หรือปฏิเสธ → ลองตัวถัดไป
 - AI เขียนเฉพาะ "เนื้อความ" (เรื่อง, ต้นเรื่อง, ข้อเท็จจริง, ข้อพิจารณา / ภาคเหตุ-ข้อเท็จจริง-ความประสงค์)
   ส่วนหัวหนังสือ (ส่วนราชการ, เลขที่, วันที่, ผู้รับ, ผู้ลงนาม) มาจากหน่วยออกหนังสือเท่านั้น
@@ -61,10 +62,24 @@ class LLMConfig:
     total_timeout_s: float = 75.0
     claude_timeout_s: float = 50.0
     ocr_timeout_s: float = 60.0
+    # ลำดับผู้ให้บริการ ใช้ทั้งอ่านไฟล์สแกนและร่าง: ตัวแรกทำทั้งงานถ้าทำได้ ตัวถัดไปเป็นตัวสำรอง
+    # ค่าเริ่มต้น Gemini ก่อน (ถูกกว่า) แล้ว Claude
+    provider_order: Tuple[str, ...] = ("gemini", "claude")
 
     @property
     def any_provider(self) -> bool:
         return bool(self.anthropic_api_key or self.gemini_api_key)
+
+
+def _ordered(config: LLMConfig, available: dict, prefer: Optional[str] = None, avoid: Tuple[str, ...] = ()) -> list:
+    """เรียงผู้ให้บริการที่มีคีย์ตาม provider_order; prefer ขึ้นก่อน (ตัวที่อ่านไฟล์สำเร็จ = ร่างต่อ)
+    avoid ไปท้าย (ตัวที่เพิ่งล้มเหลวในขั้นก่อน — ยังลองได้ถ้าตัวอื่นไม่สำเร็จ)"""
+    names = [n for n in config.provider_order if n in available] + [n for n in available if n not in config.provider_order]
+    if prefer in names:
+        names.remove(prefer)
+        names.insert(0, prefer)
+    names = [n for n in names if n not in avoid] + [n for n in names if n in avoid and n != prefer]
+    return [available[n] for n in names]
 
 
 @dataclass
@@ -299,6 +314,8 @@ def draft_content_with_llm(
     review_party: str = "",
     providers: Optional[List[Tuple[str, str, Provider]]] = None,
     clock: Callable[[], float] = time.monotonic,
+    prefer: Optional[str] = None,
+    avoid: Tuple[str, ...] = (),
 ) -> LLMDraftResult:
     """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)"""
     result = LLMDraftResult()
@@ -306,15 +323,16 @@ def draft_content_with_llm(
         result.skipped_reason = "เอกสารชั้นความลับ ไม่ส่งให้ AI ภายนอก"
         return result
     if providers is None:
-        providers = []
+        available = {}
         if config.anthropic_api_key:
-            providers.append(("claude", config.claude_model, _call_claude))
+            available["claude"] = ("claude", config.claude_model, _call_claude)
         if config.gemini_api_key:
-            providers.append(("gemini", config.gemini_model, _call_gemini))
-        # เวลาเหลือน้อย (เช่น อ่านไฟล์สแกนไปนานแล้ว) ให้ Gemini ซึ่งเร็วกว่าลองก่อน
+            available["gemini"] = ("gemini", config.gemini_model, _call_gemini)
+        # เวลาเหลือน้อย (เช่น อ่านไฟล์สแกนไปนานแล้ว) และไม่มีตัวที่ควรใช้ต่อ ให้ Gemini ซึ่งเร็วกว่าลองก่อน
         budget = config.total_timeout_s if budget_s is None else budget_s
-        if len(providers) == 2 and budget < 35:
-            providers.reverse()
+        if prefer is None and budget < 35 and "gemini" in available and "gemini" not in avoid:
+            prefer = "gemini"
+        providers = _ordered(config, available, prefer, avoid)
     if not providers:
         result.skipped_reason = "ยังไม่ได้ตั้ง API key ของ AI"
         return result
@@ -439,15 +457,16 @@ def ocr_images_with_llm(
     providers: Optional[List[Tuple[str, str, OcrProvider]]] = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> LLMOcrResult:
-    """ถอดข้อความจากภาพทุกหน้าในคำขอเดียว: Gemini ก่อน (เร็ว ถูก) แล้ว Claude
+    """ถอดข้อความจากภาพทุกหน้าในคำขอเดียว ตามลำดับ provider_order (ค่าเริ่มต้น Gemini แล้ว Claude)
     ผู้เรียกต้องตรวจชั้นความลับก่อนเรียก (เอกสารลับห้ามส่งออก)"""
     result = LLMOcrResult()
     if providers is None:
-        providers = []
+        available = {}
         if config.gemini_api_key:
-            providers.append(("gemini", config.gemini_model, _ocr_gemini))
+            available["gemini"] = ("gemini", config.gemini_model, _ocr_gemini)
         if config.anthropic_api_key:
-            providers.append(("claude", config.claude_model, _ocr_claude))
+            available["claude"] = ("claude", config.claude_model, _ocr_claude)
+        providers = _ordered(config, available)
     if not images or not providers:
         return result
     deadline = clock() + budget_s

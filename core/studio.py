@@ -245,6 +245,9 @@ def start_draft(
             instruction=prompt if file_path else "",
             source_text=ctx.raw_text or "",
             config=llm, secret=secret,
+            # ใช้ตัวที่อ่านไฟล์สำเร็จร่างต่อ ตัวที่เพิ่งล้มเหลวไว้ท้ายสุด
+            prefer=next((a.provider for a in ocr_attempts if a.ok), None),
+            avoid=tuple(a.provider for a in ocr_attempts if not a.ok),
             recipient=recipient if doc.doc_type == DocType.INTERNAL else "",
             review_party=review_party if doc.doc_type == DocType.INTERNAL else "",
         )

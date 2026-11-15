@@ -198,17 +198,18 @@ def test_studio_draft_uses_ai_and_reports_fallback(monkeypatch):
     from server.main import app
     from server.settings import Settings, get_settings
 
-    monkeypatch.setattr(llm_drafter, "_call_claude", _fail(TimeoutError("timeout")))
-    monkeypatch.setattr(llm_drafter, "_call_gemini", _ok())
+    # ค่าเริ่มต้น Gemini ก่อน: Gemini หมดเวลา → Claude ร่างแทน
+    monkeypatch.setattr(llm_drafter, "_call_gemini", _fail(TimeoutError("timeout")))
+    monkeypatch.setattr(llm_drafter, "_call_claude", _ok())
     app.dependency_overrides[get_settings] = lambda: Settings(anthropic_api_key="k1", gemini_api_key="k2")
     try:
         body = TestClient(app).post("/api/v1/studio/draft", data={
             "prompt": "ร่างบันทึกขอใช้อาคารกีฬา", "doc_type": "internal"}).json()
     finally:
         app.dependency_overrides.clear()
-    assert body["ai_provider"] == "gemini"
+    assert body["ai_provider"] == "claude"
     step = next(s for s in body["steps"] if s["key"] == "ai")
-    assert "Claude หมดเวลา" in step["detail"] and "Gemini" in step["detail"]
+    assert "Gemini หมดเวลา" in step["detail"] and "Claude" in step["detail"]
     doc = body["document"]
     assert doc["subject"] == CONTENT.subject and doc["memo_facts"].startswith("๑. ขอใช้อาคาร")
     # หน่วยตั้งต้น (กลุ่มงาน) ยังกำหนดหัวหนังสือ ผู้รับ และภาคความประสงค์
@@ -276,8 +277,10 @@ def test_short_budget_puts_gemini_first(monkeypatch):
     order = []
     monkeypatch.setattr(llm_drafter, "_call_claude", lambda p, c, t: order.append("claude") or CONTENT)
     monkeypatch.setattr(llm_drafter, "_call_gemini", lambda p, c, t: order.append("gemini") or CONTENT)
-    full = draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=CFG)
-    short = draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=CFG, budget_s=20)
+    claude_first = LLMConfig(anthropic_api_key="k1", gemini_api_key="k2", provider_order=("claude", "gemini"))
+    full = draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=claude_first)
+    short = draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=claude_first,
+                                   budget_s=20)
     assert full.provider == "claude" and short.provider == "gemini"
 
 
@@ -414,3 +417,56 @@ def test_incoming_letter_with_memo_request_drafts_memo(tmp_path, monkeypatch):
     step = next(s for s in body["steps"] if s["key"] == "classify")
     assert "บันทึกข้อความ" in step["detail"] and "คำสั่ง" in step["detail"]
     assert body["document"]["salutation"] == "เรียน หัวหน้ากลุ่มงานส่งเสริมกีฬา"
+
+
+
+# ---------------------------------------------------------------- ใช้โมเดลเดียวทั้งงาน
+def test_default_order_is_gemini_then_claude(monkeypatch):
+    order = []
+    monkeypatch.setattr(llm_drafter, "_call_claude", lambda p, c, t: order.append("claude") or CONTENT)
+    monkeypatch.setattr(llm_drafter, "_call_gemini", lambda p, c, t: order.append("gemini") or CONTENT)
+    res = draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=CFG)
+    assert res.provider == "gemini" and order == ["gemini"]          # สำเร็จแล้วไม่เรียกตัวอื่น (ไม่เสียเงินซ้ำ)
+
+
+def test_provider_that_read_the_file_keeps_drafting_and_failed_one_goes_last(monkeypatch):
+    order = []
+    monkeypatch.setattr(llm_drafter, "_call_claude", lambda p, c, t: order.append("claude") or CONTENT)
+    monkeypatch.setattr(llm_drafter, "_call_gemini", lambda p, c, t: order.append("gemini") or CONTENT)
+    draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=CFG, avoid=("gemini",))
+    assert order == ["claude"]                                       # Gemini เพิ่งล้มตอนอ่านไฟล์ → Claude ทำต่อ
+    order.clear()
+    claude_first = LLMConfig(anthropic_api_key="k1", gemini_api_key="k2", provider_order=("claude", "gemini"))
+    draft_content_with_llm(doc_type=DocType.INTERNAL, instruction="", source_text="x", config=claude_first,
+                           prefer="gemini")
+    assert order == ["gemini"]                                       # Gemini อ่านไฟล์สำเร็จ → ร่างต่อด้วย Gemini
+
+
+def test_scanned_flow_uses_one_provider_end_to_end(tmp_path, monkeypatch):
+    from server.main import app
+    from server.settings import Settings, get_settings
+
+    calls = []
+    monkeypatch.setattr(llm_drafter, "_ocr_gemini", lambda i, c, t: calls.append("gemini-ocr") or "--- หน้าที่ 1 ---\nสมาคมขอเชิญเป็นเจ้าภาพร่วม")
+    monkeypatch.setattr(llm_drafter, "_ocr_claude", lambda i, c, t: calls.append("claude-ocr") or "x" * 50)
+    monkeypatch.setattr(llm_drafter, "_call_gemini", lambda p, c, t: calls.append("gemini-draft") or CONTENT)
+    monkeypatch.setattr(llm_drafter, "_call_claude", lambda p, c, t: calls.append("claude-draft") or CONTENT)
+    app.dependency_overrides[get_settings] = lambda: Settings(anthropic_api_key="k1", gemini_api_key="k2",
+                                                              upload_dir=tmp_path / "up")
+    try:
+        with open(_scanned_pdf(tmp_path), "rb") as f:
+            TestClient(app).post("/api/v1/studio/draft", data={"prompt": "ร่างบันทึกข้อความ"},
+                                 files={"file": ("a.pdf", f, "application/pdf")})
+    finally:
+        app.dependency_overrides.clear()
+    assert calls == ["gemini-ocr", "gemini-draft"]                   # ไม่แตะ Claude เลยเมื่อ Gemini ทำได้
+
+
+def test_ai_order_setting(monkeypatch):
+    from server.settings import Settings
+
+    assert Settings().ai_order == ("gemini", "claude")
+    monkeypatch.setenv("GOVDOC_AI_ORDER", "Claude, Gemini")
+    assert Settings().ai_order == ("claude", "gemini")
+    monkeypatch.setenv("GOVDOC_AI_ORDER", "openai")
+    assert Settings().ai_order == ("gemini", "claude")               # ค่าผิดใช้ค่าเริ่มต้น
