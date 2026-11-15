@@ -59,7 +59,7 @@ def test_typst_compiles(tmp_path, template_id, style):
     (tmp_path / "assets").mkdir()
     for name in ("internal.typ", "external.typ"):
         shutil.copy(ROOT / "templates" / "typst" / name, tmp_path / "templates" / "typst" / name)
-    shutil.copy(ROOT / "assets" / "garuda.svg", tmp_path / "assets" / "garuda.svg")
+    shutil.copy(ROOT / "assets" / "garuda_krut.png", tmp_path / "assets" / "garuda_krut.png")
     (tmp_path / "main.typ").write_text(generate_typst_content(doc), encoding="utf-8")
 
     cmd, reason = _compile_cmd(tmp_path, "main.typ")

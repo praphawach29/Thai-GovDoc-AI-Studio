@@ -66,7 +66,7 @@ def _format_co_signers(data: GovDocumentSchema) -> str:
 
 def generate_typst_content(
     data: GovDocumentSchema,
-    garuda_rel_path: str = "assets/garuda.svg",
+    garuda_rel_path: str = "assets/garuda_krut.png",
     layout_profile: Optional[str] = None,
 ) -> str:
     """สร้างเนื้อหาโค้ด Typst จาก GovDocumentSchema
@@ -150,9 +150,9 @@ def export_govdoc_to_typst(data: GovDocumentSchema, output_typ_path: str) -> str
     out_file = Path(output_typ_path)
     out_file.parent.mkdir(parents=True, exist_ok=True)
     
-    # คำนวณ Relative path ไปยัง assets/garuda.svg
+    # คำนวณ Relative path ไปยัง assets/garuda_krut.png
     root_dir = Path(__file__).resolve().parent.parent
-    garuda_abs = root_dir / "assets" / "garuda.svg"
+    garuda_abs = root_dir / "assets" / "garuda_krut.png"
     try:
         garuda_rel = str(garuda_abs.relative_to(out_file.parent)).replace("\\", "/")
     except ValueError:

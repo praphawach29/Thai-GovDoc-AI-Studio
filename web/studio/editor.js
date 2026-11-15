@@ -237,7 +237,7 @@
         </div>`;
       return `${stamps()}
         <div class="relative flex items-end h-[1.5cm] mb-2">
-          <img src="/assets/garuda.svg" alt="ตราครุฑ" class="garuda-int absolute left-0 bottom-0">
+          <img src="/assets/garuda_krut.png" alt="ตราครุฑ" class="garuda-int absolute left-0 bottom-0">
           <div class="memo-title w-full text-center">บันทึกข้อความ</div>
         </div>
         <div class="space-y-1">
@@ -261,7 +261,7 @@
         ${signature()}`;
     }
     return `${stamps()}
-      <div class="flex justify-center mb-3"><img src="/assets/garuda.svg" alt="ตราครุฑ" class="garuda-ext"></div>
+      <div class="flex justify-center mb-3"><img src="/assets/garuda_krut.png" alt="ตราครุฑ" class="garuda-ext"></div>
       <div class="flex items-start justify-between gap-6 -mt-[1.6cm]">
         <div class="flex items-baseline gap-2 w-[6.5cm]"><span class="doc-bold">ที่</span>${field('doc_number', 'flex-1')}</div>
         <div class="w-[6.5cm]">${field('dept_name', 'block')}</div>

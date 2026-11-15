@@ -82,4 +82,4 @@ def test_templates_list_and_get():
 def test_studio_pages_are_served():
     assert client.get("/studio/").status_code == 200
     assert client.get("/studio/editor.html").status_code == 200
-    assert client.get("/assets/garuda.svg").status_code == 200
+    assert client.get("/assets/garuda_krut.png").status_code == 200

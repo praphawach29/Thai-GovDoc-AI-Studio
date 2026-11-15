@@ -347,6 +347,31 @@ def _add_page_number_header(doc: Document, style: str = "thai"):
             _set_run_thai_font(r)
 
 
+
+def _float_picture_left(run, offset_v_pt: float = 0.0) -> None:
+    """เปลี่ยนรูปในบรรทัด (inline) เป็นรูปลอยชิดขอบซ้าย ไม่ตัดข้อความ (wrapNone) อยู่หลังข้อความ"""
+    inline = run._r.find('.//' + qn('wp:inline'))
+    if inline is None:
+        return
+    extent = inline.find(qn('wp:extent'))
+    cx, cy = extent.get('cx'), extent.get('cy')
+    doc_pr = inline.find(qn('wp:docPr'))
+    graphic = inline.find(qn('a:graphic'))
+    anchor = parse_xml(
+        '<wp:anchor %s distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" '
+        'behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">'
+        '<wp:simplePos x="0" y="0"/>'
+        '<wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>%d</wp:posOffset></wp:positionV>'
+        '<wp:extent cx="%s" cy="%s"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+        '<wp:docPr id="%s" name="%s"/><wp:cNvGraphicFramePr/></wp:anchor>'
+        % (nsdecls('wp', 'a', 'pic', 'r'), int(offset_v_pt * 12700), cx, cy,
+           doc_pr.get('id'), doc_pr.get('name'))
+    )
+    anchor.append(graphic)
+    inline.getparent().replace(inline, anchor)
+
+
 MEMO_SIGN_INDENT_CM = 6.0
 
 
@@ -432,7 +457,7 @@ def export_govdoc_to_docx(
         if options.letterhead == "none":
             garuda_path = None
         elif not garuda_path:
-            default_garuda = Path(__file__).resolve().parent.parent / "assets" / "garuda.png"
+            default_garuda = Path(__file__).resolve().parent.parent / "assets" / "garuda_krut.png"
             if default_garuda.exists():
                 garuda_path = str(default_garuda)
 
@@ -903,30 +928,20 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
                         garuda_path: Optional[str], options: ExportOptions, profile: LayoutProfile):
     """สร้างโครงสร้างหนังสือภายใน / บันทึกข้อความ (ครุฑ 1.5 ซม. ด้านซ้าย)"""
 
-    # 1. แถวหัวกระดาษ: ครุฑ 1.5 ซม. ชิดซ้าย + ข้อความ "บันทึกข้อความ" 29 pt หนา กึ่งกลาง
-    tbl_top = doc.add_table(rows=1, cols=2)
-    tbl_top.alignment = WD_TABLE_ALIGNMENT.CENTER
-    tbl_top.autofit = False
-    for cell, width in zip(tbl_top.rows[0].cells, [Cm(2.5), Cm(13.5)]):
-        cell.width = width
-        tcPr = cell._tc.get_or_add_tcPr()
-        borders = parse_xml(r'<w:tcBorders %s><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/></w:tcBorders>' % nsdecls('w'))
-        tcPr.append(borders)
-
-    # เซลล์ซ้าย: ครุฑ 1.5 ซม.
-    if garuda_path and os.path.exists(garuda_path):
-        c_left = tbl_top.cell(0, 0)
-        p_g = c_left.paragraphs[0]
-        r_g = p_g.add_run()
-        r_g.add_picture(garuda_path, height=Cm(1.5))
-
-    # เซลล์ขวา: คำว่า "บันทึกข้อความ" ตัวหนา ขนาดตามโปรไฟล์ (กทม. 32 pt / คู่มือทั่วไป 29 pt)
-    c_right = tbl_top.cell(0, 1)
-    p_title = c_right.paragraphs[0]
+    # 1. หัวกระดาษ: "บันทึกข้อความ" ตัวหนา กึ่งกลางความกว้างข้อความ (ตรงกับ PDF) + ครุฑ 1.5 ซม.
+    #    แบบลอยชิดซ้ายในบรรทัดเดียวกัน (ตามไฟล์ต้นแบบบันทึกข้อความของหน่วยงาน) จึงไม่ดันหัวเรื่องออกจากกึ่งกลาง
+    p_title = doc.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # เว้นบนให้สูงรวมเท่าครุฑ 1.5 ซม. (42.5 pt) เพื่อไม่ให้ครุฑล้นเข้าขอบบน
+    p_title.paragraph_format.space_before = Pt(max(0.0, 1.5 / 2.54 * 72 - profile.memo_title_line_pt))
+    p_title.paragraph_format.space_after = Pt(6)
+    _set_exact_line(p_title, profile.memo_title_line_pt)
+    if garuda_path and os.path.exists(garuda_path):
+        r_g = p_title.add_run()
+        r_g.add_picture(garuda_path, height=Cm(1.5))
+        _float_picture_left(r_g)   # ฐานครุฑตรงกับเส้นล่างของบรรทัดหัวเรื่อง
     r_title = p_title.add_run("บันทึกข้อความ")
     _set_run_thai_font(r_title, size_pt=profile.memo_title_pt, bold=True)
-    _set_exact_line(p_title, profile.memo_title_line_pt)
 
     # 2. รายละเอียดหัวเรื่อง: หัวข้อ ส่วนราชการ / ที่ / วันที่ / เรื่อง ตัวหนา 20 pt พร้อมเส้นจุดไข่ปลาถึงขอบขวา
     def _memo_field(p, label: str, value: str):

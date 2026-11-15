@@ -69,7 +69,7 @@
   // คู่มือการพิมพ์ทั่วไป: top_margin 2.5cm, title_size 29pt
   top_margin: 1.5cm,
   title_size: 32pt,
-  garuda_path: "../../assets/garuda.svg",
+  garuda_path: "../../assets/garuda_krut.png",
   // bytes ของภาพครุฑ อ่านจากไฟล์หลักด้วย read(..., encoding: none)
   // (image() หาพาธเทียบกับไฟล์ที่เรียก จึงต้องอ่านจากไฟล์หลักแล้วส่งเข้ามา)
   garuda: none,

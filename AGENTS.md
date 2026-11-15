@@ -110,7 +110,8 @@ Agent **ห้ามละเมิด** กฎต่อไปนี้ในก
 │   └── typst/              # ไฟล์ .typ (external.typ, internal.typ) — Word ไม่ใช้ไฟล์ต้นแบบ สร้างจาก core/word_exporter.py + core/layout_profile.py
 │
 ├── assets/                 # ภาพและฟอนต์
-│   ├── garuda.svg          # ตราครุฑเวกเตอร์
+│   ├── garuda_krut.png     # ตราครุฑที่ใช้จริงทุกช่องทาง (จากไฟล์ต้นแบบบันทึกข้อความของหน่วยงาน)
+│   ├── garuda.svg          # ตราครุฑเวกเตอร์ (แบบเดิม ไม่ได้ใช้แล้ว)
 │   ├── garuda.png          # ตราครุฑบิตแมป
 │   └── fonts/              # TH Sarabun New (.ttf)
 │

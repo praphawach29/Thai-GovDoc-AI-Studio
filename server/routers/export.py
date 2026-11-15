@@ -57,7 +57,7 @@ def render_pdf(doc: GovDocumentSchema, settings: Settings) -> bytes:
         # Typst อ่านไฟล์ได้เฉพาะภายใต้ root (โฟลเดอร์ชั่วคราว) จึงจำลองโครงสร้าง templates/ + assets/
         shutil.copytree(settings.typst_templates_dir, tmp / "templates" / "typst")
         (tmp / "assets").mkdir()
-        shutil.copy(settings.assets_dir / "garuda.svg", tmp / "assets" / "garuda.svg")
+        shutil.copy(settings.assets_dir / "garuda_krut.png", tmp / "assets" / "garuda_krut.png")
         typ_path.write_text(generate_typst_content(without_server_paths(doc)), encoding="utf-8")
         font_key = doc.font_family or get_layout_profile(None, doc.doc_type).font_key
         ok, message = compile_typst_to_pdf(str(typ_path), str(pdf_path), font_key=font_key)
