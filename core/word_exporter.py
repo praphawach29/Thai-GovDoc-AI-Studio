@@ -372,6 +372,29 @@ def _float_picture_left(run, offset_v_pt: float = 0.0) -> None:
     inline.getparent().replace(inline, anchor)
 
 
+def _drop_blank_thumbnail(doc: Document) -> None:
+    """แม่แบบของ python-docx มีภาพตัวอย่าง (docProps/thumbnail.jpeg) เปล่า ๆ ติดมา
+    Windows Explorer จึงแสดงหน้ากระดาษว่างแทนไอคอน Word — ลบออกให้แสดงไอคอนปกติ"""
+    rels = doc.part.package.rels
+    for r_id, rel in list(rels.items()):
+        if rel.reltype.endswith("/metadata/thumbnail"):
+            del rels[r_id]
+
+
+def _split_first_line(text: str, room_cm: float, size_pt: float = 16.0):
+    """แบ่งข้อความเป็น (ส่วนที่พอดีบรรทัดแรก, ส่วนที่เหลือ) ตัดที่ช่องว่าง/ZWSP ระหว่างคำ"""
+    if _text_width_cm(text.replace("\u200b", ""), size_pt) <= room_cm:
+        return text, ""
+    cut = 0
+    for m in re.finditer(r"[\u200b ]", text):
+        if _text_width_cm(text[:m.start()].replace("\u200b", ""), size_pt) > room_cm:
+            break
+        cut = m.end()
+    if cut == 0:
+        return text, ""
+    return text[:cut], text[cut:]
+
+
 MEMO_SIGN_INDENT_CM = 6.0
 
 
@@ -482,6 +505,7 @@ def export_govdoc_to_docx(
 
         # บันทึกไฟล์
         _set_doc_grid(doc, profile.line_pitch_twips)
+        _drop_blank_thumbnail(doc)
         out_file = Path(output_path)
         out_file.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(out_file))
@@ -1005,8 +1029,24 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     p_sub.paragraph_format.left_indent = Cm(1.25)
     p_sub.paragraph_format.first_line_indent = Cm(-1.25)
     _header_tab(p_sub, TEXT_WIDTH_CM)
-    _memo_field(p_sub, "เรื่อง", to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub)
-    _line_run(p_sub, "\t")
+    sub_value = to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub
+    if on_line:
+        # เส้นประเฉพาะบรรทัดแรก: เรื่องยาวเกิน ส่วนที่ขึ้นบรรทัดที่ ๒ ไม่ขีดเส้นใต้ (ตามแบบฟอร์มจริง)
+        room = TEXT_WIDTH_CM - _text_width_cm("เรื่อง", MEMO_LABEL_SIZE, bold=True) \
+            - _text_width_cm("   ", DEFAULT_FONT_SIZE) - 0.4
+        first, rest = _split_first_line(insert_zwsp(sub_value), room)
+        r_h = p_sub.add_run("เรื่อง")
+        _set_run_thai_font(r_h, size_pt=MEMO_LABEL_SIZE, bold=True)
+        _set_run_thai_font(p_sub.add_run(" "), size_pt=DEFAULT_FONT_SIZE)
+        _line_run(p_sub, "  ")
+        _line_run(p_sub, first)
+        if rest:
+            _set_run_thai_font(p_sub.add_run(rest), size_pt=DEFAULT_FONT_SIZE)
+        else:
+            _line_run(p_sub, "\t")
+    else:
+        _memo_field(p_sub, "เรื่อง", sub_value)
+        p_sub.add_run("\t")
     if profile.header_style == "solid":
         _apply_bottom_border(p_sub)
 

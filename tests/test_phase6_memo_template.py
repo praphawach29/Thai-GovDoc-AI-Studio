@@ -161,7 +161,7 @@ def test_word_export_memo(bma_cohost_doc, tmp_path):
     assert heading_runs and heading_runs[0].underline
 
     # หัวข้อ ส่วนราชการ 20pt ตัวหนา ข้อความวางบนเส้นประถึงขอบขวา (ขีดเส้นใต้แบบจุดทั้งข้อความและแท็บท้าย)
-    for start in ("ส่วนราชการ", "ที่", "เรื่อง"):
+    for start in ("ส่วนราชการ", "ที่"):
         hp = next(p for p in paras if p.text.startswith(start))
         assert hp.runs[0].bold and hp.runs[0].font.size.pt == 20
         lined = [r for r in hp.runs[1:] if (r.text.strip() or r.text == "\t") and not r.bold]

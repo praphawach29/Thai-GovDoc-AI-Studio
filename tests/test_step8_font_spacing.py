@@ -113,3 +113,30 @@ def test_memo_signers_centered_like_pdf(tmp_path):
     sig = [p for p in paras if p.paragraph_format.left_indent is not None
            and abs(p.paragraph_format.left_indent.cm - 6.0) < 0.01]
     assert len(sig) >= 2 and all(p.alignment == WD_ALIGN_PARAGRAPH.CENTER for p in sig)
+
+
+def _subject_runs(tmp_path, subject):
+    out = tmp_path / "sub.docx"
+    export_govdoc_to_docx(_memo().model_copy(update={"subject": subject}), str(out))
+    p = next(p for p in Document(str(out)).paragraphs if p.text.startswith("เรื่อง"))
+    return [(r.text.replace("\u200b", ""), 'w:u w:val="dotted"' in r._r.xml) for r in p.runs]
+
+
+def test_subject_dotted_line_only_on_first_line(tmp_path):
+    short = _subject_runs(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วม")
+    assert short[-1] == ("\t", True)                       # บรรทัดเดียว: เส้นประยาวถึงขอบขวา
+    long = _subject_runs(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย "
+                                   "ชิงถ้วยพระราชทาน สมเด็จพระกนิษฐาธิราชเจ้า ประจำปี ๒๕๗๐")
+    assert long[-1][1] is False and long[-1][0].strip()      # ส่วนที่ขึ้นบรรทัดที่ ๒ ไม่มีเส้น
+    assert all(u for t, u in long[1:-1] if t.strip()) and "\t" not in [t for t, _ in long]
+    first = "".join(t for t, u in long if u)
+    assert "ขอเชิญ" in first and "๒๕๗๐" in long[-1][0]
+
+
+def test_docx_has_no_blank_thumbnail(tmp_path):
+    import zipfile
+    out = tmp_path / "t.docx"
+    export_govdoc_to_docx(_memo(), str(out))
+    with zipfile.ZipFile(out) as z:
+        assert "thumbnail" not in z.read("_rels/.rels").decode()
+        assert not any("thumbnail" in n for n in z.namelist())
