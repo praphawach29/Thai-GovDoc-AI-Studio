@@ -469,7 +469,8 @@
       const doc = await api.applyUnit(st.doc, next.key);
       doc.edit_status = 'editing';
       const ids = chainIds();
-      const child = { title: doc.subject, doc, unitKey: next.key, context: entry.context, prompt: entry.prompt, chainIds: ids };
+      const child = { title: doc.subject, doc, unitKey: next.key, context: entry.context, prompt: entry.prompt, chainIds: ids,
+        sourceName: entry.sourceName || null, sourceFileId: entry.sourceFileId || null };
       const newId = await store.create(child);
       child.chainIds = [...ids, newId];
       await store.save(child);
@@ -695,7 +696,79 @@
     $('card-jump')?.addEventListener('click', () => jumpToPlaceholder());
   }
 
-  // ต้นเรื่อง + ค้นหา/ไฮไลต์
+  // ---------- ต้นเรื่อง: ไฟล์จริง (PDF/ภาพ) + ข้อความที่อ่านได้ + ค้นคำ ----------
+  const src = { view: 'text', viewer: null, textHits: [], textCur: -1, timer: null };
+  function setSourceView(view) {
+    src.view = view;
+    document.querySelectorAll('[data-sview]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.sview === view)));
+    $('source-file').hidden = view !== 'file';
+    $('source-pagebar').hidden = view !== 'file';
+    $('source-textview').hidden = view !== 'text';
+    runSourceSearch();
+  }
+  document.querySelectorAll('[data-sview]').forEach(b => b.addEventListener('click', () => setSourceView(b.dataset.sview)));
+  function sourceNote(text) { $('source-note').textContent = text || ''; $('source-note').hidden = !text; }
+  async function loadSourceFile() {
+    if (!entry.sourceFileId || !finalsEnabled || !window.GovDocSourceViewer) return false;
+    try {
+      const info = await api.sourceViewUrl(entry.sourceFileId);
+      if (!info.url) return false;                     // Word/ข้อความ: แสดงข้อความที่อ่านได้อย่างเดียว
+      $('source-views').hidden = false;
+      $('source-open').href = info.url;
+      setSourceView('file');
+      src.viewer = await window.GovDocSourceViewer.open($('source-file'), info, {
+        onPage: (n, total) => { $('source-page').textContent = toThai(n); $('source-pages').textContent = toThai(total); },
+      });
+      if (!(await src.viewer.probeText())) {
+        sourceNote(info.kind === 'pdf' ? 'ไฟล์สแกนไม่มีชั้นข้อความ — ค้นคำได้ในแท็บ "ข้อความที่อ่านได้"' : 'ไฟล์ภาพ — ค้นคำได้ในแท็บ "ข้อความที่อ่านได้"');
+      }
+      runSourceSearch();
+      return true;
+    } catch (err) {
+      $('source-views').hidden = true;
+      setSourceView('text');
+      sourceNote('เปิดไฟล์ต้นเรื่องไม่ได้ (' + err.message + ') — แสดงข้อความที่อ่านได้แทน');
+      return false;
+    }
+  }
+  $('source-page-prev').addEventListener('click', () => src.viewer?.goPage(src.viewer.page - 1));
+  $('source-page-next').addEventListener('click', () => src.viewer?.goPage(src.viewer.page + 1));
+  for (const [id, d] of [['source-zoom-in', 1], ['source-zoom-out', -1]]) {
+    $(id).addEventListener('click', () => {
+      if (!src.viewer) return;
+      $('source-zoom').textContent = toThai(Math.round(src.viewer.setZoom(d) * 100)) + '%';   // ไฮไลต์เดิมทาใหม่ตอนเรนเดอร์
+    });
+  }
+  function showHits(cur, total) {
+    $('source-hits').textContent = total ? `${toThai(cur + 1)}/${toThai(total)}` : ($('source-search').value.trim() ? 'ไม่พบ' : '');
+    $('source-prev').disabled = $('source-next').disabled = total < 2;
+  }
+  async function runSourceSearch() {
+    const q = $('source-search').value.trim();
+    if (src.view === 'file' && src.viewer) {
+      const n = await src.viewer.search(q);
+      showHits(src.viewer.cur, n);
+      return;
+    }
+    highlightSource();
+  }
+  function stepHit(delta) {
+    if (src.view === 'file' && src.viewer) {
+      src.viewer.goto(src.viewer.cur + delta).then(() => showHits(src.viewer.cur, src.viewer.hits.length));
+      return;
+    }
+    if (!src.textHits.length) return;
+    src.textHits[src.textCur]?.classList.remove('cur');
+    src.textCur = (src.textCur + delta + src.textHits.length) % src.textHits.length;
+    const m = src.textHits[src.textCur];
+    m.classList.add('cur'); m.scrollIntoView({ block: 'center' });
+    showHits(src.textCur, src.textHits.length);
+  }
+  $('source-search').addEventListener('input', () => { clearTimeout(src.timer); src.timer = setTimeout(runSourceSearch, 250); });
+  $('source-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); stepHit(e.shiftKey ? -1 : 1); } });
+  $('source-next').addEventListener('click', () => stepHit(1));
+  $('source-prev').addEventListener('click', () => stepHit(-1));
+
   function renderSource() {
     const ctx = entry.context;
     if (!ctx) {
@@ -711,13 +784,13 @@
   function highlightSource() {
     const text = entry.context?.raw_text || '';
     const q = $('source-search').value.trim();
-    if (!q) { $('source-text').textContent = text || '(ไม่มีข้อความ)'; $('source-hits').textContent = ''; return; }
+    src.textHits = []; src.textCur = -1;
+    if (!q) { $('source-text').textContent = text || '(ไม่มีข้อความ)'; showHits(0, 0); return; }
     const parts = text.split(q);
     $('source-text').innerHTML = parts.map(esc).join(`<mark class="bg-amber-200 text-slate-900 rounded px-0.5">${esc(q)}</mark>`);
-    $('source-hits').textContent = `${toThai(parts.length - 1)} แห่ง`;
-    $('source-text').querySelector('mark')?.scrollIntoView({ block: 'center' });
+    src.textHits = [...$('source-text').querySelectorAll('mark')];
+    if (src.textHits.length) stepHit(1); else showHits(0, 0);
   }
-  $('source-search').addEventListener('input', highlightSource);
 
   // ---------- เกลาสำนวน ----------
   function openRefine(key, anchor) {
@@ -925,5 +998,8 @@
   renderEditMode();
   renderAll();
   renderSource();
+  setSourceView('text');
+  // มีไฟล์ต้นเรื่องเก็บไว้: เปิดแท็บต้นเรื่องให้อ่านเทียบกับร่างทันที
+  if (entry.sourceFileId && finalsEnabled) { selectTab('source'); loadSourceFile(); }
   if (!st.check) runCheck();
 })();

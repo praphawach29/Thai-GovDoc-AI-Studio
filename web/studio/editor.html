@@ -46,14 +46,40 @@
 
     <div id="tab-chat" class="flex-1 overflow-y-auto px-5 py-5 space-y-4" role="tabpanel"></div>
 
-    <div id="tab-source" class="flex-1 overflow-y-auto px-5 py-4" role="tabpanel" hidden>
-      <div class="relative mb-3">
-        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-        <input id="source-search" type="search" placeholder="ค้นหาและไฮไลต์ในต้นเรื่อง..." class="w-full text-xs pl-8 pr-16 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
-        <span id="source-hits" class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"></span>
+    <div id="tab-source" class="flex-1 flex flex-col min-h-0" role="tabpanel" hidden>
+      <div class="px-3 py-2 bg-white border-b border-slate-200 flex items-center gap-2 shrink-0">
+        <div id="source-views" class="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px]" role="group" aria-label="มุมมองต้นเรื่อง" hidden>
+          <button type="button" data-sview="file" class="px-2 py-1 rounded-md">ไฟล์จริง</button>
+          <button type="button" data-sview="text" class="px-2 py-1 rounded-md">ข้อความที่อ่านได้</button>
+        </div>
+        <div class="relative flex-1 min-w-0">
+          <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]"></i>
+          <label for="source-search" class="sr-only">ค้นคำในต้นเรื่อง</label>
+          <input id="source-search" type="search" placeholder="ค้นคำในต้นเรื่อง..." class="w-full text-xs pl-7 pr-14 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
+          <span id="source-hits" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"></span>
+        </div>
+        <button id="source-prev" type="button" class="w-7 h-7 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="ผลก่อนหน้า (Shift+Enter)" aria-label="ผลค้นหาก่อนหน้า" disabled><i class="fa-solid fa-chevron-up text-[11px]"></i></button>
+        <button id="source-next" type="button" class="w-7 h-7 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="ผลถัดไป (Enter)" aria-label="ผลค้นหาถัดไป" disabled><i class="fa-solid fa-chevron-down text-[11px]"></i></button>
       </div>
-      <dl id="source-meta" class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs mb-3"></dl>
-      <pre id="source-text" class="whitespace-pre-wrap font-body text-[13px] leading-relaxed text-slate-700 bg-white border border-slate-200 rounded-xl p-4"></pre>
+      <div id="source-pagebar" class="px-3 py-1 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-[11px] text-slate-600 shrink-0" hidden>
+        <div class="flex items-center gap-1">
+          <button id="source-page-prev" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="หน้าก่อนหน้า"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>
+          <span>หน้า <span id="source-page">๑</span>/<span id="source-pages">๑</span></span>
+          <button id="source-page-next" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="หน้าถัดไป"><i class="fa-solid fa-chevron-right text-[10px]"></i></button>
+        </div>
+        <div class="flex items-center gap-1">
+          <button id="source-zoom-out" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="ย่อ"><i class="fa-solid fa-minus text-[10px]"></i></button>
+          <span id="source-zoom" class="w-9 text-center">๑๐๐%</span>
+          <button id="source-zoom-in" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="ขยาย"><i class="fa-solid fa-plus text-[10px]"></i></button>
+          <a id="source-open" href="#" target="_blank" rel="noopener" class="ml-1 px-1.5 py-0.5 rounded hover:bg-slate-200" title="เปิดไฟล์ในแท็บใหม่"><i class="fa-solid fa-up-right-from-square text-[10px]"></i></a>
+        </div>
+      </div>
+      <p id="source-note" class="px-3 py-1.5 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-800 shrink-0" hidden></p>
+      <div id="source-file" class="flex-1 overflow-auto bg-slate-200/70 p-3 space-y-3" hidden aria-label="ไฟล์ต้นเรื่อง"></div>
+      <div id="source-textview" class="flex-1 overflow-y-auto px-5 py-4">
+        <dl id="source-meta" class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs mb-3"></dl>
+        <pre id="source-text" class="whitespace-pre-wrap font-body text-[13px] leading-relaxed text-slate-700 bg-white border border-slate-200 rounded-xl p-4"></pre>
+      </div>
     </div>
 
     <div id="tab-checks" class="flex-1 overflow-y-auto px-5 py-4 space-y-2" role="tabpanel" hidden></div>
@@ -215,6 +241,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="auth.js"></script>
 <script src="studio.js"></script>
+<script src="source-viewer.js"></script>
 <script src="editor.js"></script>
 </body>
 </html>

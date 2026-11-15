@@ -71,6 +71,18 @@
 .flash-ok { animation: flashOk 2.2s ease-out; }
 @keyframes flashOk { 0% { background: #d1fae5; } 100% { background: transparent; } }
 
+/* ไฟล์ต้นเรื่องจริง (pdf.js): หน้า + ชั้นข้อความโปร่งใสสำหรับค้นคำ */
+.pdf-page { position: relative; margin: 0 auto; background: #fff; box-shadow: 0 1px 3px rgb(15 23 42 / .15); }
+.pdf-page canvas { display: block; }
+.textLayer { position: absolute; inset: 0; overflow: hidden; line-height: 1; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; z-index: 2; }
+.textLayer span, .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer ::selection { background: rgb(16 185 129 / .3); }
+.textLayer .hl { background: rgb(251 191 36 / .45); border-radius: 2px; }
+.textLayer .hl-cur { background: rgb(234 88 12 / .55); }
+#source-text mark.cur { background: #fb923c; }
+[data-sview][aria-pressed="true"] { background: #fff; color: #0f172a; font-weight: 500; box-shadow: 0 1px 2px rgb(15 23 42 / .1); }
+[data-sview][aria-pressed="false"] { color: #64748b; }
+
 /* ย่อกระดาษให้พอดีจอแคบโดยยังคงสัดส่วนจริง */
 .sheet-scale { transform-origin: top center; }
 

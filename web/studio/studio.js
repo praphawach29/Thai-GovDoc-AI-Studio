@@ -55,6 +55,8 @@
       await putToStorage(upload_url, file, 'อัปโหลดไฟล์ต้นเรื่องไม่สำเร็จ');
       return path;
     },
+    // ไฟล์ต้นเรื่องจริงสำหรับแสดงฝั่งซ้ายของหน้าแก้ไข → { url, filename, kind: pdf|image|text }
+    sourceViewUrl: (sourceFileId) => request(`/sources/${encodeURIComponent(sourceFileId)}/view-url`).then(r => r.json()),
     // ฉบับจริง: ไฟล์ Word/PDF ที่แก้เสร็จแล้ว (โหมดเซิร์ฟเวอร์เท่านั้น)
     finals: {
       list: (docId) => request(`/documents/${encodeURIComponent(docId)}/finals`).then(r => r.json()),
