@@ -127,10 +127,11 @@ def test_subject_dotted_line_only_on_first_line(tmp_path):
     assert short[-1] == ("\t", True)                       # บรรทัดเดียว: เส้นประยาวถึงขอบขวา
     long = _subject_runs(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย "
                                    "ชิงถ้วยพระราชทาน สมเด็จพระกนิษฐาธิราชเจ้า ประจำปี ๒๕๗๐")
-    assert long[-1][1] is False and long[-1][0].strip()      # ส่วนที่ขึ้นบรรทัดที่ ๒ ไม่มีเส้น
-    assert all(u for t, u in long[1:-1] if t.strip()) and "\t" not in [t for t, _ in long]
-    first = "".join(t for t, u in long if u)
-    assert "ขอเชิญ" in first and "๒๕๗๐" in long[-1][0]
+    # บรรทัดแรก: ข้อความ + แท็บขีดเส้นประถึงขอบขวา แล้วขึ้นบรรทัดใหม่ ส่วนที่เหลือไม่มีเส้น
+    tab = [t for t, _ in long].index("\t")
+    assert long[tab][1] and all(u for t, u in long[1:tab] if t.strip())
+    assert long[-1][1] is False and long[-1][0].startswith("\n") and "๒๕๗๐" in long[-1][0]
+    assert "ขอเชิญ" in "".join(t for t, u in long[:tab])
 
 
 def test_docx_has_no_blank_thumbnail(tmp_path):

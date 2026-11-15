@@ -1033,17 +1033,21 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     if on_line:
         # เส้นประเฉพาะบรรทัดแรก: เรื่องยาวเกิน ส่วนที่ขึ้นบรรทัดที่ ๒ ไม่ขีดเส้นใต้ (ตามแบบฟอร์มจริง)
         room = TEXT_WIDTH_CM - _text_width_cm("เรื่อง", MEMO_LABEL_SIZE, bold=True) \
-            - _text_width_cm("   ", DEFAULT_FONT_SIZE) - 0.4
+            - _text_width_cm("   ", DEFAULT_FONT_SIZE) - 0.3
         first, rest = _split_first_line(insert_zwsp(sub_value), room)
         r_h = p_sub.add_run("เรื่อง")
         _set_run_thai_font(r_h, size_pt=MEMO_LABEL_SIZE, bold=True)
         _set_run_thai_font(p_sub.add_run(" "), size_pt=DEFAULT_FONT_SIZE)
         _line_run(p_sub, "  ")
-        _line_run(p_sub, first)
+        _line_run(p_sub, first.rstrip())
+        # เส้นประยาวถึงขอบขวาเสมอ (แท็บขีดเส้นใต้เติมที่ว่างท้ายบรรทัด) แล้วขึ้นบรรทัดใหม่เอง
+        # ส่วนที่เหลือของเรื่องจึงอยู่บรรทัดที่ ๒ (เยื้องตรงข้อความ) โดยไม่มีเส้นประ
+        _line_run(p_sub, "\t")
         if rest:
-            _set_run_thai_font(p_sub.add_run(rest), size_pt=DEFAULT_FONT_SIZE)
-        else:
-            _line_run(p_sub, "\t")
+            r_rest = p_sub.add_run()
+            r_rest.add_break()
+            r_rest.add_text(rest)
+            _set_run_thai_font(r_rest, size_pt=DEFAULT_FONT_SIZE)
     else:
         _memo_field(p_sub, "เรื่อง", sub_value)
         p_sub.add_run("\t")
