@@ -551,6 +551,10 @@ class GovDocumentSchema(BaseModel):
         default="bma",
         description="รูปแบบหัวข้อบันทึกข้อความ: 'bma' = หัวข้อขีดเส้นใต้ ลำดับ ต้นเรื่อง-ข้อกฎหมาย-ข้อเท็จจริง-ข้อพิจารณาฯ, 'numbered' = ๑. ต้นเรื่อง ๒. ข้อเท็จจริง ๓. ข้อกฎหมาย ๔. ข้อพิจารณาฯ",
     )
+    memo_headings: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="ชื่อหัวข้อบันทึกข้อความที่ผู้ใช้แก้เอง (intro/law/facts/consideration → ชื่อ); ค่าว่าง = ไม่แสดงหัวข้อ",
+    )
     memo_hierarchy_level: MemoHierarchyLevel = Field(
         default=MemoHierarchyLevel.DEPT_TO_PERM_SEC,
         description="ระดับชั้นการเสนอหนังสือบันทึกข้อความสำหรับกำหนดประโยคลงท้าย",
@@ -608,7 +612,8 @@ class GovDocumentSchema(BaseModel):
 
         intro, facts, law, consideration, _ = self._memo_parts()
         return [(title, body) for _, title, body in
-                build_memo_sections(intro, facts, law, consideration, self.memo_heading_style)]
+                build_memo_sections(intro, facts, law, consideration, self.memo_heading_style,
+                                    self.memo_headings)]
 
     def get_memo_request(self) -> str:
         """ภาคความประสงค์ (จึงเรียนมาเพื่อ...) ของบันทึกข้อความ"""
@@ -619,7 +624,8 @@ class GovDocumentSchema(BaseModel):
         from core.memo_layout import build_memo_blocks, build_memo_sections
 
         intro, facts, law, consideration, request = self._memo_parts()
-        sections = build_memo_sections(intro, facts, law, consideration, self.memo_heading_style)
+        sections = build_memo_sections(intro, facts, law, consideration, self.memo_heading_style,
+                                       self.memo_headings)
         return build_memo_blocks(sections, request, self.memo_heading_style)
 
     def validate_memo_completeness(self) -> List[str]:

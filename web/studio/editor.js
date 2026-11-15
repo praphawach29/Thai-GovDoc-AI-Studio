@@ -122,6 +122,14 @@
       };
     }
   }
+  // ชื่อหัวข้อบันทึกข้อความแก้ได้อิสระ (ว่าง = ไม่แสดงหัวข้อนั้นในไฟล์ที่ส่งออก)
+  const MEMO_HEADS = { intro: 'ต้นเรื่อง', law: 'ข้อกฎหมาย', facts: 'ข้อเท็จจริง', consideration: 'ข้อพิจารณาและเสนอแนะ' };
+  for (const [k, def] of Object.entries(MEMO_HEADS)) {
+    FIELDS['head_' + k] = {
+      get: d => d.memo_headings?.[k] ?? def,
+      set: (d, v) => { d.memo_headings = { ...(d.memo_headings || {}), [k]: v.trim() }; },
+    };
+  }
   const FIELD_LABEL = {
     doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'เรียน',
     references: 'อ้างถึง', attachments: 'สิ่งที่ส่งมาด้วย', paragraph_reason: 'ภาคเหตุ', paragraph_details: 'ภาคข้อเท็จจริง',
@@ -131,6 +139,8 @@
     contact_tel: 'โทร.', contact_fax: 'โทรสาร', contact_email: 'อีเมล',
     co_name_0: 'ชื่อผู้ลงนามถัดไป', co_pos_0: 'ตำแหน่งผู้ลงนามถัดไป', co_name_1: 'ชื่อผู้ลงนามถัดไป', co_pos_1: 'ตำแหน่งผู้ลงนามถัดไป',
     co_name_2: 'ชื่อผู้ลงนามถัดไป', co_pos_2: 'ตำแหน่งผู้ลงนามถัดไป',
+    head_intro: 'หัวข้อ (ว่าง = ไม่แสดง)', head_law: 'หัวข้อ (ว่าง = ไม่แสดง)', head_facts: 'หัวข้อ (ว่าง = ไม่แสดง)',
+    head_consideration: 'หัวข้อ (ว่าง = ไม่แสดง)',
   };
   const REFINABLE = new Set(['paragraph_reason', 'paragraph_details', 'paragraph_purpose', 'memo_intro', 'memo_facts', 'memo_consideration', 'memo_request', 'subject']);
 
@@ -145,10 +155,50 @@
     }
     return out + esc(s.slice(last));
   }
-  const field = (key, cls = '', empty = '') =>
-    `<span class="editable ${cls}" data-field="${key}" data-empty="${esc(empty || '[คลิกเพื่อพิมพ์ ' + (FIELD_LABEL[key] || '') + ']')}"></span>`;
+  const field = (key, cls = '', empty = '', tag = 'span') =>
+    `<${tag} class="editable ${cls}" data-field="${key}" data-empty="${esc(empty || '[คลิกเพื่อพิมพ์ ' + (FIELD_LABEL[key] || '') + ']')}"></${tag}>`;
+  // ย่อหน้าเนื้อความ: ทุกบรรทัดเป็นย่อหน้าของตัวเอง ระยะย่อหน้าตามเลขข้อ (๑. 2.5 ซม., ๑.๑ 3.5 ซม., ๑.๑.๑ 4.5 ซม.)
+  // ผู้ใช้ปรับเองได้ด้วย Tab / Shift+Tab (แท็บนำหน้า N ตัว = ระดับ N) — ตรงกับ core/memo_layout.py
   const block = (key, cls = '') =>
-    `<div class="group relative">${field(key, 'block ' + cls)}${REFINABLE.has(key) ? refineBtn(key) : ''}</div>`;
+    `<div class="group relative">${field(key, 'block lines ' + cls, '', 'div')}${REFINABLE.has(key) ? refineBtn(key) : ''}</div>`;
+  const RE_L3 = /^[0-9๐-๙]+\.[0-9๐-๙]+\.[0-9๐-๙]+/, RE_L2 = /^([0-9๐-๙]+\.[0-9๐-๙]+|(มาตรา|ข้อ)\s*[0-9๐-๙]+)/;
+  const MAX_LEVEL = 6;
+  const tabCount = (line) => line.match(/^\t*/)[0].length;
+  const autoLevel = (line) => { const s = line.trim(); return RE_L3.test(s) ? 3 : RE_L2.test(s) ? 2 : 1; };
+  const lineLevel = (line) => Math.min(tabCount(line), MAX_LEVEL) || autoLevel(line);
+  const indentOf = (line) => `${2.5 + (lineLevel(line) - 1)}cm`;
+  const lineDiv = (line, inner) => `<div class="ln" style="text-indent:${indentOf(line)}">${inner || '<br>'}</div>`;
+  const linesHTML = (text, raw = false) =>
+    String(text ?? '').split('\n').map(ln => lineDiv(ln, raw ? esc(ln) : displayHTML(ln))).join('');
+  function restyleLines(el) {
+    el.querySelectorAll(':scope > div').forEach((div) => { div.style.textIndent = indentOf(div.textContent); });
+  }
+  function caretLine(el) {
+    const sel = getSelection();
+    if (!sel.rangeCount || !el.contains(sel.anchorNode)) return null;
+    let n = sel.anchorNode;
+    while (n && n.parentNode !== el) n = n.parentNode;
+    return n && n.nodeType === 1 ? n : null;
+  }
+  // Tab / Shift+Tab: เลื่อนระดับย่อหน้าของบรรทัดที่เคอร์เซอร์อยู่ (กลับมาเท่าค่าอัตโนมัติ = ลบแท็บออก)
+  function shiftIndent(el, delta) {
+    const div = caretLine(el);
+    if (!div) return;
+    const sel = getSelection(), r = sel.getRangeAt(0).cloneRange();
+    const pre = document.createRange(); pre.selectNodeContents(div); pre.setEnd(r.endContainer, r.endOffset);
+    const caret = pre.toString().length;
+    const text = div.textContent, body = text.replace(/^\t+/, '');
+    const level = Math.max(1, Math.min(MAX_LEVEL, lineLevel(text) + delta));
+    const next = (level === autoLevel(body) ? '' : '\t'.repeat(level)) + body;
+    if (next === text) return;
+    div.textContent = next;
+    const pos = Math.max(0, Math.min(next.length, caret + next.length - text.length));
+    const nr = document.createRange();
+    if (div.firstChild) nr.setStart(div.firstChild, pos); else nr.setStart(div, 0);
+    nr.collapse(true); sel.removeAllRanges(); sel.addRange(nr);
+    restyleLines(el);
+  }
+  let lastLineField = null;
   const refineBtn = (key) => `<button type="button" data-refine="${key}" class="no-print absolute -right-[1.7cm] top-0 w-7 h-7 rounded-full bg-white border border-emerald-200 text-emerald-600 shadow-xs opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-emerald-50 transition font-sans text-xs" title="เกลาสำนวน ${FIELD_LABEL[key]}"><i class="fa-solid fa-wand-magic-sparkles"></i></button>`;
   const labelRow = (label, key, extra = '') =>
     `<div class="flex items-baseline gap-2 ${extra}"><span class="doc-bold shrink-0">${label}</span>${field(key, 'flex-1 dotted-fill')}</div>`;
@@ -179,10 +229,10 @@
     const refs = d.references != null, atts = d.attachments != null;
     if (isMemo()) {
       const law = d.memo_law != null;
-      let secNo = 0;
-      const sec = (key, title) => `
-        <div class="${secNo++ ? 'gap-6pt' : ''}">
-          <div><span class="doc-bold underline underline-offset-4">${title}</span></div>
+      // หัวข้อ: บรรทัดเดี่ยว เริ่มตรงกับเนื้อความ (2.5 ซม.) เว้น 6 pt ทุกหัวข้อรวมต้นเรื่อง — แก้ชื่อได้
+      const sec = (key) => `
+        <div class="gap-6pt">
+          <div class="indent-25">${field('head_' + key.replace('memo_', ''), 'doc-bold underline underline-offset-4 memo-head')}</div>
           ${block(key, 'indent-25 justify-thai')}
         </div>`;
       return `${stamps()}
@@ -202,10 +252,10 @@
         ${refs ? `<div class="mt-1 flex items-baseline gap-2"><span class="doc-bold shrink-0">อ้างถึง</span>${field('references', 'flex-1')}</div>` : ''}
         ${atts ? `<div class="mt-1 flex items-baseline gap-2"><span class="doc-bold shrink-0">สิ่งที่ส่งมาด้วย</span>${field('attachments', 'flex-1')}</div>` : ''}
         <div>
-          ${sec('memo_intro', 'ต้นเรื่อง')}
-          ${law ? sec('memo_law', 'ข้อกฎหมาย') : ''}
-          ${sec('memo_facts', 'ข้อเท็จจริง')}
-          ${sec('memo_consideration', 'ข้อพิจารณาและเสนอแนะ')}
+          ${sec('memo_intro')}
+          ${law ? sec('memo_law') : ''}
+          ${sec('memo_facts')}
+          ${sec('memo_consideration')}
           <div class="gap-6pt">${block('memo_request', 'indent-25 justify-thai')}</div>
         </div>
         ${signature()}`;
@@ -238,7 +288,8 @@
   function fillFields() {
     $('sheet').querySelectorAll('[data-field]').forEach((el) => {
       if (el === document.activeElement) return;
-      el.innerHTML = displayHTML(FIELDS[el.dataset.field].get(st.doc));
+      const v = FIELDS[el.dataset.field].get(st.doc);
+      el.innerHTML = el.classList.contains('lines') ? linesHTML(v) : displayHTML(v);
       el.contentEditable = st.editOn ? 'true' : 'false';
       el.spellcheck = false;
       el.setAttribute('role', 'textbox');
@@ -268,13 +319,16 @@
     const el = e.target.closest('[data-field]');
     if (!el || !st.editOn) return;
     // ระหว่างพิมพ์ แสดงข้อความดิบ (ไม่มีชิป) เพื่อให้แก้ placeholder ได้ตรง ๆ
-    el.textContent = FIELDS[el.dataset.field].get(st.doc);
+    const raw = FIELDS[el.dataset.field].get(st.doc);
+    if (el.classList.contains('lines')) { el.innerHTML = linesHTML(raw, true); lastLineField = el; } else el.textContent = raw;
     // ถ้าทั้งช่องเป็น placeholder ให้เลือกทั้งหมดเพื่อพิมพ์ทับได้ทันที
     if (hasPlaceholder(el.textContent)) {
       const m = el.textContent.match(PH_RE);
-      const node = el.firstChild;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node && m && !node.data.includes(m[0])) node = walker.nextNode();
       if (node && m) {
-        const start = el.textContent.indexOf(m[0]);
+        const start = node.data.indexOf(m[0]);
         const r = document.createRange(); r.setStart(node, start); r.setEnd(node, start + m[0].length);
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
       }
@@ -288,7 +342,8 @@
     if (value !== FIELDS[key].get(st.doc)) {
       commit(d => FIELDS[key].set(d, value), { rerender: false });
     }
-    el.innerHTML = displayHTML(FIELDS[key].get(st.doc));
+    const shown = FIELDS[key].get(st.doc);
+    el.innerHTML = el.classList.contains('lines') ? linesHTML(shown) : displayHTML(shown);
     if (el.classList.contains('one-line')) fitOneLine();
   });
   sheet.addEventListener('keydown', (e) => {
@@ -296,12 +351,29 @@
     if (!el) return;
     if (e.key === 'Enter' && !el.classList.contains('block') && !['references', 'attachments'].includes(el.dataset.field)) { e.preventDefault(); el.blur(); }
     if (e.key === 'Escape') { el.blur(); }
+    if (e.key === 'Tab' && el.classList.contains('lines')) { e.preventDefault(); shiftIndent(el, e.shiftKey ? -1 : 1); }
   });
+  sheet.addEventListener('input', (e) => {
+    const el = e.target.closest('.lines');
+    if (el) restyleLines(el);
+  });
+  for (const [id, delta] of [['btn-indent', 1], ['btn-outdent', -1]]) {
+    $(id).addEventListener('mousedown', (e) => e.preventDefault());   // คงเคอร์เซอร์ไว้ในย่อหน้า
+    $(id).addEventListener('click', () => {
+      if (lastLineField && document.activeElement === lastLineField) shiftIndent(lastLineField, delta);
+      else toast('คลิกในย่อหน้าที่ต้องการก่อน แล้วกดปุ่มนี้ (หรือกด Tab / Shift+Tab)');
+    });
+  }
   // วางข้อความเป็น plain text เท่านั้น
   sheet.addEventListener('paste', (e) => {
     if (!e.target.closest('[data-field]')) return;
     e.preventDefault();
-    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+    const text = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
+    if (!e.target.closest('.lines')) { document.execCommand('insertText', false, text); return; }
+    text.split('\n').forEach((part, i) => {
+      if (i) document.execCommand('insertParagraph');
+      if (part) document.execCommand('insertText', false, part);
+    });
   });
   sheet.addEventListener('click', (e) => {
     const b = e.target.closest('[data-refine]');
@@ -468,6 +540,7 @@
     $('toggle-thai-num').checked = !!d.use_thai_numerals;
     $('font-select').value = d.font_family || 'it9';
     $('sheet').dataset.font = d.font_family || 'it9';
+    $('sheet').dataset.type = isMemo() ? 'internal' : 'external';
     $('unit-wrap').hidden = !isMemo();
     $('version-count').textContent = toThai(st.versions.length + 1);
     const words = [d.subject, d.paragraph_reason, d.paragraph_details, d.paragraph_purpose, d.memo_law].filter(Boolean).join(' ');

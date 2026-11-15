@@ -130,10 +130,11 @@ def test_split_request_from_consideration():
 
 def test_bma_blocks_heading_and_run_in(bma_cohost_doc):
     blocks = bma_cohost_doc.get_memo_blocks()
-    headings = [b.lead for b in blocks if b.kind == "heading"]
-    run_ins = [b.lead for b in blocks if b.kind == "body" and b.lead]
-    assert headings == ["ต้นเรื่อง", "ข้อกฎหมาย"]
-    assert run_ins == ["ข้อเท็จจริง", "ข้อพิจารณาและเสนอแนะ"]
+    headings = [b for b in blocks if b.kind == "heading"]
+    # หัวข้อเป็นบรรทัดเดี่ยว เริ่มตรงกับเนื้อความ (2.5 ซม.) ตามแบบบันทึกข้อความของหน่วยงาน
+    assert [b.lead for b in headings] == ["ต้นเรื่อง", "ข้อกฎหมาย", "ข้อเท็จจริง", "ข้อพิจารณาและเสนอแนะ"]
+    assert all(b.indent_cm == 2.5 and not b.text for b in headings)
+    assert not [b for b in blocks if b.kind == "body" and b.lead]
     assert all(b.lead_style == "underline" for b in blocks if b.lead)
     assert blocks[-1].kind == "request"
     # Step 0: ข้อกฎหมายเป็น placeholder จนกว่าจะเลือกจากคลังที่ยืนยันแหล่ง

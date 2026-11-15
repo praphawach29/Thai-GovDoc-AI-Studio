@@ -32,13 +32,19 @@
   background: #fff;
   box-sizing: border-box;
 }
+/* บันทึกข้อความ (แบบกรุงเทพมหานคร): ขอบบน 1.5 ซม. */
+.a4-sheet[data-type="internal"] { padding-top: 1.5cm; }
 .a4-sheet[data-font="psk"] { font-family: 'TH SarabunPSK', 'TH Sarabun New', serif; }
 .a4-sheet[data-font="sarabun_new"] { font-family: 'TH Sarabun New', 'Sarabun', serif; }
-/* ระยะก่อนย่อหน้าตามแบบจริง: 'เรียน' และหัวข้อใหม่ 6 pt, ต้นเรื่อง 0 pt */
+/* ระยะก่อนย่อหน้าตามแบบจริง: 'เรียน' และทุกหัวข้อ (รวมต้นเรื่อง) 6 pt */
 .a4-sheet .gap-6pt { margin-top: 6pt; }
 .a4-sheet .doc-bold { font-weight: 700; }
 .a4-sheet .memo-title { font-size: 29pt; font-weight: 700; line-height: 1; }
 .a4-sheet .indent-25 { text-indent: 2.5cm; }
+/* แต่ละบรรทัดของเนื้อความคือย่อหน้า; แท็บนำหน้าใช้กำหนดระดับ ไม่แสดงเป็นช่องว่าง */
+.a4-sheet .lines { tab-size: 0; -moz-tab-size: 0; }
+.a4-sheet .lines > .ln { min-height: 1em; }
+.a4-sheet .memo-head:empty::before { font-weight: 400; text-decoration: none; }
 .a4-sheet .justify-thai { text-align: justify; text-justify: inter-character; }
 .a4-sheet .garuda-ext { height: 3cm; width: auto; }
 .a4-sheet .garuda-int { height: 1.5cm; width: auto; }

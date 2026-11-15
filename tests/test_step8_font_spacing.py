@@ -1,7 +1,7 @@
 """
 Step 8: ฟอนต์และระยะย่อหน้าตามแบบบันทึกข้อความที่หน่วยงานใช้จริง
 - ฟอนต์หลัก TH SarabunIT๙ (เลือก TH SarabunPSK / TH Sarabun New รายฉบับได้)
-- ระยะก่อนย่อหน้า: "เรียน" 6 pt, ต้นเรื่อง 0 pt, ขึ้นหัวข้อใหม่ 6 pt, ในหัวข้อเดียวกัน 0 pt
+- ระยะก่อนย่อหน้า: "เรียน" 6 pt, ทุกหัวข้อรวมต้นเรื่อง 6 pt, ในหัวข้อเดียวกัน 0 pt
 """
 
 import re
@@ -31,7 +31,7 @@ def _before(p):
 
 def test_memo_blocks_spacing_rules():
     gaps = [(b.lead or b.text[:12], b.space_before_pt) for b in _memo().get_memo_blocks()]
-    assert gaps[0] == ("ต้นเรื่อง", 0.0)                       # หัวข้อแรกต่อจาก "เรียน"
+    assert gaps[0] == ("ต้นเรื่อง", 6.0)                       # ต้นเรื่องเว้น 6 pt จากบรรทัดบน
     assert all(g == 0.0 for t, g in gaps if t.startswith(("๑. ต้น", "๒. ต้น", "ข้อเท็จจริงย่อ")))
     assert dict(gaps)["ข้อเท็จจริง"] == SECTION_GAP_PT == 6.0
     assert dict(gaps)["ข้อพิจารณาและเสนอแนะ"] == 6.0
@@ -45,8 +45,8 @@ def test_word_paragraph_spacing_and_default_font(tmp_path):
     plain = lambda p: p.text.replace("\u200b", "").strip()          # Word ได้ ZWSP สำหรับตัดคำ
     gap = lambda start: _before(next(p for p in paras if plain(p).startswith(start)))
     assert gap("เรียน") == 6.0
-    assert gap("ต้นเรื่อง") == 0.0 and gap("๒. ต้นเรื่องข้อสอง") == 0.0
-    assert gap("ข้อเท็จจริง  ") == 6.0 and gap("ข้อเท็จจริงย่อหน้าสอง") == 0.0
+    assert gap("ต้นเรื่อง") == 6.0 and gap("๒. ต้นเรื่องข้อสอง") == 0.0
+    assert gap("ข้อเท็จจริง") == 6.0 and gap("ข้อเท็จจริงย่อหน้าสอง") == 0.0
     assert gap("ข้อพิจารณาและเสนอแนะ") == 6.0
     assert gap("จึงเรียนมา") == 6.0
     fonts = {r.font.name for p in paras for r in p.runs if r.text.strip()}
@@ -74,3 +74,32 @@ def test_pdf_uses_chosen_font_file():
     pdf_new, _ = _render_header(client, {**doc, "font_family": "sarabun_new"})
     assert ImageChops.difference(it9, psk).getbbox() is not None
     assert b"THSarabunPSK" in pdf_it9 and b"SarabunNew" in pdf_new
+
+
+def test_headings_start_at_body_indent_in_word(tmp_path):
+    out = tmp_path / "h.docx"
+    export_govdoc_to_docx(_memo(), str(out))
+    paras = Document(str(out)).paragraphs
+    head = next(p for p in paras if p.text.strip() == "ต้นเรื่อง")
+    assert abs(head.paragraph_format.first_line_indent.cm - 2.5) < 0.01
+
+
+def test_free_indent_with_tabs_and_custom_headings():
+    from core.memo_layout import line_indent_cm
+    assert line_indent_cm("๑. ข้อหลัก") == 2.5
+    assert line_indent_cm("๑.๑ ข้อย่อย") == 3.5
+    assert line_indent_cm("1.1.1 ข้อย่อยสุด") == 4.5
+    assert line_indent_cm("\t\t๑. ผู้ใช้ย่นเข้าเอง") == 3.5      # แท็บกำหนดเองแทนค่าอัตโนมัติ
+    assert line_indent_cm("\t๑.๑ ผู้ใช้ดึงกลับ") == 2.5
+    doc = _memo().model_copy(update={
+        "memo_facts": "๑. ข้อแรก\n\t\t\tข้อความลึก\n๑.๑ ย่อย",
+        "memo_headings": {"facts": "ข้อเท็จจริงและการตรวจสอบ", "law": ""},
+        "memo_law": "ระเบียบ ฯ",
+    })
+    blocks = doc.get_memo_blocks()
+    leads = [b.lead for b in blocks if b.kind == "heading"]
+    assert "ข้อเท็จจริงและการตรวจสอบ" in leads and "ข้อกฎหมาย" not in leads
+    law = next(b for b in blocks if b.text == "ระเบียบ ฯ")
+    assert law.space_before_pt == 6.0                  # หัวข้อถูกซ่อน เนื้อความยังเว้นระยะขึ้นหัวข้อใหม่
+    deep = next(b for b in blocks if b.text == "ข้อความลึก")
+    assert deep.indent_cm == 4.5 and "\t" not in deep.text
