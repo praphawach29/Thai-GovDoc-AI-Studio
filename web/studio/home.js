@@ -194,6 +194,7 @@
   form.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop-hint').hidden = true; } });
   form.addEventListener('drop', (e) => {
     e.preventDefault(); dragDepth = 0; $('drop-hint').hidden = true;
+    if (state.busy) return;
     if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
   });
 
@@ -251,22 +252,83 @@
   });
 
   // ---------- เริ่มร่าง ----------
-  const STEPS = [
-    { key: 'extract', label: 'อ่านต้นเรื่อง' },
-    { key: 'classify', label: 'จำแนกชนิดหนังสือ' },
-    { key: 'draft', label: 'ร่างหนังสือตามโครงสร้าง ๓ ภาค' },
-  ];
-  function renderProgress(done = [], running = true) {
-    const doneMap = Object.fromEntries(done.map(s => [s.key, s]));
-    $('progress-steps').innerHTML = STEPS.map((s, i) => {
-      const d = doneMap[s.key];
-      const isRunning = running && !d && (i === 0 || doneMap[STEPS[i - 1].key]);
-      const icon = d ? (d.ok ? '<i class="fa-solid fa-circle-check text-emerald-600"></i>' : '<i class="fa-solid fa-circle-xmark text-rose-600"></i>')
-        : isRunning ? '<i class="fa-solid fa-circle-notch fa-spin text-emerald-600"></i>' : '<i class="fa-regular fa-circle text-slate-300"></i>';
-      return `<li class="flex items-center gap-2.5"><span class="w-4 text-center">${icon}</span>
-        <span class="${d || isRunning ? 'text-slate-800 font-medium' : 'text-slate-400'}">${d ? esc(d.label) : s.label}</span>
-        ${d?.detail ? `<span class="text-slate-400">· ${esc(d.detail)}</span>` : ''}</li>`;
+  // ---------- ความคืบหน้าระหว่างร่าง ----------
+  // เซิร์ฟเวอร์ตอบครั้งเดียวตอนจบ จึงเดินขั้นตอนตามเวลาที่วัดได้จริง (อ่านสแกน ๖–๗ หน้า ~๑๖ วิ, ร่าง ~๖–๙ วิ)
+  // ขั้นอัปโหลดเป็นของจริง และขั้นสุดท้ายรอผลจริงเสมอ (ไม่แสดงว่าเสร็จก่อนผลมา)
+  // เมื่อผลมา แสดงขั้นตอนจริงจากเซิร์ฟเวอร์ (ชื่อ/รายละเอียด/สำเร็จหรือไม่)
+  const prog = { plan: [], timer: null, t0: 0, phase0: 0, uploading: false, est: 0 };
+  function planSteps(file, upload) {
+    const scan = file && /\.(pdf|png|jpe?g|tiff?)$/i.test(file.name);
+    const readS = !file ? 1 : scan ? Math.min(40, Math.round(10 + (file.size / 1048576) * 2)) : 2;
+    const plan = [];
+    if (upload) plan.push({ key: 'upload', label: 'อัปโหลดไฟล์ต้นเรื่อง', real: true });
+    plan.push({ key: 'extract', label: file ? (scan ? 'AI อ่านต้นเรื่อง' : 'อ่านไฟล์ต้นเรื่อง') : 'อ่านคำสั่งที่พิมพ์', s: readS });
+    plan.push({ key: 'classify', label: 'เลือกประเภทหนังสือ', s: 1 });
+    plan.push({ key: 'ai', label: 'AI ร่างหนังสือ', s: 7 });
+    plan.push({ key: 'draft', label: 'จัดรูปแบบและตรวจระเบียบงานสารบรรณ', s: 2, last: true });
+    return plan;
+  }
+  const ICON = {
+    done: '<i class="fa-solid fa-circle-check text-emerald-600"></i>',
+    fail: '<i class="fa-solid fa-circle-xmark text-rose-600"></i>',
+    run: '<i class="fa-solid fa-circle-notch fa-spin text-emerald-600"></i>',
+    wait: '<i class="fa-regular fa-circle text-slate-300"></i>',
+  };
+  function stepStates() {
+    // ขั้นที่ประมาณเวลา: เดินตามเวลาหลังอัปโหลดเสร็จ ขั้นสุดท้ายค้างไว้ที่ "กำลังทำ"
+    let t = (Date.now() - prog.phase0) / 1000, running = false;
+    return prog.plan.map((st) => {
+      if (st.result) return st.result.ok === false ? 'fail' : 'done';
+      if (st.real) return prog.uploading ? (running = true, 'run') : 'done';
+      if (running || prog.uploading) return 'wait';
+      if (!st.last && t >= st.s) { t -= st.s; return 'done'; }
+      running = true;
+      return 'run';
+    });
+  }
+  function renderProgress() {
+    const states = stepStates();
+    $('progress-steps').innerHTML = prog.plan.map((st, i) => {
+      const state = states[i], r = st.result;
+      return `<li class="flex items-center gap-2.5" data-step="${st.key}" data-state="${state}"><span class="w-4 text-center">${ICON[state]}</span>
+        <span class="${state === 'wait' ? 'text-slate-400' : 'text-slate-800 font-medium'}">${esc(r?.label || st.label)}</span>
+        ${r?.detail ? `<span class="text-slate-400 text-xs truncate">· ${esc(r.detail)}</span>` : ''}</li>`;
     }).join('');
+    const sec = Math.floor((Date.now() - prog.t0) / 1000);
+    $('progress-time').textContent = prog.timer ? `ผ่านไป ${toThai(sec)} วินาที · ปกติใช้ราว ${toThai(prog.est)} วินาที` : '';
+    const slow = !prog.timer ? '' : sec >= 100 ? 'ใกล้ครบเวลาสูงสุด (๒ นาที) — ถ้ายังไม่สำเร็จ ระบบจะแจ้งให้ทราบ ไม่ต้องกดซ้ำ'
+      : sec >= Math.max(60, prog.est * 2) ? 'ใช้เวลานานกว่าปกติ — ระบบอาจกำลังสลับไปใช้ AI สำรอง กรุณารอสักครู่ ไม่ต้องกดซ้ำ' : '';
+    $('progress-slow').textContent = slow;
+    $('progress-slow').hidden = !slow;
+  }
+  function startProgress(file, upload) {
+    prog.plan = planSteps(file, upload);
+    prog.uploading = upload;
+    prog.t0 = prog.phase0 = Date.now();
+    prog.est = Math.round(prog.plan.reduce((n, st) => n + (st.s || 0), 0) + (upload ? 2 : 0));
+    clearInterval(prog.timer);
+    prog.timer = setInterval(renderProgress, 500);
+    $('progress').hidden = false;
+    renderProgress();
+  }
+  function uploadDone() { prog.uploading = false; prog.phase0 = Date.now(); renderProgress(); }
+  // ผลจริงจากเซิร์ฟเวอร์ (ขั้นที่ไม่มีในผล เช่น AI ไม่ได้ตั้งค่า ถือว่าข้าม)
+  function finishProgress(steps) {
+    clearInterval(prog.timer); prog.timer = null;
+    const byKey = Object.fromEntries((steps || []).map(st => [st.key, st]));
+    prog.plan = prog.plan.filter(st => st.real || byKey[st.key]).map(st => ({ ...st, result: st.real ? { ok: true } : byKey[st.key] }));
+    renderProgress();
+  }
+  function stopProgress() { clearInterval(prog.timer); prog.timer = null; }
+
+  // ระหว่างร่าง: ล็อกช่องพิมพ์และปุ่มทั้งหมด กันกดซ้ำหรือเปลี่ยนค่ากลางทาง
+  function setBusy(on) {
+    state.busy = on;
+    $('prompt-form').setAttribute('aria-busy', String(on));
+    $('prompt').readOnly = on;
+    ['btn-submit', 'btn-attach', 'doc-type', 'unit', 'btn-classify'].forEach((id) => { $(id).disabled = on; });
+    $('prompt-form').querySelectorAll('[data-example], #btn-remove-file').forEach((b) => { b.disabled = on; });
+    $('prompt-form').classList.toggle('opacity-70', on);
   }
 
   async function openInEditor(payload) {
@@ -280,11 +342,10 @@
     if (state.busy) return;
     const prompt = $('prompt').value.trim();
     if (!prompt && !state.file) { $('prompt').focus(); toast('พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องก่อน', 'warn'); return; }
-    state.busy = true;
-    $('btn-submit').disabled = true;
+    setBusy(true);
     $('error-box').hidden = true;
-    $('progress').hidden = false;
-    renderProgress([]);
+    const upload = !!state.file && (await auth.serverMode());
+    startProgress(state.file, upload);
 
     const fd = new FormData();
     fd.append('prompt', prompt);
@@ -293,15 +354,16 @@
     fd.append('urgency', state.urgency);
     fd.append('secret', state.secret);
     try {
-      if (state.file && (await auth.serverMode())) {
+      if (upload) {
         // โหมดเซิร์ฟเวอร์: ส่งไฟล์ตรงเข้า Storage ก่อน แล้วให้ API อ่านจากที่นั่น (รองรับไฟล์ถึง 50 MB)
         fd.append('source_path', await api.uploadSource(state.file));
         fd.append('source_name', state.file.name);
+        uploadDone();
       } else if (state.file) {
         fd.append('file', state.file);
       }
       const res = await api.draft(fd);
-      renderProgress(res.steps, false);
+      finishProgress(res.steps);
       if (!res.document) {
         const failed = res.steps.find(s => !s.ok);
         $('error-box').innerHTML = `<div class="font-semibold mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>ยังไม่สร้างร่าง</div>${esc(failed?.detail || 'อ่านต้นเรื่องไม่สำเร็จ')} — ลองไฟล์อื่น หรือพิมพ์/วางข้อความต้นเรื่องแทน`;
@@ -314,12 +376,12 @@
         sourceName: state.file?.name || null, sourceFileId: res.source_file_id || null, unitKey: $('unit').value || null,
       });
     } catch (err) {
+      stopProgress();
       $('progress').hidden = true;
       $('error-box').innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1"></i>${esc(err.message)}`;
       $('error-box').hidden = false;
     } finally {
-      state.busy = false;
-      $('btn-submit').disabled = false;
+      setBusy(false);
     }
   }
   form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
@@ -327,6 +389,7 @@
 
   $('btn-new').addEventListener('click', () => {
     $('prompt').value = ''; $('file-input').value = ''; setFile(null);
+    if (state.busy) return;
     $('progress').hidden = true; $('error-box').hidden = true; setSidebar(false); syncExamples(); $('prompt').focus();
   });
   // ---------- ช่องเลือกในแถบเครื่องมือ: กว้างเท่าตัวเลือกที่เลือกอยู่ (select ปกติกว้างเท่าตัวเลือกที่ยาวที่สุด) ----------

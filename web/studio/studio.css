@@ -93,6 +93,26 @@
 #toolbar[data-compact="5"] .tb-h5 { display: none; }
 #toolbar[data-compact="1"] #unit-select, #toolbar[data-compact="2"] #unit-select, #toolbar[data-compact="3"] #unit-select, #toolbar[data-compact="4"] #unit-select, #toolbar[data-compact="5"] #unit-select { max-width: 9.5rem; }
 
+/* หน้าแรก: กระดาษ A4 ย่อส่วนที่ค่อย ๆ มีบรรทัดข้อความ ระหว่างรอ AI ร่าง */
+.draft-sheet { width: 76px; height: 106px; padding: 10px 9px; flex-direction: column; gap: 6px; background: #fff;
+  border: 1px solid #e2e8f0; border-radius: 4px; box-shadow: 0 6px 16px -8px rgb(15 23 42 / .25); }
+.draft-sheet .ds-crest { width: 12px; height: 12px; border-radius: 9999px; background: #d1fae5; margin: 0 auto 2px; }
+.draft-sheet i { display: block; height: 3px; border-radius: 2px; background: #e2e8f0; position: relative; overflow: hidden; }
+.draft-sheet i::after { content: ""; position: absolute; inset: 0; background: #10b981; transform: scaleX(0); transform-origin: left;
+  animation: dsWrite 3.6s ease-in-out infinite; }
+.draft-sheet i.ds-gap { margin-top: 3px; }
+.draft-sheet i.ds-short { width: 55%; }
+.draft-sheet i:nth-of-type(2)::after { animation-delay: .35s; } .draft-sheet i:nth-of-type(3)::after { animation-delay: .7s; }
+.draft-sheet i:nth-of-type(4)::after { animation-delay: 1.05s; } .draft-sheet i:nth-of-type(5)::after { animation-delay: 1.4s; }
+.draft-sheet i:nth-of-type(6)::after { animation-delay: 1.75s; } .draft-sheet i:nth-of-type(7)::after { animation-delay: 2.1s; }
+@keyframes dsWrite { 0% { transform: scaleX(0); opacity: 1; } 30%, 80% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+/* ผู้ใช้ตั้ง "ลดการเคลื่อนไหว": ไม่มีแอนิเมชัน เหลือข้อความและตัวเลข */
+@media (prefers-reduced-motion: reduce) {
+  .draft-sheet i::after { animation: none; transform: scaleX(.6); opacity: .5; }
+  #progress .fa-spin { animation: none; }
+  .animate-fadeIn { animation: none; }
+}
+
 /* ย่อกระดาษให้พอดีจอแคบโดยยังคงสัดส่วนจริง */
 .sheet-scale { transform-origin: top center; }
 
