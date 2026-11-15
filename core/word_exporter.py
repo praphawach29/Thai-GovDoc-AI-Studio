@@ -274,18 +274,18 @@ def _add_header_tab(paragraph, position_cm: float = TEXT_WIDTH_CM, style: str = 
     )
 
 
-def _apply_bottom_border(paragraph):
-    """ขีดเส้นทึบใต้ย่อหน้า (ใช้ทำหัวฟอร์มแบบ solid)"""
+def _apply_bottom_border(paragraph, val: str = "single", sz: int = 6, color: str = "000000", space: int = 1):
+    """ขีดเส้นใต้ย่อหน้า (หัวฟอร์มแบบ solid / เส้นประใต้บรรทัด "เรื่อง") — เส้นเริ่มที่ระยะเยื้องซ้ายของย่อหน้า"""
     pPr = paragraph._p.get_or_add_pPr()
     existing = pPr.find(qn("w:pBdr"))
     if existing is not None:
         pPr.remove(existing)
     pBdr = OxmlElement("w:pBdr")
     bottom = OxmlElement("w:bottom")
-    bottom.set(qn("w:val"), "single")
-    bottom.set(qn("w:sz"), "6")
-    bottom.set(qn("w:space"), "1")
-    bottom.set(qn("w:color"), "000000")
+    bottom.set(qn("w:val"), val)
+    bottom.set(qn("w:sz"), str(sz))
+    bottom.set(qn("w:space"), str(space))
+    bottom.set(qn("w:color"), color)
     pBdr.append(bottom)
     # pBdr ต้องอยู่ก่อน tabs/spacing/ind/jc ตามลำดับ schema
     for tag in ("w:shd", "w:tabs", "w:spacing", "w:ind", "w:jc"):
@@ -1033,26 +1033,28 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     p_sub.paragraph_format.space_after = Pt(6)
     p_sub.paragraph_format.left_indent = Cm(1.25)
     p_sub.paragraph_format.first_line_indent = Cm(-1.25)
-    _header_tab(p_sub, TEXT_WIDTH_CM)
+    if on_line:
+        p_sub.paragraph_format.tab_stops.add_tab_stop(Cm(1.25), WD_TAB_ALIGNMENT.LEFT, WD_TAB_LEADER.SPACES)
+    else:
+        _header_tab(p_sub, TEXT_WIDTH_CM)
     sub_value = to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub
     if on_line:
-        # เส้นประเฉพาะบรรทัดแรก: เรื่องยาวเกิน ส่วนที่ขึ้นบรรทัดที่ ๒ ไม่ขีดเส้นใต้ (ตามแบบฟอร์มจริง)
-        room = TEXT_WIDTH_CM - _text_width_cm("เรื่อง", MEMO_LABEL_SIZE, bold=True) \
-            - _text_width_cm("   ", DEFAULT_FONT_SIZE) - 0.3
+        # เส้นประเฉพาะบรรทัดที่ตรงกับ "เรื่อง": ย่อหน้าแรกเป็นบรรทัดเดียว มีเส้นประเป็นขอบล่างของย่อหน้า
+        # (เริ่มที่ระยะเยื้อง 1.25 ซม. = หลังคำว่า "เรื่อง" ยาวถึงขอบขวา) — พิมพ์/แก้ข้อความในบรรทัดนี้ใน Word
+        # เส้นยังอยู่ใต้ข้อความเสมอ ส่วนที่ยาวเกินอยู่ย่อหน้าถัดไป เยื้องตรงข้อความ ไม่มีเส้น
+        room = TEXT_WIDTH_CM - 1.25 - 0.3
         first, rest = _split_first_line(insert_zwsp(sub_value), room)
         r_h = p_sub.add_run("เรื่อง")
         _set_run_thai_font(r_h, size_pt=MEMO_LABEL_SIZE, bold=True)
-        _set_run_thai_font(p_sub.add_run(" "), size_pt=DEFAULT_FONT_SIZE)
-        _line_run(p_sub, "  ")
-        _line_run(p_sub, first.rstrip())
-        # เส้นประยาวถึงขอบขวาเสมอ (แท็บขีดเส้นใต้เติมที่ว่างท้ายบรรทัด) แล้วขึ้นบรรทัดใหม่เอง
-        # ส่วนที่เหลือของเรื่องจึงอยู่บรรทัดที่ ๒ (เยื้องตรงข้อความ) โดยไม่มีเส้นประ
-        _line_run(p_sub, "\t")
+        _set_run_thai_font(p_sub.add_run("\t"), size_pt=DEFAULT_FONT_SIZE)
+        _set_run_thai_font(p_sub.add_run(first.rstrip()), size_pt=DEFAULT_FONT_SIZE)
+        _apply_bottom_border(p_sub, val="dotted", sz=4, space=0)
         if rest:
-            r_rest = p_sub.add_run()
-            r_rest.add_break()
-            r_rest.add_text(rest)
-            _set_run_thai_font(r_rest, size_pt=DEFAULT_FONT_SIZE)
+            p_sub.paragraph_format.space_after = Pt(0)
+            p_rest = doc.add_paragraph()
+            p_rest.paragraph_format.space_after = Pt(6)
+            p_rest.paragraph_format.left_indent = Cm(1.25)
+            _set_run_thai_font(p_rest.add_run(rest.strip()), size_pt=DEFAULT_FONT_SIZE)
     else:
         _memo_field(p_sub, "เรื่อง", sub_value)
         p_sub.add_run("\t")

@@ -115,23 +115,26 @@ def test_memo_signers_centered_like_pdf(tmp_path):
     assert len(sig) >= 2 and all(p.alignment == WD_ALIGN_PARAGRAPH.CENTER for p in sig)
 
 
-def _subject_runs(tmp_path, subject):
+def _subject_paras(tmp_path, subject):
     out = tmp_path / "sub.docx"
     export_govdoc_to_docx(_memo().model_copy(update={"subject": subject}), str(out))
-    p = next(p for p in Document(str(out)).paragraphs if p.text.startswith("เรื่อง"))
-    return [(r.text.replace("\u200b", ""), 'w:u w:val="dotted"' in r._r.xml) for r in p.runs]
+    paras = Document(str(out)).paragraphs
+    i = next(i for i, p in enumerate(paras) if p.text.startswith("เรื่อง"))
+    return paras[i], paras[i + 1]
 
 
 def test_subject_dotted_line_only_on_first_line(tmp_path):
-    short = _subject_runs(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วม")
-    assert short[-1] == ("\t", True)                       # บรรทัดเดียว: เส้นประยาวถึงขอบขวา
-    long = _subject_runs(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย "
-                                   "ชิงถ้วยพระราชทาน สมเด็จพระกนิษฐาธิราชเจ้า ประจำปี ๒๕๗๐")
-    # บรรทัดแรก: ข้อความ + แท็บขีดเส้นประถึงขอบขวา แล้วขึ้นบรรทัดใหม่ ส่วนที่เหลือไม่มีเส้น
-    tab = [t for t, _ in long].index("\t")
-    assert long[tab][1] and all(u for t, u in long[1:tab] if t.strip())
-    assert long[-1][1] is False and long[-1][0].startswith("\n") and "๒๕๗๐" in long[-1][0]
-    assert "ขอเชิญ" in "".join(t for t, u in long[:tab])
+    """เส้นประของ "เรื่อง" เป็นขอบล่างของย่อหน้าบรรทัดแรก — แก้ข้อความใน Word แล้วเส้นยังอยู่ใต้บรรทัดนั้น
+    ส่วนที่ยาวเกินอยู่ย่อหน้าถัดไป เยื้องตรงข้อความ ไม่มีเส้น"""
+    first, nxt = _subject_paras(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วม")
+    assert 'w:val="dotted"' in first._p.pPr.xml and "w:pBdr" in first._p.pPr.xml
+    assert nxt.text.startswith("เรียน")
+    first, nxt = _subject_paras(tmp_path, "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย "
+                                          "ชิงถ้วยพระราชทาน ประจำปี ๒๕๗๐")
+    assert "w:pBdr" in first._p.pPr.xml and "w:pBdr" not in nxt._p.pPr.xml
+    assert "ขอ\u200bเชิญ" in first.text and nxt.text.replace("\u200b", "").endswith("๒๕๗๐")
+    assert abs(nxt.paragraph_format.left_indent.cm - 1.25) < 0.01
+    assert not any('w:u ' in r._r.xml for r in first.runs + nxt.runs)
 
 
 def test_docx_has_no_blank_thumbnail(tmp_path):
@@ -154,7 +157,7 @@ def test_width_measure_counts_letter_spacing():
     finally:
         w._LETTER_SPACING.reset(tok)
     assert abs(spaced - plain - len(text) * 0.4 / 72 * 2.54) < 1e-6
-    # เรื่องที่ Word ตัดบรรทัดหลัง "ชิงถ้วย" (ภาพจาก Word จริง) ต้องได้เส้นประเฉพาะส่วนนั้น
-    runs = _subject_runs(__import__("pathlib").Path(__import__("tempfile").mkdtemp()),
-                         "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วยพระราชทาน ประจำปี ๒๕๗๐")
-    assert runs[-1][0].startswith("\nพระราชทาน")
+    # เรื่องที่ Word ตัดบรรทัดหลัง "ชิงถ้วย" (ภาพจาก Word จริง) — บรรทัดแรกต้องไม่ยาวเกินนั้น
+    first, nxt = _subject_paras(__import__("pathlib").Path(__import__("tempfile").mkdtemp()),
+                                "ขอเชิญเป็นเจ้าภาพร่วมจัดการแข่งขันกีฬาวิ่งเปี้ยวชิงแชมป์แห่งประเทศไทย ชิงถ้วยพระราชทาน ประจำปี ๒๕๗๐")
+    assert nxt.text.replace("\u200b", "").startswith("พระราชทาน")
