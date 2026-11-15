@@ -379,6 +379,17 @@ def parse_govdoc_metadata(raw_text: str) -> dict:
         "องค์การ", "ฝ่าย", "กอง", "คณะ", "สมาคม", "มูลนิธิ", "สโมสร", "ชมรม", "บริษัท"
     ]
     for line in lines[:20]:
+        # AI OCR อธิบายภาพเป็นวงเล็บ เช่น "[ตราสัญลักษณ์: สมาคม... ENGLISH NAME]" — ใช้เฉพาะชื่อภาษาไทยข้างใน
+        # ส่วนตรายางรับหนังสือ (เลขรับ) เป็นของผู้รับ ไม่ใช่หน่วยงานผู้ส่ง
+        if line.startswith("[ตรายาง") or "เลขรับ" in line:
+            continue
+        m_ann = re.match(r'^\[(?:ตรา|โลโก้|ตราสัญลักษณ์|หัวกระดาษ)[^:：\]]*[:：]\s*([^\]]+)\]\s*$', line)
+        if m_ann:
+            line = m_ann.group(1).strip()
+            if re.search(r'[ก-๙]', line):
+                line = re.sub(r'(?:\s+[A-Za-z][A-Za-z.&\'-]*)+\s*$', '', line).strip()
+        elif line.startswith("["):
+            continue
         if line.startswith("ที่") or line.startswith("เรื่อง") or line.startswith("เรียน") or "บันทึกข้อความ" in line:
             continue
         if any(kw in line for kw in dept_keywords):

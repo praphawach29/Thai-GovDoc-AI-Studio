@@ -347,6 +347,9 @@ def _add_page_number_header(doc: Document, style: str = "thai"):
             _set_run_thai_font(r)
 
 
+MEMO_SIGN_INDENT_CM = 6.0
+
+
 def _add_memo_blocks(doc: Document, data: GovDocumentSchema, profile: LayoutProfile):
     """เขียนเนื้อความบันทึกข้อความจาก MemoBlock (หัวข้อขีดเส้นใต้/ตัวหนา + ย่อหน้าตามลำดับเลขข้อ)"""
     num = (lambda t: to_thai_numerals(t)) if data.use_thai_numerals else (lambda t: t)
@@ -1026,7 +1029,7 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     # 4. ผู้ลงนาม (บันทึกข้อความไม่มีคำลงท้าย เช่น ขอแสดงความนับถือ)
     if data.signature_image_path and os.path.exists(data.signature_image_path):
         p_sign_img = doc.add_paragraph()
-        p_sign_img.paragraph_format.left_indent = Cm(8.0)
+        p_sign_img.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
         p_sign_img.paragraph_format.space_after = Pt(6)
         r_sign_img = p_sign_img.add_run()
         r_sign_img.add_picture(data.signature_image_path, height=Cm(1.2))
@@ -1034,14 +1037,17 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         p_space = doc.add_paragraph()
         p_space.paragraph_format.space_after = Pt(36)
 
+    # ชื่อและตำแหน่งจัดกึ่งกลางในช่วงจาก 6 ซม. ถึงขอบขวา (ตรงกับ PDF / templates/typst/internal.typ)
     p_sig = doc.add_paragraph()
-    p_sig.paragraph_format.left_indent = Cm(8.0)
+    p_sig.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_sig.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
     p_sig.paragraph_format.space_after = Pt(2)
     r_sig = p_sig.add_run(data.signatory_name)
     _set_run_thai_font(r_sig, size_pt=DEFAULT_FONT_SIZE)
 
     p_pos = doc.add_paragraph()
-    p_pos.paragraph_format.left_indent = Cm(8.0)
+    p_pos.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_pos.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
     p_pos.paragraph_format.space_after = Pt(4)
     r_pos = p_pos.add_run(data.signatory_position)
     _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
@@ -1052,6 +1058,7 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         p_gap.paragraph_format.space_after = Pt(36)
         for text, after in ((co.name, 2), (co.position, 4)):
             p_co = doc.add_paragraph()
-            p_co.paragraph_format.left_indent = Cm(8.0)
+            p_co.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_co.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
             p_co.paragraph_format.space_after = Pt(after)
             _set_run_thai_font(p_co.add_run(text), size_pt=DEFAULT_FONT_SIZE)

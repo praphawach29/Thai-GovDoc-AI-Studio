@@ -480,3 +480,12 @@ def test_gemini_model_setting_accepts_master_name(monkeypatch):
     assert Settings().gemini_model == "gemini-x-flash"
     monkeypatch.setenv("GOVDOC_GEMINI_MODEL", "gemini-y-flash")       # ชื่อหลักมาก่อน
     assert Settings().gemini_model == "gemini-y-flash"
+
+
+def test_ocr_logo_annotation_gives_clean_sender_name():
+    from core.extractor import parse_govdoc_metadata
+    text = ("--- หน้าที่ 1 ---\n[ตรายางมุมบนซ้าย:] สนง. ปลัดกรุงเทพมหานคร เลขรับ 3778\n"
+            "[ตราสัญลักษณ์: สมาคมวิ่งเปี้ยวประเทศไทย WING PIOW ASSOCIATION OF THAILAND]\n"
+            "ที่ สวปท.๑๔/๒๕๖๙\n๒๓ กันยายน ๒๕๖๙\nเรื่อง ขอเชิญเป็นเจ้าภาพร่วม\nเรียน ผู้ว่าราชการกรุงเทพมหานคร\n")
+    meta = parse_govdoc_metadata(text)
+    assert meta["dept"] == "สมาคมวิ่งเปี้ยวประเทศไทย"

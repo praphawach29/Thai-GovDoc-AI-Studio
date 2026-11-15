@@ -103,3 +103,13 @@ def test_free_indent_with_tabs_and_custom_headings():
     assert law.space_before_pt == 6.0                  # หัวข้อถูกซ่อน เนื้อความยังเว้นระยะขึ้นหัวข้อใหม่
     deep = next(b for b in blocks if b.text == "ข้อความลึก")
     assert deep.indent_cm == 4.5 and "\t" not in deep.text
+
+
+def test_memo_signers_centered_like_pdf(tmp_path):
+    out = tmp_path / "s.docx"
+    export_govdoc_to_docx(_memo(), str(out))
+    paras = Document(str(out)).paragraphs
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    sig = [p for p in paras if p.paragraph_format.left_indent is not None
+           and abs(p.paragraph_format.left_indent.cm - 6.0) < 0.01]
+    assert len(sig) >= 2 and all(p.alignment == WD_ALIGN_PARAGRAPH.CENTER for p in sig)
