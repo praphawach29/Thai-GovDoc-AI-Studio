@@ -54,6 +54,15 @@ def _format_memo_blocks(data: GovDocumentSchema) -> str:
     return "(\n    " + ",\n    ".join(items) + ",\n  )"
 
 
+def _format_co_signers(data: GovDocumentSchema) -> str:
+    """ผู้ลงนามเพิ่มเติมเป็น array ของ dictionary ใน Typst"""
+    items = [
+        f"(name: {_escape_typst_string(x.name)}, position: {_escape_typst_string(x.position)})"
+        for x in (data.co_signers or [])
+    ]
+    return "(" + "".join(i + ", " for i in items) + ")"
+
+
 def generate_typst_content(
     data: GovDocumentSchema,
     garuda_rel_path: str = "assets/garuda.svg",
@@ -120,6 +129,7 @@ def generate_typst_content(
   memo_blocks: {_format_memo_blocks(data)},
   signatory_name: {_escape_typst_string(data.signatory_name)},
   signatory_position: {_escape_typst_string(data.signatory_position)},
+  co_signers: {_format_co_signers(data)},
   urgency: "{data.urgency.value}",
   secret: "{data.secret.value}",
   thai_page_numbers: {"true" if data.use_thai_numerals else "false"},

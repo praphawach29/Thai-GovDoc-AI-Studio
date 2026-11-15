@@ -155,13 +155,37 @@ def _set_character_scale(run, percent: int):
         rPr.append(width)
 
 
+_FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+_MEASURE_FONTS: dict = {}
+
+
+def _text_width_cm(text: str, font_size_pt: float = 16.0, bold: bool = False) -> float:
+    """ความกว้างจริงของข้อความด้วยฟอนต์ TH Sarabun New (Pillow + raqm จัดสระ/วรรณยุกต์ไทยถูกต้อง)
+    ไม่มีไฟล์ฟอนต์ = ประมาณจากจำนวนตัวอักษรที่กินที่ (ไม่นับสระบน-ล่างและวรรณยุกต์)"""
+    if not text:
+        return 0.0
+    name = "THSarabunNew-Bold.ttf" if bold else "THSarabunNew.ttf"
+    font = _MEASURE_FONTS.get(name)
+    if font is None and (_FONT_DIR / name).exists():
+        try:
+            from PIL import ImageFont
+            font = _MEASURE_FONTS[name] = ImageFont.truetype(str(_FONT_DIR / name), 1000)
+        except Exception:  # Pillow ไม่มี / อ่านฟอนต์ไม่ได้ → ใช้ค่าประมาณ
+            font = None
+    if font is not None:
+        return font.getlength(text) / 1000 * font_size_pt / 72 * 2.54
+    spacing = sum(1 for ch in text if not ("\u0e31" <= ch <= "\u0e3a" or "\u0e47" <= ch <= "\u0e4e"))
+    return spacing * font_size_pt * 0.42 / 72 * 2.54
+
+
 def _fit_run_to_width(run, text: str, available_cm: float, font_size_pt: float = 16.0):
-    """ประมาณความกว้างข้อความไทย แล้วบีบตัวอักษรให้พอดีหนึ่งบรรทัด"""
+    """บีบตัวอักษรแนวนอน (w:w) ให้ข้อความพอดีหนึ่งบรรทัด"""
     if not text or available_cm <= 0:
         return
-    estimated_cm = len(text) * (font_size_pt / 28.35) * 0.52
-    if estimated_cm > available_cm:
-        _set_character_scale(run, int(available_cm / estimated_cm * 100))
+    width_cm = _text_width_cm(text, font_size_pt)
+    if width_cm > available_cm:
+        # ปัดลง 1% เผื่อการปัดเศษของ Word
+        _set_character_scale(run, int(available_cm / width_cm * 100) - 1)
 
 
 def _setup_page_margins(doc: Document, profile: LayoutProfile):
@@ -490,7 +514,7 @@ def _build_sections_doc(
             _set_run_thai_font(r_label, size_pt=20, bold=True)
             r_value = p.add_run(insert_zwsp(value))
             _set_run_thai_font(r_value, size_pt=16)
-            _fit_run_to_width(r_value, value, 13.0)
+            _fit_run_to_width(r_value, value, TEXT_WIDTH_CM - _text_width_cm(f"{label}  ", 20, bold=True) - 0.3)
             _add_header_tab(p, TEXT_WIDTH_CM, profile.header_style)
             p.add_run("\t")
         elif kind == SectionKind.SUBJECT:
@@ -907,14 +931,17 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         _set_run_thai_font(r_v, size_pt=DEFAULT_FONT_SIZE)
 
     dept_value = data.dept_name
-    if data.contact_tel and data.contact_tel not in dept_value:
+    if data.contact_tel and data.contact_tel not in dept_value and "โทร" not in dept_value:
         dept_value = f"{dept_value}  โทร. {data.contact_tel}"
     p_dept = doc.add_paragraph()
     p_dept.paragraph_format.space_after = Pt(0)
     _add_header_tab(p_dept, TEXT_WIDTH_CM, profile.header_style)
-    _memo_field(p_dept, "ส่วนราชการ", to_thai_numerals(dept_value) if data.use_thai_numerals else dept_value)
+    dept_value = to_thai_numerals(dept_value) if data.use_thai_numerals else dept_value
+    _memo_field(p_dept, "ส่วนราชการ", dept_value)
     if p_dept.runs:
-        _fit_run_to_width(p_dept.runs[-1], dept_value, 13.0)
+        # บรรทัดเดียวเสมอ: ความกว้างข้อความ - หัวข้อ 20 pt - ช่องว่าง - เผื่อจุดไข่ปลา
+        room = TEXT_WIDTH_CM - _text_width_cm("ส่วนราชการ  ", MEMO_LABEL_SIZE, bold=True) - 0.3
+        _fit_run_to_width(p_dept.runs[-1], dept_value, room)
     p_dept.add_run("\t")
     if profile.header_style == "solid":
         _apply_bottom_border(p_dept)
@@ -1015,3 +1042,13 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     p_pos.paragraph_format.space_after = Pt(4)
     r_pos = p_pos.add_run(data.signatory_position)
     _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
+
+    # ผู้ลงนามถัดไป (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอเรื่อง) — เว้นที่ลงลายมือชื่อเท่ากัน
+    for co in data.co_signers or []:
+        p_gap = doc.add_paragraph()
+        p_gap.paragraph_format.space_after = Pt(36)
+        for text, after in ((co.name, 2), (co.position, 4)):
+            p_co = doc.add_paragraph()
+            p_co.paragraph_format.left_indent = Cm(8.0)
+            p_co.paragraph_format.space_after = Pt(after)
+            _set_run_thai_font(p_co.add_run(text), size_pt=DEFAULT_FONT_SIZE)

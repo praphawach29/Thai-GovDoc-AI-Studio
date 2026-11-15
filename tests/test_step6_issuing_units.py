@@ -49,7 +49,7 @@ def test_apply_unit_sets_header_fields_and_lints_as_warning_only():
     doc = PRESET_TEMPLATES["procurement_approval"].schema
     unit = pick_unit(default_issuing_units(), "sports-division")
     out = apply_issuing_unit(doc, unit, DAY)
-    assert out.dept_name.startswith("สำนักวัฒนธรรม กีฬา และการท่องเที่ยว (กองการกีฬา")
+    assert out.dept_name.startswith("กองการกีฬา (กลุ่มงานส่งเสริมกีฬา โทร.")
     assert out.doc_number.startswith("กท 1205/") and out.doc_date.endswith("สิงหาคม 2569")
     assert doc.dept_name != out.dept_name                  # ไม่แก้เอกสารต้นฉบับ
     issues = {i.rule_id: i.severity for i in lint_gov_document(out).issues}
@@ -65,7 +65,7 @@ def client():
 
 def test_units_endpoint_and_apply(client):
     units = client.get("/api/v1/studio/units").json()
-    assert [u["key"] for u in units] == ["sport-promotion", "sports-division"]
+    assert [u["key"] for u in units] == ["sport-promotion", "sports-division", "culture-sports-bureau"]
     doc = PRESET_TEMPLATES["procurement_approval"].schema.model_dump(mode="json")
     res = client.post("/api/v1/studio/apply-unit", json={"doc": doc, "unit_key": "sports-division"})
     assert res.status_code == 200 and res.json()["doc_number"].startswith("กท 1205/")
@@ -78,9 +78,11 @@ def test_draft_and_blank_use_selected_unit(client):
         "unit_key": "sports-division",
     })
     doc = res.json()["document"]
-    assert doc["dept_name"].startswith("สำนักวัฒนธรรม") and doc["doc_number"].startswith("กท 1205/")
+    assert doc["dept_name"].startswith("กองการกีฬา (") and doc["doc_number"].startswith("กท 1205/")
+    assert doc["salutation"] == "เรียน ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว"
+    assert doc["memo_request"].startswith("จึงเรียนมาเพื่อโปรดพิจารณาลงนามหนังสือเรียนปลัด")
     blank = client.post("/api/v1/studio/blank", json={"doc_type": "internal"}).json()
-    assert blank["dept_name"].startswith("กองการกีฬา (กลุ่มงานส่งเสริมกีฬา")
+    assert blank["dept_name"].startswith("กลุ่มงานส่งเสริมกีฬา โทร.")
     assert blank["doc_number"].endswith("/" + str(date.today().year + 543)) or blank["doc_number"].endswith("/2570")
 
 

@@ -36,6 +36,12 @@ grant execute on function pg_temp.check(boolean, text) to public;
 
 insert into public.org_units (org_id, key, label, dept_name, doc_number_format, is_default) values
     ('11111111-1111-1111-1111-111111111111', 'sport-promotion', 'กลุ่มงานส่งเสริมกีฬา', 'กองการกีฬา (กลุ่มงานส่งเสริมกีฬา)', '{gap}/{year}', true);
+update public.org_units set recipient = 'หัวหน้ากลุ่มงานส่งเสริมกีฬา',
+    signers = '[{"name": "", "position": "ผู้เสนอเรื่อง", "is_author": true}]' where key = 'sport-promotion';
+select pg_temp.check((select signers->0->>'position' from public.org_units where key = 'sport-promotion') = 'ผู้เสนอเรื่อง',
+    'เก็บผู้ลงนามของหน่วยเป็น JSON');
+select pg_temp.expect_error($$update public.org_units set signers = '{"name": "x"}' where key = 'sport-promotion'$$,
+    'ผู้ลงนามต้องเป็นรายการ (array)');
 
 -- ---------------------------------------------------------------- ผู้ใช้ A
 begin;

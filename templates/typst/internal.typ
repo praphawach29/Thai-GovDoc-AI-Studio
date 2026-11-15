@@ -29,8 +29,8 @@
   #text(size: 20pt, weight: "bold")[#label]#h(0.25cm)#value#_leader
 ]
 
-// "ส่วนราชการ" ต้องอยู่บรรทัดเดียว (เช่น "สำนัก... (กอง... โทร... โทรสาร ...)")
-// ถ้ายาวเกิน บีบตัวอักษรแนวนอนได้ถึง 85% แบบเดียวกับ Word (w:w) ก่อนยอมขึ้นบรรทัดใหม่
+// "ส่วนราชการ" ต้องอยู่บรรทัดเดียวเสมอ (เช่น "สำนัก... (กอง... โทร... โทรสาร ...)")
+// ถ้ายาวเกิน บีบตัวอักษรแนวนอนให้พอดีแบบเดียวกับ Word (w:w) — ไม่ขึ้นบรรทัดใหม่
 #let _field_one_line(label, value) = layout(size => context {
   let head = text(size: 20pt, weight: "bold")[#label]
   let room = size.width - measure(head).width - 0.25cm - 0.3cm
@@ -38,8 +38,8 @@
   if w <= room or w == 0pt {
     _field(label, value)
   } else {
-    let ratio = calc.max(85%, room / w * 100%)
-    [#head#h(0.25cm)#box(scale(x: ratio, origin: left, reflow: true)[#value])#_leader]
+    let ratio = room / w * 100%
+    [#head#h(0.25cm)#box(scale(x: ratio, origin: left, reflow: true, box(width: w + 1pt, value)))#_leader]
   }
 })
 
@@ -57,6 +57,8 @@
   memo_blocks: (),
   signatory_name: "",
   signatory_position: "",
+  // ผู้ลงนามเพิ่มเติมต่อจากผู้ลงนามหลัก: ((name: "...", position: "..."), ...)
+  co_signers: (),
   urgency: "normal",
   secret: "normal",
   thai_page_numbers: false,
@@ -159,4 +161,10 @@
       #signatory_position
     ]
   ]
+
+  // ผู้ลงนามถัดไป (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอเรื่อง)
+  #for s in co_signers {
+    v(1.5cm)
+    pad(left: 6cm, align(center)[#s.name \ #s.position])
+  }
 ]

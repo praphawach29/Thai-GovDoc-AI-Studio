@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from core.issuing_units import apply_issuing_unit, pick_unit
-from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, UrgencyLevel
+from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, Signer, UrgencyLevel
 from core.profile_manager import get_user_profile
 from core.studio import (
     StudioCheck,
@@ -43,7 +43,7 @@ class ApplyUnitRequest(BaseModel):
 
 
 _UNIT_COLUMNS = ("key,label,dept_name,doc_number_format,contact_dept,contact_tel,contact_fax,"
-                 "blank_day,is_default")
+                 "blank_day,is_default,recipient,signers,review_party,request_text")
 
 
 def load_units(user: Optional[CurrentUser], settings: Settings) -> List[IssuingUnit]:
@@ -57,11 +57,28 @@ def load_units(user: Optional[CurrentUser], settings: Settings) -> List[IssuingU
     return get_user_profile().issuing_units
 
 
-def _apply_unit(doc: GovDocumentSchema, unit_key: Optional[str], user, settings) -> GovDocumentSchema:
-    unit = pick_unit(load_units(user, settings), unit_key)
+def _author(user: Optional[CurrentUser], settings: Settings) -> Optional[Signer]:
+    """ชื่อ/ตำแหน่งของผู้ใช้ที่ล็อกอิน (ใช้เป็นผู้ลงนามที่เป็นผู้เสนอเรื่อง)"""
+    if not isinstance(user, CurrentUser):
+        return None
+    try:
+        profile = get_profile(user, get_supabase(user, settings))
+    except HTTPException:
+        return None
+    name = profile.full_name.strip()
+    return Signer(name=f"({name})" if name else "", position=profile.position.strip(), is_author=True)
+
+
+def _apply_unit(doc: GovDocumentSchema, unit_key: Optional[str], user, settings,
+                fresh: bool = False) -> GovDocumentSchema:
+    """fresh = ร่างใหม่ (ใช้ภาคความประสงค์มาตรฐานของหน่วยแทนข้อความที่ร่างมา)"""
+    units = load_units(user, settings)
+    unit = pick_unit(units, unit_key)
     if unit_key and (unit is None or unit.key != unit_key):
         raise HTTPException(status_code=404, detail="ไม่พบหน่วยออกหนังสือนี้")
-    return apply_issuing_unit(doc, unit) if unit else doc
+    if unit is None:
+        return doc
+    return apply_issuing_unit(doc, unit, author=_author(user, settings), units=units, replace_request=fresh)
 
 
 @router.get("/api/v1/studio/units")
@@ -146,7 +163,7 @@ async def studio_draft(
     response = StudioDraftResponse(**result.model_dump())
     if response.document is not None and response.document.doc_type == DocType.INTERNAL:
         # บันทึกข้อความ: ส่วนราชการ/เลขที่/วันที่ ตามหน่วยออกหนังสือที่เลือก
-        response.document = _apply_unit(response.document, unit_key, user, settings)
+        response.document = _apply_unit(response.document, unit_key, user, settings, fresh=True)
     display_name = Path(file.filename).name if has_file else (Path(stored[1]).name if stored else None)
     if response.context is not None and display_name:
         response.context.source_filename = display_name
@@ -167,7 +184,7 @@ def studio_blank(
     """เอกสารเปล่า (บันทึกข้อความ / หนังสือภายนอก) พร้อม placeholder"""
     doc = normalize_for_editor(create_blank_document(req.doc_type))
     if req.doc_type == DocType.INTERNAL:
-        doc = _apply_unit(doc, req.unit_key, user, settings)
+        doc = _apply_unit(doc, req.unit_key, user, settings, fresh=True)
     return doc
 
 

@@ -113,6 +113,15 @@
     contact_fax: { get: d => d.contact_fax || '', set: (d, v) => { d.contact_fax = v || null; } },
     contact_email: { get: d => d.contact_email || '', set: (d, v) => { d.contact_email = v || null; } },
   };
+  // ผู้ลงนามเพิ่มเติมของบันทึกข้อความ (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอ) — สูงสุด 3 คน
+  for (let i = 0; i < 3; i++) {
+    for (const [suffix, prop] of [['name', 'name'], ['pos', 'position']]) {
+      FIELDS[`co_${suffix}_${i}`] = {
+        get: d => d.co_signers?.[i]?.[prop] || '',
+        set: (d, v) => { if (d.co_signers?.[i]) d.co_signers[i][prop] = v; },
+      };
+    }
+  }
   const FIELD_LABEL = {
     doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'เรียน',
     references: 'อ้างถึง', attachments: 'สิ่งที่ส่งมาด้วย', paragraph_reason: 'ภาคเหตุ', paragraph_details: 'ภาคข้อเท็จจริง',
@@ -120,6 +129,8 @@
     memo_consideration: 'ข้อพิจารณาและเสนอแนะ', memo_request: 'ภาคความประสงค์', closing: 'คำลงท้าย',
     signatory_name: 'ชื่อผู้ลงนาม', signatory_position: 'ตำแหน่ง', contact_dept: 'ส่วนราชการเจ้าของเรื่อง',
     contact_tel: 'โทร.', contact_fax: 'โทรสาร', contact_email: 'อีเมล',
+    co_name_0: 'ชื่อผู้ลงนามถัดไป', co_pos_0: 'ตำแหน่งผู้ลงนามถัดไป', co_name_1: 'ชื่อผู้ลงนามถัดไป', co_pos_1: 'ตำแหน่งผู้ลงนามถัดไป',
+    co_name_2: 'ชื่อผู้ลงนามถัดไป', co_pos_2: 'ตำแหน่งผู้ลงนามถัดไป',
   };
   const REFINABLE = new Set(['paragraph_reason', 'paragraph_details', 'paragraph_purpose', 'memo_intro', 'memo_facts', 'memo_consideration', 'memo_request', 'subject']);
 
@@ -158,6 +169,8 @@
       ${isMemo() ? '' : `<div>${field('closing')}</div><div class="h-[1.6cm]"></div>`}
       <div>${field('signatory_name')}</div>
       <div>${field('signatory_position')}</div>
+      ${isMemo() ? (st.doc.co_signers || []).slice(0, 3).map((_, i) =>
+        `<div class="h-[1.2cm]"></div><div>${field('co_name_' + i)}</div><div>${field('co_pos_' + i)}</div>`).join('') : ''}
     </div>`;
   }
 
@@ -177,7 +190,7 @@
           <div class="memo-title w-full text-center">บันทึกข้อความ</div>
         </div>
         <div class="space-y-1">
-          ${labelRow('ส่วนราชการ', 'dept_name')}
+          <div class="flex items-baseline gap-2"><span class="doc-bold shrink-0">ส่วนราชการ</span>${field('dept_name', 'flex-1 dotted-fill one-line min-w-0 overflow-hidden whitespace-nowrap')}</div>
           <div class="flex items-baseline gap-4">
             <div class="flex items-baseline gap-2 flex-1 min-w-0"><span class="doc-bold">ที่</span>${field('doc_number', 'flex-1 dotted-fill')}</div>
             <div class="flex items-baseline gap-2 flex-1 min-w-0"><span class="doc-bold">วันที่</span>${field('doc_date', 'flex-1 dotted-fill')}</div>
@@ -231,6 +244,22 @@
       el.setAttribute('aria-label', FIELD_LABEL[el.dataset.field] || el.dataset.field);
       if (el.classList.contains('block')) el.setAttribute('aria-multiline', 'true');
     });
+    fitOneLine();
+  }
+
+  // "ส่วนราชการ" อยู่บรรทัดเดียวเสมอ: ยาวเกินให้บีบแนวนอนแบบเดียวกับไฟล์ PDF/Word
+  function fitOneLine() {
+    $('sheet').querySelectorAll('.one-line').forEach((el) => {
+      el.style.whiteSpace = 'nowrap'; el.style.overflow = 'hidden'; el.style.minWidth = '0';
+      el.style.transform = ''; el.style.width = ''; el.style.flex = '';
+      const room = el.clientWidth, need = el.scrollWidth;
+      if (need > room + 1) {
+        el.style.flex = 'none';
+        el.style.width = need + 'px';
+        el.style.transformOrigin = 'left';
+        el.style.transform = `scaleX(${room / need})`;
+      }
+    });
   }
 
   const sheet = $('sheet');
@@ -259,6 +288,7 @@
       commit(d => FIELDS[key].set(d, value), { rerender: false });
     }
     el.innerHTML = displayHTML(FIELDS[key].get(st.doc));
+    if (el.classList.contains('one-line')) fitOneLine();
   });
   sheet.addEventListener('keydown', (e) => {
     const el = e.target.closest('[data-field]');
@@ -317,12 +347,28 @@
   });
   $('toggle-thai-num').addEventListener('change', (e) => commit(d => { d.use_thai_numerals = e.target.checked; }));
 
-  // ---------- หน่วยออกหนังสือ (บันทึกข้อความ) ----------
-  const UNIT_FIELDS = ['dept_name', 'doc_number', 'doc_date', 'contact_dept', 'contact_tel', 'contact_fax'];
-  api.units().then((units) => {
-    const current = entry.unitKey || units.find(u => u.is_default)?.key;
+  // ---------- หน่วยออกหนังสือ / สายการเสนอ (บันทึกข้อความ) ----------
+  // ค่าที่เปลี่ยนตามหน่วย: ส่วนราชการ เลขที่ วันที่ ผู้ประสาน ผู้รับ ผู้ลงนาม ผู้พิจารณา และภาคความประสงค์มาตรฐาน
+  const UNIT_FIELDS = ['dept_name', 'doc_number', 'doc_date', 'contact_dept', 'contact_tel', 'contact_fax',
+    'salutation', 'signatory_name', 'signatory_position', 'co_signers', 'memo_consideration', 'memo_request', 'paragraph_purpose'];
+  let units = [];
+  const unitIndex = (key) => units.findIndex(u => u.key === key);
+  const currentUnitKey = () => entry.unitKey || units.find(u => u.is_default)?.key || units[0]?.key;
+  // ทุกฉบับในสายการเสนอเดียวกัน (เรียงจากขั้นแรก) — ฉบับเดี่ยวคือสายที่มีฉบับเดียว
+  const chainIds = () => entry.chainIds?.length ? entry.chainIds : [entry.id];
+  function renderChainButtons() {
+    const memo = isMemo() && units.length > 0;
+    const next = memo ? units[unitIndex(currentUnitKey()) + 1] : null;
+    $('btn-next-level').hidden = !next;
+    if (next) $('next-level-label').textContent = 'เสนอขั้นถัดไป: ' + next.label;
+    $('btn-chain-pdf').hidden = !(memo && chainIds().length > 1);
+  }
+  api.units().then((list) => {
+    units = list;
+    const current = currentUnitKey();
     $('unit-select').innerHTML = units.map(u =>
       `<option value="${esc(u.key)}" ${u.key === current ? 'selected' : ''}>${esc(u.label)}</option>`).join('');
+    renderChainButtons();
   }).catch(() => { $('unit-wrap').hidden = true; });
   $('unit-select').addEventListener('change', async (e) => {
     const key = e.target.value;
@@ -330,8 +376,53 @@
       const updated = await api.applyUnit(st.doc, key);
       commit(d => { UNIT_FIELDS.forEach(f => { d[f] = updated[f]; }); });
       entry.unitKey = key;
-      toast('เปลี่ยนส่วนราชการและเลขที่ตามหน่วยแล้ว');
+      renderChainButtons();
+      toast('เปลี่ยนส่วนราชการ เลขที่ ผู้รับ และผู้ลงนามตามหน่วยแล้ว');
     } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // สร้างฉบับเสนอขั้นถัดไป: คัดลอกเนื้อหา แล้วเปลี่ยนหัวหนังสือ ผู้รับ ผู้ลงนาม ตามหน่วยขั้นถัดไป
+  $('btn-next-level').addEventListener('click', async (e) => {
+    const next = units[unitIndex(currentUnitKey()) + 1];
+    if (!next) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await persist();
+      const doc = await api.applyUnit(st.doc, next.key);
+      doc.edit_status = 'editing';
+      const ids = chainIds();
+      const child = { title: doc.subject, doc, unitKey: next.key, context: entry.context, prompt: entry.prompt, chainIds: ids };
+      const newId = await store.create(child);
+      child.chainIds = [...ids, newId];
+      await store.save(child);
+      entry.chainIds = child.chainIds;
+      await persist();
+      // ฉบับก่อนหน้าในสายรู้จักฉบับใหม่ด้วย (กดชุดเสนอจากฉบับไหนก็ได้ครบ)
+      for (const cid of ids.filter(x => x !== entry.id)) {
+        const m = await store.get(cid);
+        if (m) { m.chainIds = child.chainIds; await store.save(m); }
+      }
+      location.href = `editor.html?id=${encodeURIComponent(newId)}`;
+    } catch (err) { toast('สร้างฉบับขั้นถัดไปไม่สำเร็จ: ' + err.message, 'error'); btn.disabled = false; }
+  });
+
+  // ชุดเสนอ PDF: ฉบับขั้นสูงสุดอยู่หน้าแรก ไล่ลงไปถึงฉบับต้นเรื่อง (แบบแฟ้มเสนอจริง)
+  $('btn-chain-pdf').addEventListener('click', async (e) => {
+    const btn = e.currentTarget, html = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>กำลังรวม...</span>';
+    try {
+      await persist();
+      const members = [];
+      for (const cid of chainIds()) {
+        const m = cid === entry.id ? { ...entry, doc: st.doc } : await store.get(cid);
+        if (m?.doc) members.push(m);
+      }
+      members.sort((a, b) => unitIndex(b.unitKey) - unitIndex(a.unitKey));
+      const blob = await api.exportPdfBundle(members.map(m => m.doc));
+      download(blob, `ชุดเสนอ_${safeName()}.pdf`);
+    } catch (err) { toast('รวม PDF ไม่สำเร็จ: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = html; }
   });
 
   // ---------- สถานะ / ผลตรวจ ----------

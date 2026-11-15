@@ -32,6 +32,7 @@
     refine: (text, command) => postJSON('/copilot/refine', { text, command }).then(r => r.json()),
     exportDocx: (doc) => postJSON('/export/docx', doc).then(r => r.blob()),
     exportPdf: (doc) => postJSON('/export/pdf', doc).then(r => r.blob()),
+    exportPdfBundle: (documents) => postJSON('/export/pdf-bundle', { documents }).then(r => r.blob()),
     templates: () => request('/studio/templates').then(r => r.json()),
     template: (id) => request('/studio/templates/' + encodeURIComponent(id)).then(r => r.json()),
     legal: () => request('/legal/references').then(r => r.json()),

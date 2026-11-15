@@ -160,8 +160,18 @@ class MemoHierarchyLevel(str, Enum):
         return "จึงเรียนมาเพื่อโปรดพิจารณา"
 
 
+class Signer(BaseModel):
+    """ผู้ลงนามหนึ่งคนในบันทึกข้อความ (ชื่อในวงเล็บ + ตำแหน่ง)"""
+    name: str = Field(default="", description="ชื่อในวงเล็บ เช่น (นายสมชาย ใจดี); ว่าง = เว้นให้กรอก")
+    position: str = ""
+    is_author: bool = Field(default=False, description="ผู้เสนอเรื่อง: ใช้ชื่อ/ตำแหน่งของผู้ใช้ที่ล็อกอินถ้ามี")
+
+
 class IssuingUnit(BaseModel):
-    """หน่วยออกหนังสือ: แต่ละหน่วยมีบรรทัดส่วนราชการ รูปแบบเลขที่ และผู้ประสานของตัวเอง
+    """หน่วยออกหนังสือ = หนึ่งขั้นในสายการเสนอ (กลุ่มงาน -> กอง -> สำนัก)
+
+    แต่ละหน่วยมีบรรทัดส่วนราชการ รูปแบบเลขที่ ผู้รับ (เรียน) ผู้ลงนาม และชื่อผู้พิจารณา
+    ในย่อหน้า "ข้อพิจารณาและเสนอแนะ" ของตัวเอง; ลำดับในรายการ = ลำดับการเสนอขึ้นไป
 
     รูปแบบเลขที่ (doc_number_format) ใช้ตัวแทน:
       {gap}  = ช่องว่างให้เจ้าหน้าที่เขียนเลขด้วยลายมือ (ไม่มีจุด)
@@ -172,34 +182,60 @@ class IssuingUnit(BaseModel):
 
     key: str
     label: str = Field(description="ชื่อที่แสดงให้เลือก เช่น กลุ่มงานส่งเสริมกีฬา")
-    dept_name: str = Field(description="บรรทัด 'ส่วนราชการ' ของบันทึกข้อความ")
+    dept_name: str = Field(description="บรรทัด 'ส่วนราชการ' ของบันทึกข้อความ (พิมพ์บรรทัดเดียวเสมอ)")
     doc_number_format: str = Field(default="{gap}/{year}")
     contact_dept: str = ""
     contact_tel: str = ""
     contact_fax: str = ""
     blank_day: bool = Field(default=True, description="เว้นเลขวันที่ไว้ให้ลงตอนลงนาม (เช่น '      สิงหาคม ๒๕๖๘')")
     is_default: bool = False
+    recipient: str = Field(default="", description="ผู้รับ (ต่อจากคำว่า 'เรียน') เช่น หัวหน้ากลุ่มงานส่งเสริมกีฬา")
+    signers: List[Signer] = Field(default_factory=list, description="ผู้ลงนามตามลำดับ (คนแรก = ผู้ลงนามหลัก)")
+    review_party: str = Field(default="", description="ชื่อหน่วยในประโยค '...พิจารณาแล้ว' ของข้อพิจารณาและเสนอแนะ")
+    request_text: str = Field(default="", description="ภาคความประสงค์มาตรฐานของขั้นนี้ (จึงเรียนมาเพื่อ...)")
 
 
 def default_issuing_units() -> List["IssuingUnit"]:
-    """หน่วยออกหนังสือตั้งต้นของกองการกีฬา สำนักวัฒนธรรม กีฬา และการท่องเที่ยว"""
+    """สายการเสนอตั้งต้นของกลุ่มงานส่งเสริมกีฬา กองการกีฬา สำนักวัฒนธรรม กีฬา และการท่องเที่ยว
+    (ตามตัวอย่างบันทึกข้อความจริง: กลุ่มงาน -> ผอ.กอง ลงนามถึง ผอ.สำนัก -> ผอ.สำนัก ลงนามถึงปลัดฯ)"""
     tel, fax = "๐ ๒๒๔๖ ๘๐๗๙", "๐ ๒๒๔๖ ๐๒๘๒"
+    phone = f"โทร.{tel} โทรสาร {fax}"
+    bureau = "สำนักวัฒนธรรม กีฬา และการท่องเที่ยว"
     return [
         IssuingUnit(
             key="sport-promotion",
             label="กลุ่มงานส่งเสริมกีฬา",
-            dept_name=f"กองการกีฬา (กลุ่มงานส่งเสริมกีฬา โทร.{tel} โทรสาร {fax})",
+            dept_name=f"กลุ่มงานส่งเสริมกีฬา {phone}",
             doc_number_format="{gap}/{year}",
-            contact_dept="กองการกีฬา (กลุ่มงานส่งเสริมกีฬา)",
-            contact_tel=tel, contact_fax=fax, is_default=True,
+            contact_dept="กลุ่มงานส่งเสริมกีฬา", contact_tel=tel, contact_fax=fax, is_default=True,
+            recipient="หัวหน้ากลุ่มงานส่งเสริมกีฬา",
+            signers=[Signer(position="ผู้เสนอเรื่อง", is_author=True),
+                     Signer(position="หัวหน้ากลุ่มงานส่งเสริมกีฬา")],
+            review_party="กลุ่มงานส่งเสริมกีฬา",
+            request_text="จึงเรียนมาเพื่อโปรดพิจารณานำเรียนผู้อำนวยการกองการกีฬาลงนามในหนังสือที่แนบ",
         ),
         IssuingUnit(
             key="sports-division",
             label="กองการกีฬา",
-            dept_name=f"สำนักวัฒนธรรม กีฬา และการท่องเที่ยว (กองการกีฬา โทร.{tel} โทรสาร {fax})",
+            dept_name=f"กองการกีฬา (กลุ่มงานส่งเสริมกีฬา {phone})",
             doc_number_format="กท 1205/{gap}",
-            contact_dept="กองการกีฬา",
-            contact_tel=tel, contact_fax=fax,
+            contact_dept="กองการกีฬา", contact_tel=tel, contact_fax=fax,
+            recipient=f"ผู้อำนวยการ{bureau}",
+            signers=[Signer(position="ผู้อำนวยการกองการกีฬา")],
+            review_party="กองการกีฬา",
+            request_text="จึงเรียนมาเพื่อโปรดพิจารณาลงนามหนังสือเรียนปลัดกรุงเทพมหานครที่แนบ",
+        ),
+        IssuingUnit(
+            key="culture-sports-bureau",
+            label=bureau,
+            dept_name=f"{bureau} (กองการกีฬา {phone})",
+            doc_number_format="กท 1205/{gap}",
+            contact_dept="กองการกีฬา", contact_tel=tel, contact_fax=fax,
+            recipient="ปลัดกรุงเทพมหานคร",
+            signers=[Signer(position=f"ผู้อำนวยการ{bureau}")],
+            review_party=bureau,
+            request_text=("จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดนำเรียนผู้ว่าราชการกรุงเทพมหานคร"
+                          "เพื่อโปรดพิจารณาตามข้อพิจารณาและเสนอแนะข้างต้น"),
         ),
     ]
 
@@ -520,6 +556,10 @@ class GovDocumentSchema(BaseModel):
     closing: str = Field(default="ขอแสดงความนับถือ", description="คำลงท้าย (เช่น ขอแสดงความนับถือ)")
     signatory_name: str = Field(..., description="ชื่อเต็มผู้ลงนามในวงเล็บ เช่น (นายสมชาย ใจดี)")
     signatory_position: str = Field(..., description="ตำแหน่งผู้ลงนาม")
+    co_signers: Optional[List[Signer]] = Field(
+        default=None,
+        description="ผู้ลงนามเพิ่มเติมของบันทึกข้อความ ต่อจากผู้ลงนามหลัก (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอ)",
+    )
     
     # ส่วนติดต่อสอบถาม (ท้ายกระดาษสำหรับหนังสือภายนอก)
     contact_dept: str = Field(..., description="กลุ่มงาน/กองเจ้าของเรื่อง")
