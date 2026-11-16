@@ -68,6 +68,10 @@ class SectionsIn(BaseModel):
     title: str = ""
 
 
+class SourceEdit(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+
+
 class VerifyIn(BaseModel):
     ids: List[UUID] = Field(min_length=1, max_length=500)
     verified: bool = True
@@ -195,6 +199,22 @@ def legal_source_file_url(
     if not rows:
         raise HTTPException(status_code=404, detail="ไม่พบไฟล์กฎหมาย")
     return {"url": client.signed_download_url(settings.source_bucket, rows[0]["storage_path"], expires_in=3600)}
+
+
+@router.patch("/api/v1/legal/sources/{source_id}")
+def legal_rename_source(source_id: UUID, req: SourceEdit, client: SupabaseClient = Depends(get_supabase)):
+    """เปลี่ยนชื่อฉบับ — ใช้กับทุกข้อในไฟล์นั้น (ชื่อที่แสดงในหัวข้อ ข้อกฎหมาย ของบันทึก)"""
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="ชื่อว่างไม่ได้")
+    try:
+        rows = client.update("legal_sources", {"id": f"eq.{source_id}"}, {"title": title})
+        if not rows:
+            raise HTTPException(status_code=404, detail="ไม่พบไฟล์กฎหมาย")
+        refs = client.update("legal_references", {"source_id": f"eq.{source_id}"}, {"title": title})
+    except SupabaseError as exc:
+        raise _schema_guard(exc)
+    return {"title": title, "updated": len(refs)}
 
 
 @router.patch("/api/v1/legal/references/verify")

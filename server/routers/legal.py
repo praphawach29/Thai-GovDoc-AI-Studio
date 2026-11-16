@@ -97,6 +97,50 @@ def add_legal_reference(
     return {"status": "created", "reference": row}
 
 
+class ReferenceEdit(BaseModel):
+    """แก้รายการในคลัง: หัวข้อที่ใช้เรียก (เช่น "ข้อ ๑๔" หรือชื่อที่ตั้งเอง) และเนื้อหา (แก้คำที่ AI อ่านผิด)"""
+    section: Optional[str] = Field(None, max_length=200)
+    quote: Optional[str] = Field(None, max_length=20000)
+    verified: Optional[bool] = None
+
+
+@router.patch("/api/v1/legal/references/{ref_id}")
+def edit_legal_reference(
+    ref_id: str,
+    req: ReferenceEdit,
+    user: Optional[CurrentUser] = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
+    """แก้เฉพาะช่องที่ส่งมา (ช่องอื่น เช่น เลขหน้า ไฟล์ต้นฉบับ คงเดิม)"""
+    values = {}
+    if req.section is not None:
+        if not req.section.strip():
+            raise HTTPException(status_code=422, detail="หัวข้อว่างไม่ได้")
+        values["section"] = req.section.strip()
+    if req.quote is not None:
+        if not req.quote.strip():
+            raise HTTPException(status_code=422, detail="เนื้อหาว่างไม่ได้")
+        values["quote"] = req.quote.strip()
+    if req.verified is not None:
+        values["verified"] = req.verified
+    if not values:
+        raise HTTPException(status_code=422, detail="ไม่มีข้อมูลที่จะแก้")
+    client = _client(user, settings)
+    if client is None:
+        updated = LegalLibrary().update(ref_id, **values)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Reference not found")
+        return {"status": "updated", "reference": updated.model_dump()}
+    try:
+        UUID(ref_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Reference not found")
+    rows = client.update("legal_references", {"id": f"eq.{ref_id}"}, values)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Reference not found")
+    return {"status": "updated", "reference": rows[0]}
+
+
 @router.put("/api/v1/legal/references/{ref_id}")
 def update_legal_reference(
     ref_id: str,

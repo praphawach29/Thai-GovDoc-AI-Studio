@@ -52,6 +52,7 @@
     templates: () => request('/studio/templates').then(r => r.json()),
     template: (id) => request('/studio/templates/' + encodeURIComponent(id)).then(r => r.json()),
     legal: () => request('/legal/references').then(r => r.json()),
+    legalEdit: (id, fields) => sendJSON('PATCH', '/legal/references/' + encodeURIComponent(id), fields).then(r => r.json()),
     legalSuggest: (text) => postJSON('/legal/suggest', { text }).then(r => r.json()),
     // คลังกฎหมาย: นำเข้าไฟล์สแกน → AI อ่านทีละหน้า → แยกเป็นข้อ → ยืนยัน (โหมดเซิร์ฟเวอร์)
     legalImport: {
@@ -69,6 +70,7 @@
       sections: (sourceId, pageTexts, title) => postJSON('/legal/sources/' + encodeURIComponent(sourceId) + '/sections', { page_texts: pageTexts, title: title || '' }).then(r => r.json()),
       sources: () => request('/legal/sources').then(r => r.json()),
       fileUrl: (sourceId) => request('/legal/sources/' + encodeURIComponent(sourceId) + '/file-url').then(r => r.json()).then(r => r.url),
+      rename: (sourceId, title) => sendJSON('PATCH', '/legal/sources/' + encodeURIComponent(sourceId), { title }).then(r => r.json()),
       verify: (ids, verified = true) => sendJSON('PATCH', '/legal/references/verify', { ids, verified }).then(r => r.json()),
     },
     health: () => fetch(API + '/health').then(r => r.ok),

@@ -128,9 +128,12 @@ def guess_title(page_texts: List[str]) -> str:
         if line.strip().startswith(kinds):
             # ชื่อมักต่อด้วยบรรทัด "ว่าด้วย..." / "เรื่อง ..." และปี พ.ศ.
             parts = [line.strip()]
-            for nxt in lines[i + 1:i + 4]:
+            for j, nxt in enumerate(lines[i + 1:i + 4]):
                 s = nxt.strip()
-                if s.startswith(("ว่าด้วย", "เรื่อง", "พ.ศ.", "พุทธศักราช", "(ฉบับที่", "สำนัก", "ตาม")) and len(" ".join(parts)) < 200:
+                # "พระราชบัญญัติ" อยู่บรรทัดเดียว ชื่ออยู่บรรทัดถัดไป เช่น "เครื่องหมายราชการ พุทธศักราช 2482"
+                bare_kind = j == 0 and parts[0] in kinds and not _HEADING.match(s) and len(s) < 120
+                if (bare_kind or s.startswith(("ว่าด้วย", "เรื่อง", "พ.ศ.", "พุทธศักราช", "(ฉบับที่", "สำนัก", "ตาม"))) \
+                        and len(" ".join(parts)) < 200:
                     parts.append(s)
                 else:
                     break

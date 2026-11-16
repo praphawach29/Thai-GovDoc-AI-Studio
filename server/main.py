@@ -34,7 +34,8 @@ def create_app() -> FastAPI:
         app.include_router(module.router)
     # ต้องล็อกอินเมื่อเปิดโหมด Supabase (โหมดเครื่องเดียว get_current_user คืน None)
     protected = [Depends(get_current_user)]
-    for module in (sources, drafting, legal, legal_import, export, registry, studio, documents, finals):
+    # legal_import ก่อน legal: PATCH /legal/references/verify ต้องไม่ถูกจับเป็น /legal/references/{ref_id}
+    for module in (sources, drafting, legal_import, legal, export, registry, studio, documents, finals):
         app.include_router(module.router, dependencies=protected)
 
     @app.exception_handler(SupabaseError)
