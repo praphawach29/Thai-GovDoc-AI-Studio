@@ -817,6 +817,21 @@
   // ไม่เขียนหัวข้อ "ข้อกฎหมาย" ใหม่ทั้งหมด — ข้อความที่ผู้ใช้พิมพ์เอง (เช่น "๑. พระราชบัญญัติ... (เอกสาร ๑)") ต้องอยู่ครบ
   //   เพิ่มข้อ = ต่อเนื้อหาของข้อนั้นท้ายข้อความเดิม
   //   เอาข้อออก = ลบเฉพาะเนื้อหาของข้อนั้นถ้ายังเหมือนเดิม (ถ้าแก้แล้ว ปล่อยไว้และบอกให้ลบเอง)
+  // หัวเรื่องของแต่ละฉบับ: "๑. <ชื่อฉบับ> (เอกสาร ๑)" — เลขเอกสารเรียงเหมือนหน้าที่แนบท้าย PDF (เฉพาะฉบับที่มีไฟล์)
+  const lawGroupKey = (c) => c.source_id || 'manual:' + (c.title || '');
+  function lawHeadings(refs) {
+    const out = new Map();
+    let doc = 0;
+    for (const c of refs) {
+      const key = lawGroupKey(c);
+      if (out.has(key)) continue;
+      const n = out.size + 1;
+      const suffix = c.source_id && c.page_from ? ` (เอกสาร ${toThai(++doc)})` : '';
+      out.set(key, `${toThai(n)}. ${(c.title || '').trim()}${suffix}`.trim());
+    }
+    return out;
+  }
+  const findBlock = (lines, parts) => lines.findIndex((_, i) => parts.length && parts.every((p, k) => lines[i + k] === p));
   function setLawRefs(next) {
     const prev = st.doc.legal_refs || [];
     const prevIds = new Set(prev.map(c => c.id)), nextIds = new Set(next.map(c => c.id));
@@ -825,18 +840,37 @@
     if (text != null && (!text.trim() || hasPlaceholder(text) && !text.replace(PH_RE, '').trim())) text = '';   // ว่าง / มีแต่ช่องให้กรอก
     let leftover = 0;
     if (isMemo()) {
+      let lines = (text || '').split('\n').filter((l, i, a) => l.trim() || i < a.length - 1);
+      const oldHeads = lawHeadings(prev), newHeads = lawHeadings(next);
+      // ๑) เอาเนื้อหาของข้อที่ถูกเอาออก (เฉพาะที่ยังไม่ถูกแก้)
+      const keptText = new Set();       // ฉบับที่ยังมีข้อความที่ผู้ใช้แก้ค้างอยู่ — คงหัวเรื่องไว้
       for (const c of removed) {
-        const body = lawText([c]);
-        const lines = (text || '').split('\n');
-        const parts = body.split('\n');
-        const at = lines.findIndex((_, i) => parts.every((p, k) => lines[i + k] === p));
-        if (body && at >= 0) { lines.splice(at, parts.length); text = lines.join('\n'); }
-        else leftover++;
+        const parts = lawText([c]).split('\n');
+        const at = findBlock(lines, parts);
+        if (at >= 0) lines.splice(at, parts.length); else { leftover++; keptText.add(lawGroupKey(c)); }
       }
+      // ๒) ฉบับที่ไม่เหลือข้อใดแล้ว: เอาหัวเรื่องออก (ถ้ายังเป็นข้อความเดิม และไม่มีข้อความที่แก้ค้างอยู่)
+      for (const [key, head] of oldHeads) {
+        if (newHeads.has(key) || keptText.has(key)) continue;
+        const at = lines.indexOf(head);
+        if (at >= 0) lines.splice(at, 1);
+      }
+      // ๓) เลขลำดับ/เลขเอกสารของฉบับที่เหลือเปลี่ยน: แก้หัวเรื่องเดิมให้ตรง (เฉพาะที่ยังไม่ถูกแก้เอง)
+      for (const [key, head] of newHeads) {
+        const old = oldHeads.get(key);
+        if (old && old !== head) { const at = lines.indexOf(old); if (at >= 0) lines[at] = head; }
+      }
+      // ๔) เพิ่มข้อ: ฉบับใหม่ = หัวเรื่อง + เนื้อหาต่อท้าย; ฉบับที่มีอยู่แล้ว = แทรกก่อนหัวเรื่องของฉบับถัดไป
+      const order = [...newHeads.keys()];
+      const present = new Set(prev.filter(p => nextIds.has(p.id)).map(lawGroupKey));   // ฉบับที่มีอยู่ในบันทึกแล้ว
       for (const c of added) {
-        const body = lawText([c]);
-        text = text ? `${text.replace(/\n+$/, '')}\n${body}` : body;
+        const key = lawGroupKey(c), body = lawText([c]).split('\n');
+        // ตำแหน่ง = ก่อนหัวเรื่องของฉบับถัดไปที่มีในข้อความ (คงการจัดกลุ่มตามฉบับ) ไม่งั้นต่อท้าย
+        const at = order.slice(order.indexOf(key) + 1).map(k => lines.indexOf(newHeads.get(k))).find(i => i >= 0) ?? lines.length;
+        if (present.has(key)) lines.splice(at, 0, ...body);                  // ฉบับเดิม (หัวเรื่องอาจถูกแก้เอง — ไม่เพิ่มซ้ำ)
+        else { lines.splice(at, 0, newHeads.get(key), ...body); present.add(key); }
       }
+      text = lines.join('\n').replace(/\n+$/, '');
     }
     commit(d => {
       d.legal_refs = next.length ? next : null;
