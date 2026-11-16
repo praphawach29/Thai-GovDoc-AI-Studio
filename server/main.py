@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.auth import get_current_user
-from server.routers import account, documents, drafting, export, finals, health, legal, legal_import, registry, sources, studio
+from server.routers import (account, documents, drafting, examples, export, finals, health, legal, legal_import, registry,
+                            sources, studio)
 from server.settings import get_settings
 from server.supabase import SupabaseError
 
@@ -35,7 +36,7 @@ def create_app() -> FastAPI:
     # ต้องล็อกอินเมื่อเปิดโหมด Supabase (โหมดเครื่องเดียว get_current_user คืน None)
     protected = [Depends(get_current_user)]
     # legal_import ก่อน legal: PATCH /legal/references/verify ต้องไม่ถูกจับเป็น /legal/references/{ref_id}
-    for module in (sources, drafting, legal_import, legal, export, registry, studio, documents, finals):
+    for module in (sources, drafting, legal_import, legal, export, registry, studio, documents, finals, examples):
         app.include_router(module.router, dependencies=protected)
 
     @app.exception_handler(SupabaseError)

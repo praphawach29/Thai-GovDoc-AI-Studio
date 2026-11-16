@@ -22,6 +22,7 @@ from core.templates_library import get_preset_template, list_preset_templates
 from server import source_store
 from server.auth import CurrentUser, get_current_user, get_profile, get_supabase
 from server.deps import save_upload
+from server.routers.examples import example_finder
 from server.settings import Settings, get_settings, llm_config
 from server.supabase import SupabaseClient
 
@@ -161,6 +162,8 @@ async def studio_draft(
             llm=llm_config(settings),
             recipient=unit.recipient if unit and doc_type != DocType.EXTERNAL else "",
             review_party=unit.review_party if unit and doc_type != DocType.EXTERNAL else "",
+            # สำนวนจากหนังสือฉบับจริงของหน่วยงาน (คลังตัวอย่าง) — โหมด Supabase เท่านั้น
+            find_examples=example_finder(client) if user is not None else None,
         )
     finally:
         if user is not None and saved_path is not None:

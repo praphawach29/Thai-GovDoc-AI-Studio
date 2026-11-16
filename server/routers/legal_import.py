@@ -119,17 +119,10 @@ def legal_register_source(
     return {k: row.get(k) for k in _SOURCE_COLUMNS.split(",")}
 
 
-@router.post("/api/v1/legal/ocr-page")
-async def legal_ocr_page(
-    image: UploadFile = File(...),
-    page: int = Form(..., ge=1),
-    user: CurrentUser = Depends(require_supabase_user),
-    settings: Settings = Depends(get_settings),
-):
-    """AI อ่านหนึ่งหน้า (ภาพที่เบราว์เซอร์เรนเดอร์จากไฟล์) — กฎหมายเป็นเอกสารเปิดเผย ใช้ AI ภายนอกได้"""
+def ocr_page_image(raw: bytes, page: int, settings: Settings) -> dict:
+    """AI อ่านภาพหนึ่งหน้า (เบราว์เซอร์เรนเดอร์จาก PDF) — ใช้ร่วมกับคลังตัวอย่างของหน่วย (server/routers/examples.py)"""
     from PIL import Image
 
-    raw = await image.read()
     if len(raw) > 8 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="ภาพหน้าใหญ่เกิน 8 MB")
     try:
@@ -143,9 +136,20 @@ async def legal_ocr_page(
     result = ocr_images_with_llm([img], config, budget_s=55.0)
     if not result.text.strip():
         detail = "; ".join(f"{a.provider}: {a.error}" for a in result.attempts) or "AI อ่านหน้านี้ไม่สำเร็จ"
-        logger.warning("legal ocr page %s failed: %s", page, detail)
+        logger.warning("ocr page %s failed: %s", page, detail)
         raise HTTPException(status_code=502, detail=f"อ่านหน้า {page} ไม่สำเร็จ — {detail}")
     return {"page": page, "text": result.text, "provider": result.provider}
+
+
+@router.post("/api/v1/legal/ocr-page")
+async def legal_ocr_page(
+    image: UploadFile = File(...),
+    page: int = Form(..., ge=1),
+    user: CurrentUser = Depends(require_supabase_user),
+    settings: Settings = Depends(get_settings),
+):
+    """AI อ่านหนึ่งหน้า (ภาพที่เบราว์เซอร์เรนเดอร์จากไฟล์) — กฎหมายเป็นเอกสารเปิดเผย ใช้ AI ภายนอกได้"""
+    return ocr_page_image(await image.read(), page, settings)
 
 
 @router.post("/api/v1/legal/sources/{source_id}/sections")
