@@ -31,12 +31,14 @@ logger = logging.getLogger("govdoc.api")
 
 _SUFFIXES = {".pdf": "application/pdf"}
 _SOURCE_COLUMNS = "id,title,filename,page_count,size_bytes,created_at"
-_MIGRATION_HINT = "ยังไม่ได้ติดตั้งตารางคลังกฎหมาย — ให้ผู้ดูแลรัน supabase/migrations/20261116000008_legal_sources.sql"
+_MIGRATION_HINT = ("ฐานข้อมูลยังไม่เห็นตารางคลังกฎหมาย — ให้ผู้ดูแลรัน supabase/migrations/20261116000008_legal_sources.sql "
+                   "ทั้งไฟล์ใน SQL Editor (ถ้ารันแล้ว ให้รัน: notify pgrst, 'reload schema';)")
 
 
 def _schema_guard(exc: SupabaseError) -> HTTPException:
     """คอลัมน์/ตารางใหม่ยังไม่มี (ยังไม่ได้รัน migration) → บอกให้ชัดแทน error ของฐานข้อมูล"""
     text = f"{exc.code} {exc.message}"
+    logger.warning("legal library database error %s: %s", exc.status, text)
     if any(k in text for k in ("42703", "42P01", "PGRST204", "PGRST205", "does not exist", "Could not find")):
         return HTTPException(status_code=503, detail=_MIGRATION_HINT)
     return HTTPException(status_code=exc.status, detail=exc.message)

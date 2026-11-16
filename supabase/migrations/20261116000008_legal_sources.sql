@@ -48,6 +48,9 @@ alter table public.legal_references
     add column if not exists chapter   text;
 create index if not exists legal_references_source_idx on public.legal_references (source_id);
 
+-- ให้ API (PostgREST) เห็นตาราง/คอลัมน์ใหม่ทันที (ไม่งั้นอาจตอบ 404/400 จนกว่าแคชจะรีเฟรชเอง)
+notify pgrst, 'reload schema';
+
 -- ตรวจผลหลังรัน:
 --   select column_name from information_schema.columns
 --    where table_schema = 'public' and table_name = 'legal_references' and column_name in ('source_id','page_from','page_to','chapter');
