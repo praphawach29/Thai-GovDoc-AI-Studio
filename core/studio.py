@@ -7,7 +7,7 @@ studio.py — Business logic สำหรับหน้าเว็บ GovDoc S
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,7 @@ from core.classifier import ClassificationResult, classify_source_document
 from core.extractor import extract_from_raw_text, extract_source_document
 from core.fact_check import FactIssue, check_facts, source_text_of
 from core.linter import LintResult, lint_gov_document
+import logging
 import time
 
 from core.llm_drafter import LLMConfig, apply_draft_content, draft_content_with_llm, ocr_images_with_llm
@@ -30,6 +31,7 @@ from core.models import (
 )
 from core.profile_manager import get_user_profile
 from core.security import cloud_ai_allowed
+from core.style_examples import few_shot_block
 from core.thai_date import blank_doc_number, format_thai_date
 
 
@@ -58,6 +60,19 @@ def _ai_step(ai) -> StudioStep:
                       detail=reason + (" — เนื้อความเป็นโครงให้กรอกเอง" if failed or ai.skipped_reason else ""))
 
 
+class StyleExampleRef(BaseModel):
+    """ตัวอย่างของหน่วยที่ใส่ใน prompt (ไม่รวมเนื้อความ)"""
+    id: str
+    subject: str = ""
+    doc_type: str = ""
+    score: float = 0.0
+
+
+# ผู้เรียก (server/) หาตัวอย่างจากคลังของหน่วยงาน: (ข้อความเรื่องใหม่, ประเภทที่จะร่าง) → แถวที่เลือกแล้ว
+# แต่ละแถว {"id","subject","doc_type","part_reason","part_details","part_purpose","score"}
+ExampleFinder = Callable[[str, DocType], List[dict]]
+
+
 class StudioCheck(BaseModel):
     """ผลตรวจเอกสาร: placeholder ที่ค้าง + Linter ระเบียบสารบรรณ"""
     placeholders: List[str] = Field(default_factory=list)
@@ -74,6 +89,8 @@ class StudioDraftResult(BaseModel):
     steps: List[StudioStep] = Field(default_factory=list)
     cloud_ai_blocked: bool = False
     ai_provider: Optional[str] = None      # "claude" | "gemini" | None (ร่างตามกฎ)
+    # ตัวอย่างของหน่วยที่ AI อ้างสำนวน (แสดงในหน้าแก้ไข) — ว่าง = ไม่ได้ใช้ตัวอย่าง
+    style_examples: List[StyleExampleRef] = Field(default_factory=list)
 
 
 def normalize_for_editor(doc: GovDocumentSchema) -> GovDocumentSchema:
@@ -172,6 +189,18 @@ def choose_output_type(hint: Optional[DocType], prompt: str, *, has_source_file:
     return classified, "จำแนกจากเนื้อหา (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
 
 
+def _pick_examples(find: Optional[ExampleFinder], source: str, prompt: str, doc_type: DocType) -> List[dict]:
+    """ตัวอย่างที่ใกล้เรื่องที่สุด ๒–๓ ฉบับ — หาไม่ได้/คลังว่าง/ฐานข้อมูลขัดข้อง = ร่างต่อโดยไม่มีตัวอย่าง"""
+    if find is None:
+        return []
+    try:
+        return list(find("
+".join(x for x in (prompt, source) if x), doc_type) or [])[:3]
+    except Exception as exc:          # ตัวอย่างเป็นตัวเสริม ห้ามทำให้การร่างล้ม
+        logging.getLogger("govdoc.ai").warning("style examples unavailable: %s", exc)
+        return []
+
+
 def start_draft(
     *,
     prompt: str = "",
@@ -183,6 +212,7 @@ def start_draft(
     llm: Optional[LLMConfig] = None,
     recipient: str = "",
     review_party: str = "",
+    find_examples: Optional[ExampleFinder] = None,
 ) -> StudioDraftResult:
     """
     เริ่มร่างจากคำสั่งที่พิมพ์และ/หรือไฟล์ต้นเรื่อง
@@ -253,6 +283,7 @@ def start_draft(
 
     # AI เรียบเรียงเนื้อความ (Claude → Gemini) ไม่สำเร็จ/ไม่ได้ตั้งค่า = ใช้ร่างตามกฎข้างบน
     if llm is not None:
+        examples = _pick_examples(find_examples, ctx.raw_text or "", prompt, doc.doc_type)             if llm.any_provider and allow_cloud else []
         ai = draft_content_with_llm(
             doc_type=doc.doc_type,
             budget_s=min(llm.total_timeout_s, max(0.0, request_budget - (time.monotonic() - started))),
@@ -264,10 +295,18 @@ def start_draft(
             avoid=tuple(a.provider for a in ocr_attempts if not a.ok),
             recipient=recipient if doc.doc_type == DocType.INTERNAL else "",
             review_party=review_party if doc.doc_type == DocType.INTERNAL else "",
+            examples=few_shot_block(examples),
         )
         result.ai_provider = ai.provider or None
         if ai.content is not None:
             doc = apply_draft_content(doc, ai.content)
+            if examples:
+                result.style_examples = [StyleExampleRef(
+                    id=str(e.get("id")), subject=e.get("subject") or "", doc_type=e.get("doc_type") or "",
+                    score=float(e.get("score") or 0)) for e in examples]
+                result.steps.append(StudioStep(
+                    key="style", label="อ้างสำนวนจากตัวอย่างของหน่วย",
+                    detail=f"{len(examples)} ฉบับ: " + " · ".join(f"เรื่อง{(e.get('subject') or '-')[:60]}" for e in examples)))
             # สรุปต้นเรื่องที่ AI เขียนมาพร้อมร่าง (ไม่เรียก AI เพิ่ม) แทนบรรทัดที่ตัดมาจากต้นเรื่อง
             summary = _clean_summary(ai.content.source_summary)
             if summary:

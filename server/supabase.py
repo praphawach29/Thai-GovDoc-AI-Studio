@@ -133,6 +133,13 @@ class SupabaseClient:
     def remove(self, bucket: str, path: str) -> None:
         self._request("DELETE", f"/storage/v1/object/{bucket}/{quote(path)}")
 
+    def remove_many(self, bucket: str, paths: List[str]) -> List[str]:
+        """ลบหลายไฟล์ในครั้งเดียว คืนรายชื่อที่ลบได้จริง (ไฟล์ที่ไม่มีหรือไม่มีสิทธิ์ลบจะไม่อยู่ในรายการ)"""
+        if not paths:
+            return []
+        res = self._request("DELETE", f"/storage/v1/object/{bucket}", json={"prefixes": paths})
+        return [str(o.get("name", "")) for o in (res.json() or []) if isinstance(o, dict)]
+
     def download(self, bucket: str, path: str) -> bytes:
         return self._request("GET", f"/storage/v1/object/authenticated/{bucket}/{quote(path)}").content
 

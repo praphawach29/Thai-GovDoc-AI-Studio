@@ -62,7 +62,11 @@
         <span id="recent-where" class="text-[10px] font-normal text-slate-400"></span>
       </div>
       <ul id="recent-list" class="space-y-0.5 text-xs"></ul>
-      <button id="btn-archived" type="button" class="mt-2 px-2.5 py-1 rounded-lg text-[11px] text-slate-500 hover:text-slate-800 hover:bg-slate-100 inline-flex items-center gap-1.5"><i class="fa-regular fa-trash-can text-[10px]"></i><span>ถังขยะ</span></button>
+      <p id="trash-note" hidden class="mt-2 px-2.5 text-[10px] leading-relaxed text-slate-400">ลบถาวรแล้วกู้คืนไม่ได้ · ฉบับที่ออกเลขหรือมีฉบับจริงแล้วลบถาวรไม่ได้</p>
+      <div class="mt-2 flex items-center justify-between gap-2">
+        <button id="btn-archived" type="button" class="px-2.5 py-1 rounded-lg text-[11px] text-slate-500 hover:text-slate-800 hover:bg-slate-100 inline-flex items-center gap-1.5"><i class="fa-regular fa-trash-can text-[10px]"></i><span>ถังขยะ</span></button>
+        <button id="btn-empty-trash" type="button" hidden class="px-2.5 py-1 rounded-lg text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1.5"><i class="fa-solid fa-trash-can text-[10px]"></i><span>ล้างถังขยะ</span></button>
+      </div>
     </section>
   </div>
 

@@ -38,7 +38,8 @@ class FakeSupabase:
             }],
             "documents": [], "document_versions": [], "number_sequences": [],
             "outgoing_register": [], "incoming_register": [], "source_files": [], "legal_references": [],
-            "org_units": [], "final_files": [], "legal_sources": [],
+            "org_units": [], "final_files": [], "legal_sources": [], "storage_purge_queue": [],
+            "conversations": [], "audit_log": [],
         }
         self.storage: Dict[str, bytes] = {}
         self.rpc_errors: Dict[str, Dict[str, str]] = {}
@@ -199,6 +200,29 @@ class FakeSupabase:
                    "uploaded_by": self._caller(request), "created_at": "2026-11-15T00:00:00Z"}
             self.tables["final_files"].append(row)
             return self._json(200, row)
+        if name == "purge_document":
+            doc = next((d for d in self.tables["documents"] if d["id"] == p["p_document_id"]), None)
+            if doc is None:
+                return self._json(404, {"code": "P0002", "message": "ไม่พบเอกสาร"})
+            if doc.get("status") != "archived":
+                return self._json(400, {"code": "22023", "message": "ต้องย้ายเอกสารไปถังขยะก่อนจึงลบถาวรได้"})
+            if doc.get("doc_number"):
+                return self._json(403, {"code": "42501", "message": "เอกสารนี้ออกเลขที่หนังสือแล้ว เป็นหนังสือราชการจริง ลบถาวรไม่ได้"})
+            if any(f["document_id"] == doc["id"] for f in self.tables["final_files"]):
+                return self._json(403, {"code": "42501", "message": "เอกสารนี้มีฉบับจริงที่อัปโหลดแล้ว ลบถาวรไม่ได้"})
+            src = (doc.get("workspace") or {}).get("sourceFileId")
+            files = [f for f in self.tables["source_files"] if f.get("document_id") == doc["id"] or f.get("id") == src]
+            paths = [f["storage_path"] for f in files]
+            self.tables["storage_purge_queue"] += [{"bucket": "sources", "storage_path": x} for x in paths]
+            self.tables["source_files"] = [f for f in self.tables["source_files"] if f not in files]
+            self.tables["document_versions"] = [v for v in self.tables["document_versions"] if v["document_id"] != doc["id"]]
+            self.tables["documents"].remove(doc)
+            self.tables["audit_log"].append({"action": "purge", "entity_id": doc["id"], "details": {"subject": doc.get("subject")}})
+            return self._json(200, paths)
+        if name == "storage_purge_done":
+            before = len(self.tables["storage_purge_queue"])
+            self.tables["storage_purge_queue"] = [q for q in self.tables["storage_purge_queue"] if q["storage_path"] not in p["p_paths"]]
+            return self._json(200, before - len(self.tables["storage_purge_queue"]))
         return self._json(404, {"message": f"no function {name}"})
 
     # ---------------------------------------------------------------- Storage
@@ -221,6 +245,11 @@ class FakeSupabase:
             if obj not in self.storage:
                 return self._json(404, {"error": "not_found", "message": "Object not found"})
             return httpx.Response(200, content=self.storage[obj])
+        if request.method == "DELETE" and path.startswith("/storage/v1/object/") and path.count("/") == 4:
+            # ลบหลายไฟล์: {"prefixes": [...]} คืนเฉพาะไฟล์ที่มีอยู่และลบได้
+            bucket = path.rsplit("/", 1)[1]
+            gone = [x for x in json.loads(request.content)["prefixes"] if self.storage.pop(f"{bucket}/{x}", None) is not None]
+            return self._json(200, [{"name": x, "bucket_id": bucket} for x in gone])
         if request.method == "DELETE" and path.startswith("/storage/v1/object/"):
             self.storage.pop(path[len("/storage/v1/object/"):], None)
             return self._json(200, {"message": "Successfully deleted"})

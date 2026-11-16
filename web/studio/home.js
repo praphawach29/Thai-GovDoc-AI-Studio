@@ -99,12 +99,17 @@
     $('btn-archived').innerHTML = showArchived
       ? '<i class="fa-solid fa-arrow-left text-[10px]"></i><span>กลับไปงานล่าสุด</span>'
       : '<i class="fa-regular fa-trash-can text-[10px]"></i><span>ถังขยะ</span>';
+    $('trash-note').hidden = !showArchived;
+    $('btn-empty-trash').hidden = !(showArchived && recent.length);
     const action = (e) => showArchived
-      ? `<button type="button" data-restore="${esc(e.id)}" class="absolute right-1 top-1.5 px-1.5 h-6 rounded-md text-[10px] text-emerald-700 hover:bg-emerald-50 border border-emerald-200 bg-white" title="กู้คืนกลับไปที่งานล่าสุด"><i class="fa-solid fa-rotate-left mr-0.5"></i>กู้คืน</button>`
+      ? `<span class="absolute right-1 top-1.5 flex items-center gap-1">
+          <button type="button" data-restore="${esc(e.id)}" class="px-1.5 h-6 rounded-md text-[10px] text-emerald-700 hover:bg-emerald-50 border border-emerald-200 bg-white" title="กู้คืนกลับไปที่งานล่าสุด"><i class="fa-solid fa-rotate-left mr-0.5"></i>กู้คืน</button>
+          <button type="button" data-purge="${esc(e.id)}" class="w-6 h-6 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 focus:text-rose-600" title="ลบถาวร (กู้คืนไม่ได้)" aria-label="ลบถาวร ${esc(e.title || '')}"><i class="fa-solid fa-xmark text-[12px]"></i></button>
+        </span>`
       : `<button type="button" data-archive="${esc(e.id)}" class="absolute right-1 top-1.5 w-6 h-6 rounded-md text-slate-300 hover:text-rose-600 hover:bg-rose-50 group-hover:text-slate-500 focus:text-rose-600 transition" title="ลบ (ย้ายไปถังขยะ กู้คืนได้)" aria-label="ลบ ${esc(e.title || '')}"><i class="fa-regular fa-trash-can text-[11px]"></i></button>`;
     $('recent-list').innerHTML = items.length ? items.slice(0, 15).map(e => `
       <li class="group relative" data-doc="${esc(e.id)}">
-        <a href="editor.html?id=${encodeURIComponent(e.id)}" class="block pl-2.5 ${showArchived ? 'pr-16' : 'pr-8'} py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors" title="${esc(e.title)}">
+        <a href="editor.html?id=${encodeURIComponent(e.id)}" class="block pl-2.5 ${showArchived ? 'pr-24' : 'pr-8'} py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors" title="${esc(e.title)}">
           <span class="flex items-center gap-2.5">
             <span class="w-2 h-2 rounded-full shrink-0 ${DOT[e.doc?.urgency] || 'bg-slate-300'}"></span>
             <span class="truncate flex-1">${esc(e.title || 'ไม่มีชื่อเรื่อง')}</span>
@@ -132,6 +137,43 @@
       toast(trashing ? 'ลบแล้ว — กู้คืนได้ที่ "ถังขยะ" ใต้รายการงานล่าสุด' : 'กู้คืนแล้ว');
     } catch (err) { b.disabled = false; toast((trashing ? 'ลบไม่สำเร็จ: ' : 'กู้คืนไม่สำเร็จ: ') + err.message, 'error'); }
   }
+  // ลบถาวร (เฉพาะในถังขยะ) — คืนพื้นที่: เอกสาร ประวัติเวอร์ชัน และไฟล์ต้นเรื่อง
+  async function purgeDocs(ids) {
+    const failed = [];
+    for (const id of ids) {
+      try { await store.purge(id); recent = recent.filter(e => e.id !== id); }
+      catch (err) { failed.push(err.message); }
+    }
+    renderRecent();
+    return failed;
+  }
+  function purgeReport(done, failed) {
+    if (!failed.length) return toast(`ลบถาวรแล้ว ${toThai(done)} ฉบับ`);
+    toast((done ? `ลบถาวรแล้ว ${toThai(done)} ฉบับ · ` : '') + `ลบไม่ได้ ${toThai(failed.length)} ฉบับ: ${[...new Set(failed)].join(' / ')}`, 'warn');
+  }
+  $('recent-list').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-purge]');
+    if (!b) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const e = recent.find(x => x.id === b.dataset.purge);
+    if (!confirm(`ลบ "${e?.title || 'ไม่มีชื่อเรื่อง'}" ถาวร?
+
+เอกสาร ประวัติเวอร์ชัน และไฟล์ต้นเรื่องจะถูกลบ กู้คืนไม่ได้`)) return;
+    b.disabled = true;
+    const failed = await purgeDocs([b.dataset.purge]);
+    purgeReport(1 - failed.length, failed);
+  });
+  $('btn-empty-trash').addEventListener('click', async () => {
+    const ids = recent.map(e => e.id);
+    if (!ids.length || !confirm(`ล้างถังขยะ: ลบถาวรทั้ง ${toThai(ids.length)} ฉบับ?
+
+เอกสาร ประวัติเวอร์ชัน และไฟล์ต้นเรื่องจะถูกลบ กู้คืนไม่ได้`)) return;
+    const btn = $('btn-empty-trash');
+    btn.disabled = true;
+    const failed = await purgeDocs(ids);
+    btn.disabled = false;
+    purgeReport(ids.length - failed.length, failed);
+  });
   $('recent-list').addEventListener('click', onTrashClick);
   $('pending-list').addEventListener('click', onTrashClick);
   auth.ready.then(loadRecent);

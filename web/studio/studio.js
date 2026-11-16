@@ -125,6 +125,11 @@
       entry.archived = on;
       if (!(await localStore.save(entry))) throw new Error('พื้นที่เก็บในเบราว์เซอร์เต็ม');
     },
+    async purge(id) {
+      const list = readAll();
+      if (!list.some(x => x.id === id && x.archived)) throw new Error('ต้องอยู่ในถังขยะก่อนจึงลบถาวรได้');
+      writeAll(list.filter(x => x.id !== id));
+    },
     async get(id) { return readAll().find(x => x.id === id) || null; },
     async save(entry) {
       const list = readAll().filter(x => x.id !== entry.id);
@@ -155,6 +160,10 @@
     async setArchived(id, on) {
       await sendJSON('PATCH', '/documents/' + encodeURIComponent(id) + '/status', { status: on ? 'archived' : 'draft' });
     },
+    // ลบถาวร: เอกสาร + ประวัติเวอร์ชัน + ไฟล์ต้นเรื่อง (เฉพาะร่างในถังขยะ)
+    async purge(id) {
+      return request('/documents/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json());
+    },
     async get(id) {
       try {
         const r = await request('/documents/' + encodeURIComponent(id)).then(x => x.json());
@@ -181,6 +190,7 @@
   const store = {
     list: async (opts) => (await pick()).list(opts),
     setArchived: async (id, on) => (await pick()).setArchived(id, on),
+    purge: async (id) => (await pick()).purge(id),
     get: async (id) => (await pick()).get(id),
     save: async (entry) => (await pick()).save(entry),
     create: async (entry) => (await pick()).create(entry),

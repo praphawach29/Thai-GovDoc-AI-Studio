@@ -1,5 +1,6 @@
 """เอกสารที่เก็บบนเซิร์ฟเวอร์ (โหมด Supabase): ร่างที่กำลังแก้ + ประวัติเวอร์ชัน"""
 
+import logging
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
@@ -8,7 +9,10 @@ from pydantic import BaseModel, Field
 
 from core.models import GovDocumentSchema
 from server.auth import CurrentUser, Profile, get_profile, get_supabase, require_supabase_user
-from server.supabase import SupabaseClient
+from server.settings import Settings, get_settings
+from server.supabase import SupabaseClient, SupabaseError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["documents"])
 
@@ -83,6 +87,35 @@ def set_document_status(document_id: UUID, body: StatusIn, client: SupabaseClien
     if not rows:
         raise HTTPException(status_code=404, detail="ไม่พบเอกสาร")
     return {"id": str(document_id), "status": rows[0].get("status", body.status)}
+
+
+def _remove_queued_files(client: SupabaseClient, bucket: str, paths: List[str]) -> Dict[str, int]:
+    """ลบไฟล์ใน Storage ตามคิว (รวมไฟล์ที่ค้างจากครั้งก่อน) แล้วเอาออกจากคิว
+    ไฟล์ที่ลบไม่สำเร็จยังอยู่ในคิว ลองใหม่ตอนลบถาวรครั้งถัดไป"""
+    queued = [r["storage_path"] for r in client.select(
+        "storage_purge_queue", {"select": "storage_path", "bucket": f"eq.{bucket}", "limit": "100"})]
+    todo = list(dict.fromkeys([*paths, *queued]))
+    try:
+        done = [p for p in client.remove_many(bucket, todo) if p in todo]
+    except SupabaseError as exc:
+        logger.warning("purge: ลบไฟล์ใน Storage ไม่สำเร็จ (%s)", exc.message)
+        done = []
+    if done:
+        client.rpc("storage_purge_done", {"p_paths": done})
+    return {"files_removed": len(done), "files_pending": len(todo) - len(done)}
+
+
+@router.delete("/api/v1/documents/{document_id}")
+def purge_document(
+    document_id: UUID,
+    client: SupabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
+):
+    """ลบถาวรจากถังขยะ: เอกสาร ประวัติเวอร์ชัน แชต และไฟล์ต้นเรื่อง (คืนพื้นที่จัดเก็บ)
+    ลบได้เฉพาะร่างในถังขยะที่ยังไม่ออกเลข/ไม่มีฉบับจริง — ฐานข้อมูลตรวจเงื่อนไขและบันทึก audit"""
+    paths = client.rpc("purge_document", {"p_document_id": str(document_id)}) or []
+    paths = [p if isinstance(p, str) else next(iter(p.values())) for p in paths]
+    return {"id": str(document_id), **_remove_queued_files(client, settings.source_bucket, paths)}
 
 
 @router.post("/api/v1/documents", status_code=201)
