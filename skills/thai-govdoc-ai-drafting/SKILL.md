@@ -37,8 +37,9 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 | คลังกฎหมาย (นำเข้า) | `core/legal_import.py`, `server/routers/legal_import.py`, migration 8 | ไฟล์สแกน → AI อ่านทีละหน้า (`/legal/ocr-page`, เบราว์เซอร์เรนเดอร์ภาพด้วย pdf.js) → `split_sections` (ข้อ/มาตรา, หมวด, บัญชีท้าย, ตัดหัวกระดาษราชกิจจาฯ) → `legal_references` (source_id, page_from/to) ยังไม่ยืนยัน |
 | เสนอ/แนบข้อกฎหมาย | `core/legal_suggest.py` (`/legal/suggest`), `core/legal_pages.py`, `server/routers/export.py` | คัดด้วยคำ → AI เลือกจากรหัสในรายการที่ยืนยันแล้วเท่านั้น; PDF ต่อหน้าจริงจากไฟล์ใน Storage (header `X-GovDoc-Legal-Pages`) |
 | ฉบับจริง | `core/final_file.py`, `server/routers/finals.py` | อัปโหลด Word/PDF ที่แก้เสร็จกลับเข้าระบบ (sha256, append-only) |
+| ตัวอย่างของหน่วย (สำนวน) | `core/style_examples.py`, `server/routers/examples.py`, migration 10 | หนังสือฉบับจริง (อัปโหลดหลายไฟล์จากหน้าแรก / ปุ่ม "นี่คือฉบับจริง" ในแท็บ ฉบับจริง) → `parse_example`/`from_document` แยก เรื่อง/ภาคเหตุ/ข้อเท็จจริง/ความประสงค์ + `keywords` → ตอนร่าง `example_finder` → `rank_examples` (คำที่ตรงกัน ประเภทเดียวกัน ≤ ๓) → `few_shot_block` (ปิดเลข/วันที่/ชื่อ, งบ ~4,800 ตัวอักษร) → `result.style_examples` แสดงในแชท/แท็บต้นเรื่อง |
 | หน้าเว็บ | `web/studio/index.html`/`home.js` (หน้าแรก), `editor.html`/`editor.js`/`studio.css` (หน้าแก้ไข) | |
-| ฐานข้อมูล | `supabase/migrations/2026111*` (7 ไฟล์) | RLS ตาม org, RPC security definer, audit |
+| ฐานข้อมูล | `supabase/migrations/2026111*` (10 ไฟล์) | RLS ตาม org, RPC security definer, audit |
 
 ## 3. กฎรูปแบบที่ตกลงกับผู้ใช้แล้ว (ห้ามเปลี่ยนโดยไม่ถาม)
 
@@ -83,6 +84,12 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 - กฎใน `SYSTEM_PROMPT`: ใช้เฉพาะข้อเท็จจริงในต้นเรื่อง, ขาดให้ `[✏️ ระบุ...]`, ห้ามแต่งกฎหมาย, ไม่เขียนส่วนหัว/ผู้ลงนาม, เลขข้อ ๑. ๑.๑ ไม่ใช้ markdown, บันทึกไม่ต้องเขียน "จึงเรียนมาเพื่อ..." (ระบบเติมตามขั้นเสนอ)
 - AI OCR อธิบายภาพในวงเล็บ เช่น `[ตราสัญลักษณ์: ...]`, `[ตรายางมุมบนซ้าย:] ... เลขรับ` — ตัวสกัดผู้ส่งต้องใช้ชื่อไทยข้างใน และข้ามตรายางรับ
 - วันที่ลงหนังสือ: เลือกบรรทัดที่มีแต่วันที่ก่อน วันที่ในประโยค (วันจัดงาน)
+- **ตัวอย่างสำนวนของหน่วย (few-shot)** — กฎ 9 ใน `SYSTEM_PROMPT` + ส่วน `<example>` ใน `build_user_prompt(examples=...)`
+  - ตัวอย่างอยู่ **ก่อน** `<instruction>`/`<source>` เสมอ (เรื่องใหม่อยู่ท้าย) และมีคำสั่งห้ามใช้ข้อเท็จจริงในตัวอย่าง
+  - `mask_facts` ปิด วันที่ → `[วันที่]`, ตัวเลข → `[เลข]`, คำนำหน้า+ชื่อ → `[ชื่อบุคคล]` (ยกเว้น นายก/นายทะเบียน/นายอำเภอ ฯลฯ) — เลขข้อ ๑. คงรูปแบบ
+  - AI คัดลอกส่วนที่ปิดมา → `_clean` → `unmask_leftovers` เปลี่ยนเป็น `[✏️ ระบุ...]` (ผู้ใช้เห็นเป็นจุดต้องแก้)
+  - เลือกด้วยคำ (`core/legal_suggest._words` + IDF, คำในชื่อเรื่อง ×๒, หารรากความยาว) ต้องตรง ≥ ๒ คำ; ไม่ใช้ embedding — คำสำคัญคำนวณตอนเก็บ (คอลัมน์ `keywords`) ตอนร่างดึงแค่ id/subject/keywords แล้วค่อยดึงเนื้อความ ≤ ๓ ฉบับ
+  - ตารางยังไม่มี/ฐานข้อมูลขัดข้อง/ชั้นลับ/ไม่มีคีย์ AI → ร่างต่อโดยไม่มีตัวอย่าง (ห้ามทำให้การร่างล้ม)
 - คีย์ตั้งใน Vercel เท่านั้น (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID` ถ้าเป็นคีย์ระดับองค์กร) ห้ามให้ผู้ใช้วางคีย์ในแชท; แนะนำโปรเจกต์ Gemini แบบเสียเงิน (free tier อาจนำข้อมูลไปฝึก)
 
 ## 6. หน้าแก้ไข (web/studio/editor.js)
@@ -91,13 +98,18 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 - ช่องที่ทั้งช่องเป็น placeholder เท่านั้นที่เลือกให้อัตโนมัติเมื่อคลิก (ไม่งั้นกดปุ่มแล้ว placeholder กลางย่อหน้าหาย)
 - เปลี่ยนประเภทหนังสือหลังร่างได้ (ร่างใหม่จากต้นเรื่องเดิม เก็บฉบับเก่าในประวัติ)
 - `fitOneLine` บีบส่วนราชการให้บรรทัดเดียวเหมือนไฟล์ส่งออก
+- ตัวอย่างที่ร่างนี้อ้างสำนวน: `entry.styleExamples` (เก็บใน workspace, อัปเดตตอนร่างใหม่) → `#chat-style` ในแชท + `#style-refs` ใต้สรุปต้นเรื่อง
+- "นี่คือฉบับจริง" (`#mark-example` แท็บ ฉบับจริง): `persist()` ก่อน แล้ว `/examples/from-document` — เซิร์ฟเวอร์อ่าน `documents.workspace.doc` เอง (ไม่เชื่อ doc จากเบราว์เซอร์), กดซ้ำ = อัปเดต (unique index ต่อ document_id), ปฏิเสธถ้าเรื่อง/เนื้อความยังมี `[✏️`
 
 ## 7. ทดสอบก่อน push ทุกครั้ง
 
 ```bash
-.venv/bin/python -m pytest -q          # ปัจจุบัน 292 ผ่าน 1 ข้าม
+.venv/bin/python -m pytest -q          # ปัจจุบัน 386 รายการ 1 ข้าม (Windows: test_width_measure_counts_letter_spacing ไม่ผ่าน — PyThaiNLP)
 ```
 - ทดสอบที่เกี่ยวข้อง: `test_step7_unit_chain`, `test_step8_font_spacing` (ระยะ/เส้นประ/ไอคอน), `test_step9_final_files`, `test_step10_llm_drafting`, `test_phase6_memo_template`
+- คลังตัวอย่าง: `test_step18_style_examples.py` (แยกส่วน/ปิดข้อเท็จจริง/เลือก), `test_step18_style_examples_api.py` (API + few-shot ใน prompt ตอนร่าง)
+- หน้าเว็บโหมด Supabase บนเครื่อง: รันแอปจริงกับ `FakeSupabase` แล้ว mount proxy `/fake-sb/{path}` → `fake.handle` ให้ supabase-js ในเบราว์เซอร์ล็อกอินได้ (รหัสผ่าน `correct-password`) — ต้อง (๑) ตั้ง `supabase_url` = URL proxy และออก token ด้วย `iss` = `<proxy>/auth/v1` (๒) `transport_factory` ตัด `/fake-sb` ออกก่อนส่งให้ fake ไม่งั้น JWKS 404 → API ตอบ 503 "ตรวจสอบการเข้าสู่ระบบไม่ได้ชั่วคราว"; fake เก็บข้อมูลในหน่วยความจำ — รีสตาร์ทก่อนรันชุดทดสอบใหม่
+- Playwright: `chromium.launch({ channel: 'chrome' })` ใช้ Chrome ในเครื่อง (ติดตั้งแพ็กเกจด้วย `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`); ไฟล์อัปโหลดส่งเป็น buffer ผ่าน `setInputFiles([{name, mimeType, buffer}])` ได้
 - `tests/conftest.py` ล้างคีย์ AI อัตโนมัติ — เทส AI ใช้ fake/mock เท่านั้น
 - หน้าเว็บ: รัน `uvicorn server.main:app --port 8614` แล้วใช้ Playwright (`require('playwright')`) — Tailwind CDN โหลดไม่ได้ในเครื่อง cloud จึงตรวจตำแหน่งด้วย `getBoundingClientRect` ไม่ใช่หน้าตาโดยรวม
 - Word: แปลงด้วย `soffice --headless --convert-to pdf` + `pdftoppm` ดูตำแหน่งได้ แต่ LibreOffice ไม่มี TH SarabunIT๙ ตัวอักษรจึงเล็กกว่าจริง — บอกผู้ใช้ตรง ๆ ว่ายังไม่ได้เปิดใน MS Word
@@ -136,3 +148,6 @@ for p in d.paragraphs:
 | ไอคอนไฟล์เป็นหน้าว่าง | thumbnail ว่างจากแม่แบบ | `_drop_blank_thumbnail` |
 | AI ร่างหนังสือภายนอกทั้งที่เป็นเรื่องรับเข้า | classifier เดา | `choose_output_type`: มีต้นเรื่อง = บันทึกข้อความ + ปุ่มเปลี่ยนประเภท |
 | production ถูกทับด้วย commit จาก master | production ติดตาม branch อื่น | ตั้ง Branch Tracking เป็น branch งาน |
+| ร่างลอกชื่อ/เลข/วันที่จากหนังสือเก่า (เสี่ยงเมื่อใส่ตัวอย่าง) | few-shot ส่งข้อความดิบ | `mask_facts` ก่อนใส่ prompt + `unmask_leftovers` หลังได้คำตอบ + `fact_check` ตามเดิม |
+| ข้อความ OCR ต่อกันเป็นก้อน "...เยาวชนจึงเห็นควร..." | รวมบรรทัดที่ OCR ตัดกลางประโยคโดยไม่ดูคำขึ้นต้น | `_join`: บรรทัดที่ขึ้นต้น เลขข้อ หรือ "จึง..." ขึ้นย่อหน้าใหม่ |
+| หลาย session แก้โฟลเดอร์เดียวกันบน branch เดียว แล้ว commit ไฟล์ของกันและกัน | `git add` ทั้งไฟล์/ทั้งโฟลเดอร์ | ดู `git status` ก่อน commit, `git add` เฉพาะไฟล์ของงานตัวเอง, เลข migration ไม่ซ้ำ (ดูไฟล์ล่าสุดใน `supabase/migrations/` ก่อนตั้งชื่อ) |
