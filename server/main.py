@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.auth import get_current_user
-from server.routers import account, documents, drafting, export, finals, health, legal, registry, sources, studio
+from server.routers import account, documents, drafting, export, finals, health, legal, legal_import, registry, sources, studio
 from server.settings import get_settings
 from server.supabase import SupabaseError
 
@@ -26,7 +26,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.allowed_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT"],
+        allow_methods=["GET", "POST", "PUT", "PATCH"],
         allow_headers=["Content-Type", "Authorization"],
     )
     # ไม่ต้องล็อกอิน: สถานะระบบ และค่าตั้งที่หน้า login ต้องใช้
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
         app.include_router(module.router)
     # ต้องล็อกอินเมื่อเปิดโหมด Supabase (โหมดเครื่องเดียว get_current_user คืน None)
     protected = [Depends(get_current_user)]
-    for module in (sources, drafting, legal, export, registry, studio, documents, finals):
+    for module in (sources, drafting, legal, legal_import, export, registry, studio, documents, finals):
         app.include_router(module.router, dependencies=protected)
 
     @app.exception_handler(SupabaseError)

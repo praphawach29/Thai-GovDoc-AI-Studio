@@ -88,6 +88,11 @@ class SupabaseClient:
         )
         return res.json()[0]
 
+    def insert_many(self, table: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """เพิ่มหลายแถวในคำขอเดียว"""
+        res = self._request("POST", f"/rest/v1/{table}", json=rows, headers={"Prefer": "return=representation"})
+        return res.json()
+
     def update(self, table: str, filters: Dict[str, str], values: Dict[str, Any]) -> List[Dict[str, Any]]:
         res = self._request(
             "PATCH", f"/rest/v1/{table}", params=filters, json=values,

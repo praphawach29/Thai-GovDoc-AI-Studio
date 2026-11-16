@@ -47,6 +47,24 @@
     templates: () => request('/studio/templates').then(r => r.json()),
     template: (id) => request('/studio/templates/' + encodeURIComponent(id)).then(r => r.json()),
     legal: () => request('/legal/references').then(r => r.json()),
+    // คลังกฎหมาย: นำเข้าไฟล์สแกน → AI อ่านทีละหน้า → แยกเป็นข้อ → ยืนยัน (โหมดเซิร์ฟเวอร์)
+    legalImport: {
+      async upload(file) {
+        const { path, upload_url } = await postJSON('/legal/sources/upload-url', { filename: file.name, size_bytes: file.size }).then(r => r.json());
+        await putToStorage(upload_url, file, 'อัปโหลดไฟล์กฎหมายไม่สำเร็จ');
+        return postJSON('/legal/sources', { path, filename: file.name }).then(r => r.json());
+      },
+      ocrPage(blob, page) {
+        const fd = new FormData();
+        fd.append('image', blob, 'page-' + page + '.jpg');
+        fd.append('page', String(page));
+        return request('/legal/ocr-page', { method: 'POST', body: fd }).then(r => r.json());
+      },
+      sections: (sourceId, pageTexts, title) => postJSON('/legal/sources/' + encodeURIComponent(sourceId) + '/sections', { page_texts: pageTexts, title: title || '' }).then(r => r.json()),
+      sources: () => request('/legal/sources').then(r => r.json()),
+      fileUrl: (sourceId) => request('/legal/sources/' + encodeURIComponent(sourceId) + '/file-url').then(r => r.json()).then(r => r.url),
+      verify: (ids, verified = true) => sendJSON('PATCH', '/legal/references/verify', { ids, verified }).then(r => r.json()),
+    },
     health: () => fetch(API + '/health').then(r => r.ok),
     me: () => request('/me').then(r => r.json()),
     // โหมดเซิร์ฟเวอร์: อัปโหลดไฟล์ต้นเรื่องตรงเข้า Supabase Storage (ไม่ผ่าน API ซึ่งรับไฟล์ใหญ่ไม่ได้)

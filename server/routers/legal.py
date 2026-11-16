@@ -12,11 +12,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from core.legal_sources import LegalLibrary, LegalReference
 from server.auth import CurrentUser, get_current_user, get_profile, get_supabase
 from server.settings import Settings, get_settings
+from server.supabase import SupabaseError
 
 router = APIRouter(tags=["legal"])
 
 _FIELDS = ("title", "section", "quote", "url", "effective_date", "verified")
 _COLUMNS = "id,title,section,quote,url,effective_date,verified,recorded_by,recorded_at"
+# คอลัมน์จากการนำเข้าไฟล์ (migration 8) — ถ้ายังไม่ได้รัน ใช้ชุดเดิม
+_IMPORT_COLUMNS = ",source_id,page_from,page_to,chapter"
 
 
 def _client(user, settings):
@@ -32,10 +35,14 @@ def list_legal_references(
     client = _client(user, settings)
     if client is None:
         return {"references": [ref.model_dump() for ref in LegalLibrary().list(verified_only=verified_only)]}
-    params = {"select": _COLUMNS, "order": "recorded_at.desc"}
+    params = {"select": _COLUMNS + _IMPORT_COLUMNS, "order": "recorded_at.desc"}
     if verified_only:
         params["verified"] = "eq.true"
-    return {"references": client.select("legal_references", params)}
+    try:
+        return {"references": client.select("legal_references", params)}
+    except SupabaseError:
+        params["select"] = _COLUMNS
+        return {"references": client.select("legal_references", params)}
 
 
 @router.post("/api/v1/legal/references")

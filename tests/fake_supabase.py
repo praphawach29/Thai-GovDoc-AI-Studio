@@ -38,7 +38,7 @@ class FakeSupabase:
             }],
             "documents": [], "document_versions": [], "number_sequences": [],
             "outgoing_register": [], "incoming_register": [], "source_files": [], "legal_references": [],
-            "org_units": [], "final_files": [],
+            "org_units": [], "final_files": [], "legal_sources": [],
         }
         self.storage: Dict[str, bytes] = {}
         self.rpc_errors: Dict[str, Dict[str, str]] = {}
@@ -120,13 +120,15 @@ class FakeSupabase:
         rows = self.tables[table]
         filters = {k: v[3:] for k, v in query.items() if v.startswith("eq.")}
         not_eq = {k: v[4:] for k, v in query.items() if v.startswith("neq.")}
+        in_list = {k: v[4:-1].lower().split(",") for k, v in query.items() if v.startswith("in.(")}
         if table == "profiles":
             filters = {k: v for k, v in filters.items() if k == "user_id"}
             filters["user_id"] = self._caller(request) if filters.get("user_id") else filters.get("user_id")
 
         def match(r):
             return (all(str(r.get(k)).lower() == v.lower() for k, v in filters.items())
-                    and all(str(r.get(k)).lower() != v.lower() for k, v in not_eq.items()))
+                    and all(str(r.get(k)).lower() != v.lower() for k, v in not_eq.items())
+                    and all(str(r.get(k)).lower() in v for k, v in in_list.items()))
 
         if request.method == "GET":
             out = [r for r in rows if match(r)]
@@ -141,9 +143,10 @@ class FakeSupabase:
             return self._json(200, out)
         body = json.loads(request.content or b"{}")
         if request.method == "POST":
-            row = {"id": str(uuid.uuid4()), "updated_at": "2026-11-15T00:00:00Z", **body}
-            rows.append(row)
-            return self._json(201, [row])
+            new = [{"id": str(uuid.uuid4()), "updated_at": "2026-11-15T00:00:00Z", **b}
+                   for b in (body if isinstance(body, list) else [body])]
+            rows.extend(new)
+            return self._json(201, new)
         if request.method == "PATCH":
             changed = [r for r in rows if match(r)]
             for r in changed:

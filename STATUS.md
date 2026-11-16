@@ -13,7 +13,7 @@
 | เว็บ | `https://thai-gov-doc-ai-studio.vercel.app/studio/` (Vercel, region sin1) |
 | Production branch | `claude/awesome-hopper-wi1sv4` — push แล้วขึ้นเว็บเอง (~2–3 นาที) ไม่ต้อง Promote |
 | ฐานข้อมูล / ล็อกอิน / ไฟล์ | Supabase project `fjnmptcnaehbyidsgphc` (Auth, Postgres + RLS, Storage bucket `sources`) |
-| Migration ที่ติดตั้งแล้ว | 1–7: core schema, registry/audit, storage, document workspace, issuing units, unit chain, final files |
+| Migration ที่ติดตั้งแล้ว | 1–7: core schema, registry/audit, storage, document workspace, issuing units, unit chain, final files — **8 (คลังกฎหมาย `20261116000008_legal_sources.sql`) รอผู้ใช้รัน** |
 | AI | Gemini `gemini-3.8-flash` ก่อน → สำรอง Claude `claude-opus-5-5` (effort medium); ตัวที่อ่านไฟล์ได้ร่างต่อจนจบ |
 | ขนาด function | ~249 MB (เพดาน Vercel 250 MB) |
 | Log | Vercel runtime logs (แผน Hobby เก็บ 1 ชั่วโมง) |
@@ -48,6 +48,11 @@
 - **Word:** ครุฑทึบจากแม่แบบหน่วยงาน, "บันทึกข้อความ" กึ่งกลาง, เส้นประหัวฟอร์มเป็นเส้นล็อก (แก้ข้อความแล้วเส้นไม่เพี้ยน — ผู้ใช้ยืนยันใน MS Word แล้ว), ตัดคำไทย ZWSP + กระจายแบบไทย, ไอคอนไฟล์ปกติ
 - **PDF (Typst):** รูปแบบเดียวกับ Word, ฟอนต์ที่เลือกจริง
 - **ฉบับจริง:** อัปโหลด Word/PDF ที่แก้เสร็จกลับเข้าระบบ (เก็บ sha256, ห้ามลบ/แก้)
+
+### คลังกฎหมาย
+- นำเข้าไฟล์กฎหมาย/ระเบียบ (PDF สแกน) จากหน้าแรก → คลังกฎหมาย: เบราว์เซอร์เรนเดอร์ทีละหน้า → AI อ่านหน้าละคำขอ (พร้อมกัน ๓) → แยกเป็นข้อ/มาตรา พร้อมเลขหน้าและหมวด (`core/legal_import.py`) → ผู้ใช้ตรวจแล้วยืนยันรายข้อ/ทั้งฉบับ
+- ไฟล์ที่ทดสอบโครงสร้างแล้ว: ระเบียบ กทม. เงินบำรุงฯ ๒๕๖๓ (๕๕ หน้า, หมวด + บัญชีท้าย), ข้อบัญญัติ กทม. ๒๕๖๓, พ.ร.บ.เครื่องหมายราชการ (มาตรา เลขอารบิก), ประกาศ/หนังสือเวียน (ทั้งฉบับ)
+- ยังไม่ทำ: AI เสนอข้อที่เกี่ยวข้องตอนร่าง, แนบหน้าของข้อที่เลือกท้าย PDF
 
 ### บัญชีผู้ใช้
 - ล็อกอินอีเมล/รหัสผ่าน (ปุ่มดูรหัสผ่าน), คำทักทายและการ์ดผู้ใช้จากอีเมล, ข้อมูลแยกตามหน่วยงาน (RLS)

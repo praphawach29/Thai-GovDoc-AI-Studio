@@ -471,16 +471,35 @@
       body.querySelectorAll('[data-template]').forEach(b => b.addEventListener('click', () => openTemplate(b.dataset.template, b.textContent.trim())));
     },
     async legal(body) {
-      const { references } = await api.legal();
-      body.innerHTML = `<p class="text-xs text-slate-500 mb-3">ระบบใส่ข้อกฎหมายลงในร่างเฉพาะรายการที่ <b>ยืนยันแหล่งแล้ว</b> เท่านั้น</p>` +
-        (references.length ? `<ul class="space-y-2">${references.map(r => `
-          <li class="p-3 rounded-xl border border-slate-200">
-            <div class="flex items-start justify-between gap-3">
-              <div class="text-xs font-semibold text-slate-800">${esc(r.title)}${r.section ? ` <span class="font-normal text-slate-500">${esc(r.section)}</span>` : ''}</div>
-              <span class="text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${r.verified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">${r.verified ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'}</span>
-            </div>
-            ${r.quote ? `<p class="text-xs text-slate-600 mt-1.5 font-body leading-relaxed">${esc(r.quote)}</p>` : ''}
-          </li>`).join('')}</ul>` : '<p class="text-xs text-slate-400">ยังไม่มีรายการในคลังกฎหมาย</p>');
+      const server = await auth.serverMode();
+      body.innerHTML = `
+        ${server ? `
+        <div id="law-import" class="mb-4 p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 text-xs space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div><div class="font-semibold text-slate-800"><i class="fa-solid fa-file-import text-emerald-700 mr-1"></i>นำเข้าไฟล์กฎหมาย/ระเบียบ (PDF สแกนได้)</div>
+              <div class="text-slate-500 mt-0.5">AI อ่านทีละหน้า แยกเป็นข้อ/มาตรา พร้อมเลขหน้า แล้วให้คุณตรวจและยืนยัน</div></div>
+            <input id="law-file" type="file" accept=".pdf,application/pdf" class="sr-only">
+            <button type="button" id="law-pick" class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 text-white font-medium"><i class="fa-solid fa-upload"></i>เลือกไฟล์</button>
+          </div>
+          <div id="law-progress" class="hidden">
+            <div class="flex items-center justify-between text-slate-600"><span id="law-status"></span><span id="law-count" class="tabular-nums whitespace-nowrap shrink-0 pl-2"></span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-emerald-100 overflow-hidden"><div id="law-bar" class="h-full bg-emerald-500 transition-all" style="width:0%"></div></div>
+          </div>
+        </div>` : '<p class="mb-3 text-xs text-amber-700">นำเข้าไฟล์กฎหมายได้เมื่อเข้าสู่ระบบและเก็บข้อมูลบนเซิร์ฟเวอร์</p>'}
+        <p class="text-xs text-slate-500 mb-3">ระบบใส่ข้อกฎหมายลงในร่างเฉพาะรายการที่ <b>ยืนยันแล้ว</b> เท่านั้น — ตรวจข้อความกับไฟล์จริงก่อนกดยืนยัน</p>
+        <div id="law-list" class="space-y-4"><p class="text-xs text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลด...</p></div>`;
+      await renderLawList(body);
+      if (!server) return;
+      $('law-pick').addEventListener('click', () => $('law-file').click());
+      $('law-file').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        if (!/\.pdf$/i.test(file.name)) { toast('รับเฉพาะไฟล์ PDF', 'error'); return; }
+        try { await importLaw(file); await renderLawList(body); }
+        catch (err) { lawStatus('นำเข้าไม่สำเร็จ: ' + err.message, null, true); }
+        finally { $('law-pick').disabled = false; }
+      });
     },
     async profile(body) {
       const p = state.profile || await api.profile();
@@ -489,6 +508,116 @@
         <p class="text-[11px] text-slate-400 mt-3">ข้อมูลนี้ใช้เติมหัวหนังสือและผู้ลงนามในร่างทุกฉบับ (ไฟล์ data/user_profile.json)</p>`;
     },
   };
+  // ---------- คลังกฎหมาย: นำเข้าไฟล์ + ตรวจยืนยันรายข้อ ----------
+  function lawStatus(text, ratio, error) {
+    $('law-progress').classList.remove('hidden');
+    $('law-status').textContent = text;
+    $('law-status').className = error ? 'text-rose-700' : 'text-slate-600';
+    if (ratio != null) $('law-bar').style.width = Math.round(ratio * 100) + '%';
+  }
+  // เรนเดอร์หน้าเป็นภาพ JPEG กว้างราว 1400 px (อ่านตัวอักษรไทยได้ชัด ไฟล์ไม่ใหญ่)
+  async function pageJpeg(pdf, n) {
+    const page = await pdf.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: Math.min(3, 1400 / base.width) });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.85));
+  }
+  async function importLaw(file) {
+    $('law-pick').disabled = true;
+    $('law-count').textContent = '';
+    lawStatus('อัปโหลดไฟล์...', 0.02);
+    const source = await api.legalImport.upload(file);
+    const lib = await window.GovDocSourceViewer.loadPdfJs();
+    const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const total = pdf.numPages, texts = new Array(total).fill('');
+    let done = 0, next = 1;
+    lawStatus('AI กำลังอ่านทีละหน้า...', 0.05);
+    // อ่านพร้อมกัน ๓ หน้า (หน้าละหนึ่งคำขอ ไม่ชนเพดานเวลาของเซิร์ฟเวอร์) — หน้าที่พลาดลองใหม่หนึ่งครั้ง
+    async function worker() {
+      while (next <= total) {
+        const n = next++;
+        const blob = await pageJpeg(pdf, n);
+        let out;
+        try { out = await api.legalImport.ocrPage(blob, n); }
+        catch (_) { out = await api.legalImport.ocrPage(blob, n); }
+        texts[n - 1] = out.text;
+        done++;
+        $('law-count').textContent = `${toThai(done)}/${toThai(total)} หน้า`;
+        lawStatus(`AI กำลังอ่านทีละหน้า... (หน้าละราว ๕–๑๐ วินาที)`, 0.05 + 0.85 * done / total);
+      }
+    }
+    await Promise.all([worker(), worker(), worker()]);
+    lawStatus('แยกเป็นข้อ/มาตรา...', 0.95);
+    const res = await api.legalImport.sections(source.id, texts);
+    lawStatus(`เสร็จแล้ว: "${res.title}" แยกได้ ${toThai(res.references.length)} รายการ — ตรวจแล้วกดยืนยันด้านล่าง`, 1);
+    toast('นำเข้าแล้ว — ตรวจข้อความกับไฟล์จริงก่อนกดยืนยัน');
+    lawOpen.add(source.id);
+  }
+  const lawOpen = new Set();                 // กลุ่มที่กางไว้ (ไฟล์ที่เพิ่งนำเข้ากางให้อัตโนมัติ)
+  async function renderLawList(body) {
+    const list = body.querySelector('#law-list');
+    const { references } = await api.legal();
+    if (!references.length) { list.innerHTML = '<p class="text-xs text-slate-400">ยังไม่มีรายการในคลังกฎหมาย</p>'; return; }
+    const groups = new Map();
+    for (const r of references) {
+      const key = r.source_id || 'manual';
+      if (!groups.has(key)) groups.set(key, { title: r.source_id ? r.title : 'รายการที่เพิ่มเอง', items: [] });
+      groups.get(key).items.push(r);
+    }
+    const num = (r) => parseFloat(String(r.section || '').replace(/[๐-๙]/g, d => '๐๑๒๓๔๕๖๗๘๙'.indexOf(d)).replace(/[^\d.]/g, '')) || 9999;
+    list.innerHTML = [...groups.entries()].map(([key, g]) => {
+      g.items.sort((a, b) => (a.page_from || 0) - (b.page_from || 0) || num(a) - num(b));
+      const ok = g.items.filter(r => r.verified).length;
+      const open = lawOpen.has(key) || groups.size === 1;
+      return `<section class="rounded-xl border border-slate-200" data-law-group="${esc(key)}">
+        <header class="px-3.5 py-2.5 flex items-center gap-2 bg-slate-50/70 rounded-t-xl">
+          <button type="button" data-law-toggle="${esc(key)}" class="flex-1 min-w-0 text-left">
+            <div class="text-xs font-semibold text-slate-800 truncate" title="${esc(g.title)}"><i class="fa-solid fa-chevron-${open ? 'down' : 'right'} text-[9px] text-slate-400 mr-1.5"></i>${esc(g.title)}</div>
+            <div class="text-[11px] text-slate-500 mt-0.5 pl-4">${toThai(g.items.length)} รายการ · ยืนยันแล้ว ${toThai(ok)}</div>
+          </button>
+          ${key !== 'manual' ? `<button type="button" data-law-file="${esc(key)}" class="shrink-0 px-2 py-1 rounded-md text-[11px] text-slate-600 hover:bg-slate-200" title="เปิดไฟล์จริง"><i class="fa-regular fa-file-pdf mr-1"></i>ไฟล์</button>` : ''}
+          ${ok < g.items.length ? `<button type="button" data-law-verify-all="${esc(key)}" class="shrink-0 px-2 py-1 rounded-md text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white">ยืนยันทั้งหมด</button>` : ''}
+        </header>
+        <ul class="${open ? '' : 'hidden'} divide-y divide-slate-100">${g.items.map(r => `
+          <li class="px-3.5 py-2.5 text-xs" data-law-ref="${esc(r.id)}">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold text-slate-800">${esc(r.section || '')}${r.page_from ? `<span class="font-normal text-slate-400"> · หน้า ${toThai(r.page_from)}${r.page_to && r.page_to !== r.page_from ? '–' + toThai(r.page_to) : ''}</span>` : ''}</div>
+                ${r.chapter ? `<div class="text-[11px] text-slate-500">${esc(r.chapter)}</div>` : ''}
+                <p class="mt-1 text-slate-600 font-body leading-relaxed whitespace-pre-line line-clamp-3 cursor-pointer" data-law-expand title="กดเพื่อดูทั้งหมด">${esc(r.quote || '')}</p>
+              </div>
+              <button type="button" data-law-verify="${esc(r.id)}" data-on="${r.verified ? '1' : ''}" class="shrink-0 px-2 py-0.5 rounded-full border text-[10px] ${r.verified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-300 hover:border-emerald-400'}">${r.verified ? '<i class="fa-solid fa-check mr-0.5"></i>ยืนยันแล้ว' : 'ยืนยัน'}</button>
+            </div>
+          </li>`).join('')}</ul>
+      </section>`;
+    }).join('');
+    list.onclick = async (e) => {
+      const t = e.target.closest('[data-law-toggle]');
+      if (t) { const k = t.dataset.lawToggle; lawOpen.has(k) ? lawOpen.delete(k) : lawOpen.add(k); return renderLawList(body); }
+      const x = e.target.closest('[data-law-expand]');
+      if (x) { x.classList.toggle('line-clamp-3'); return; }
+      const f = e.target.closest('[data-law-file]');
+      if (f) { try { window.open(await api.legalImport.fileUrl(f.dataset.lawFile), '_blank', 'noopener'); } catch (err) { toast(err.message, 'error'); } return; }
+      const v = e.target.closest('[data-law-verify]');
+      const all = e.target.closest('[data-law-verify-all]');
+      if (!v && !all) return;
+      const ids = v ? [v.dataset.lawVerify]
+        : [...list.querySelectorAll(`[data-law-group="${CSS.escape(all.dataset.lawVerifyAll)}"] [data-law-verify]:not([data-on="1"])`)].map(b => b.dataset.lawVerify);
+      const on = v ? !v.dataset.on : true;
+      if (all && !confirm(`ยืนยัน ${toThai(ids.length)} รายการ? ควรตรวจข้อความกับไฟล์จริงแล้ว`)) return;
+      try {
+        if (await auth.serverMode()) await api.legalImport.verify(ids, on);
+        else throw new Error('ยืนยันได้เมื่อเข้าสู่ระบบ');
+        await renderLawList(body);
+      } catch (err) { toast(err.message, 'error'); }
+    };
+  }
+
   const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', profile: 'ข้อมูลหน่วยงานและผู้ลงนาม' };
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => {
     const key = b.dataset.open;

@@ -209,6 +209,7 @@
   }
 
   window.GovDocSourceViewer = {
+    loadPdfJs,
     open(container, { url, kind }, { onPage } = {}) {
       container.replaceChildren();
       return kind === 'pdf' ? openPdf(container, url, onPage) : openImage(container, url, onPage);
