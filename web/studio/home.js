@@ -69,7 +69,8 @@
 
   // ---------- งานล่าสุด ----------
   // แต่ละรายการบอก ประเภท · หน่วย · สถานะ (ต้องแก้ n / ส่งออกแล้ว / ร่าง) · เวลา — เรื่องซ้ำกันก็แยกได้
-  // เก็บฉบับทดลองออกจากรายการได้ (ไม่ลบ ดึงกลับได้จาก "ที่เก็บไว้")
+  // ลบ = ย้ายไปถังขยะ (status archived) — หายจากงานล่าสุด/งานค้าง กู้คืนได้จาก "ถังขยะ"
+  // ไม่ลบถาวร: ระบบเก็บประวัติเวอร์ชันของเอกสารทุกฉบับ (audit trail)
   const DOT = { normal: 'bg-sky-500', urgent: 'bg-amber-500', very_urgent: 'bg-rose-500', most_urgent: 'bg-rose-700' };
   const TYPE_SHORT = { internal: 'บันทึก', external: 'ภายนอก' };
   const unitLabels = {};
@@ -94,13 +95,13 @@
   function renderRecent() {
     const q = $('recent-search').value.trim();
     const items = recent.filter(e => !q || (e.title || '').includes(q));
-    $('recent-title').textContent = showArchived ? 'ที่เก็บไว้' : 'งานล่าสุด';
+    $('recent-title').textContent = showArchived ? 'ถังขยะ' : 'งานล่าสุด';
     $('btn-archived').innerHTML = showArchived
       ? '<i class="fa-solid fa-arrow-left text-[10px]"></i><span>กลับไปงานล่าสุด</span>'
-      : '<i class="fa-solid fa-box-archive text-[10px]"></i><span>ที่เก็บไว้</span>';
+      : '<i class="fa-regular fa-trash-can text-[10px]"></i><span>ถังขยะ</span>';
     const action = (e) => showArchived
-      ? `<button type="button" data-restore="${esc(e.id)}" class="absolute right-1 top-1.5 px-1.5 h-6 rounded-md text-[10px] text-emerald-700 hover:bg-emerald-50 border border-emerald-200 bg-white" title="ดึงกลับมาที่งานล่าสุด"><i class="fa-solid fa-rotate-left mr-0.5"></i>ดึงกลับ</button>`
-      : `<button type="button" data-archive="${esc(e.id)}" class="absolute right-1 top-1.5 w-6 h-6 rounded-md text-slate-400 hover:text-slate-700 hover:bg-white opacity-0 group-hover:opacity-100 focus:opacity-100 transition" title="เก็บออกจากรายการ (ไม่ลบ ดึงกลับได้)" aria-label="เก็บ ${esc(e.title || '')}"><i class="fa-solid fa-box-archive text-[11px]"></i></button>`;
+      ? `<button type="button" data-restore="${esc(e.id)}" class="absolute right-1 top-1.5 px-1.5 h-6 rounded-md text-[10px] text-emerald-700 hover:bg-emerald-50 border border-emerald-200 bg-white" title="กู้คืนกลับไปที่งานล่าสุด"><i class="fa-solid fa-rotate-left mr-0.5"></i>กู้คืน</button>`
+      : `<button type="button" data-archive="${esc(e.id)}" class="absolute right-1 top-1.5 w-6 h-6 rounded-md text-slate-300 hover:text-rose-600 hover:bg-rose-50 group-hover:text-slate-500 focus:text-rose-600 transition" title="ลบ (ย้ายไปถังขยะ กู้คืนได้)" aria-label="ลบ ${esc(e.title || '')}"><i class="fa-regular fa-trash-can text-[11px]"></i></button>`;
     $('recent-list').innerHTML = items.length ? items.slice(0, 15).map(e => `
       <li class="group relative" data-doc="${esc(e.id)}">
         <a href="editor.html?id=${encodeURIComponent(e.id)}" class="block pl-2.5 ${showArchived ? 'pr-16' : 'pr-8'} py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors" title="${esc(e.title)}">
@@ -112,24 +113,27 @@
         </a>
         ${action(e)}
       </li>`).join('')
-      : `<li class="px-2.5 py-2 text-slate-400">${q ? 'ไม่พบเอกสาร' : showArchived ? 'ยังไม่มีเอกสารที่เก็บไว้' : 'ยังไม่มีเอกสาร — เริ่มร่างฉบับแรกได้เลย'}</li>`;
+      : `<li class="px-2.5 py-2 text-slate-400">${q ? 'ไม่พบเอกสาร' : showArchived ? 'ถังขยะว่าง' : 'ยังไม่มีเอกสาร — เริ่มร่างฉบับแรกได้เลย'}</li>`;
   }
   $('recent-search').addEventListener('input', renderRecent);
   $('btn-archived').addEventListener('click', () => { showArchived = !showArchived; loadRecent(); });
-  $('recent-list').addEventListener('click', async (ev) => {
+  // ลบ (ย้ายไปถังขยะ) / กู้คืน — ใช้ทั้งรายการงานล่าสุดและการ์ดงานค้าง
+  async function onTrashClick(ev) {
     const b = ev.target.closest('[data-archive], [data-restore]');
     if (!b) return;
-    ev.preventDefault();
-    const id = b.dataset.archive || b.dataset.restore, archiving = !!b.dataset.archive;
+    ev.preventDefault(); ev.stopPropagation();
+    const id = b.dataset.archive || b.dataset.restore, trashing = !!b.dataset.archive;
     b.disabled = true;
     try {
-      await store.setArchived(id, archiving);
+      await store.setArchived(id, trashing);
       recent = recent.filter(e => e.id !== id);
       renderRecent();
       window.dispatchEvent(new CustomEvent('govdoc:recent', { detail: showArchived ? null : recent }));
-      toast(archiving ? 'เก็บแล้ว — ดึงกลับได้ที่ "ที่เก็บไว้"' : 'ดึงกลับมาที่งานล่าสุดแล้ว');
-    } catch (err) { b.disabled = false; toast((archiving ? 'เก็บไม่สำเร็จ: ' : 'ดึงกลับไม่สำเร็จ: ') + err.message, 'error'); }
-  });
+      toast(trashing ? 'ลบแล้ว — กู้คืนได้ที่ "ถังขยะ" ใต้รายการงานล่าสุด' : 'กู้คืนแล้ว');
+    } catch (err) { b.disabled = false; toast((trashing ? 'ลบไม่สำเร็จ: ' : 'กู้คืนไม่สำเร็จ: ') + err.message, 'error'); }
+  }
+  $('recent-list').addEventListener('click', onTrashClick);
+  $('pending-list').addEventListener('click', onTrashClick);
   auth.ready.then(loadRecent);
 
   // ---------- งานค้าง (หน้าหลัก) ----------
@@ -141,8 +145,8 @@
     $('pending').hidden = !items.length;
     $('pending-count').textContent = toThai(items.length) + ' ฉบับ';
     $('pending-list').innerHTML = items.slice(0, 4).map(e => `
-      <li><a href="editor.html?id=${encodeURIComponent(e.id)}" data-pending="${esc(e.id)}" class="h-full flex flex-col gap-1.5 p-3 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm transition text-left">
-        <span class="text-xs font-medium text-slate-800 leading-snug line-clamp-2" title="${esc(e.title)}">${esc(e.title || 'ไม่มีชื่อเรื่อง')}</span>
+      <li class="relative group"><a href="editor.html?id=${encodeURIComponent(e.id)}" data-pending="${esc(e.id)}" class="h-full flex flex-col gap-1.5 p-3 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm transition text-left">
+        <span class="text-xs font-medium text-slate-800 leading-snug line-clamp-2 pr-7" title="${esc(e.title)}">${esc(e.title || 'ไม่มีชื่อเรื่อง')}</span>
         <span class="mt-auto flex items-center gap-1.5 text-[11px] text-slate-500 min-w-0">
           ${e.todo > 0
             ? `<span class="shrink-0 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-medium">ต้องแก้ ${toThai(e.todo)} จุด</span>`
@@ -150,7 +154,8 @@
           <span class="truncate">${[TYPE_SHORT[e.docType], e.unitKey && unitLabels[e.unitKey]].filter(Boolean).map(esc).join(' · ')}</span>
           <span class="ml-auto shrink-0 text-slate-400">${esc(relTime(e.updated))}</span>
         </span>
-      </a></li>`).join('')
+      </a>
+      <button type="button" data-archive="${esc(e.id)}" class="absolute right-2 top-2 w-7 h-7 rounded-lg text-slate-300 group-hover:text-slate-500 hover:!text-rose-600 hover:bg-rose-50 focus:text-rose-600 transition" title="ลบ (ย้ายไปถังขยะ กู้คืนได้)" aria-label="ลบ ${esc(e.title || '')}"><i class="fa-regular fa-trash-can text-xs"></i></button></li>`).join('')
       + (items.length > 4 ? `<li class="sm:col-span-2 text-[11px] text-slate-400 px-1">และอีก ${toThai(items.length - 4)} ฉบับในรายการงานล่าสุดด้านซ้าย</li>` : '');
   }
   window.addEventListener('govdoc:recent', (ev) => renderPending(ev.detail));
