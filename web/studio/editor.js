@@ -814,20 +814,35 @@
     // รายการที่หาเนื้อหาไม่เจอ (เช่น ถูกลบจากคลัง) ใช้ชื่อแทน เพื่อไม่ให้หายไปเงียบ ๆ
     return refs.map(c => lawBody(law.lib?.get(c.id)?.quote) || `${c.title} ${c.section}`.trim()).join('\n');
   }
+  // ไม่เขียนหัวข้อ "ข้อกฎหมาย" ใหม่ทั้งหมด — ข้อความที่ผู้ใช้พิมพ์เอง (เช่น "๑. พระราชบัญญัติ... (เอกสาร ๑)") ต้องอยู่ครบ
+  //   เพิ่มข้อ = ต่อเนื้อหาของข้อนั้นท้ายข้อความเดิม
+  //   เอาข้อออก = ลบเฉพาะเนื้อหาของข้อนั้นถ้ายังเหมือนเดิม (ถ้าแก้แล้ว ปล่อยไว้และบอกให้ลบเอง)
   function setLawRefs(next) {
-    const auto = entry.lawAuto;
-    const cur = st.doc.memo_law;
-    const untouched = cur == null || !cur.trim() || hasPlaceholder(cur) || cur === auto;
-    const text = lawText(next);
-    if (!untouched && isMemo() && !confirm('หัวข้อ "ข้อกฎหมาย" มีข้อความที่แก้เองอยู่ — เขียนใหม่ตามรายการที่เลือก?')) {
-      commit(d => { d.legal_refs = next.length ? next : null; });
-    } else {
-      commit(d => {
-        d.legal_refs = next.length ? next : null;
-        if (isMemo()) d.memo_law = next.length ? text : null;
-      });
-      entry.lawAuto = next.length ? text : null;
+    const prev = st.doc.legal_refs || [];
+    const prevIds = new Set(prev.map(c => c.id)), nextIds = new Set(next.map(c => c.id));
+    const added = next.filter(c => !prevIds.has(c.id)), removed = prev.filter(c => !nextIds.has(c.id));
+    let text = st.doc.memo_law;
+    if (text != null && (!text.trim() || hasPlaceholder(text) && !text.replace(PH_RE, '').trim())) text = '';   // ว่าง / มีแต่ช่องให้กรอก
+    let leftover = 0;
+    if (isMemo()) {
+      for (const c of removed) {
+        const body = lawText([c]);
+        const lines = (text || '').split('\n');
+        const parts = body.split('\n');
+        const at = lines.findIndex((_, i) => parts.every((p, k) => lines[i + k] === p));
+        if (body && at >= 0) { lines.splice(at, parts.length); text = lines.join('\n'); }
+        else leftover++;
+      }
+      for (const c of added) {
+        const body = lawText([c]);
+        text = text ? `${text.replace(/\n+$/, '')}\n${body}` : body;
+      }
     }
+    commit(d => {
+      d.legal_refs = next.length ? next : null;
+      if (isMemo()) d.memo_law = (text || '').trim() ? text : (next.length ? text : null);
+    });
+    if (leftover) toast('ข้อความของข้อที่เอาออกถูกแก้ไว้แล้ว — ลบในหัวข้อ "ข้อกฎหมาย" เองได้', 'warn');
     renderLaw();
   }
   function lawItem(r, action, extra = '') {
