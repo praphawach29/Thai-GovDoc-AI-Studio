@@ -94,7 +94,14 @@ def test_migration_keeps_records_protected():
     """ปลดล็อกการลบเฉพาะใน purge_document ของเอกสารฉบับนั้น และยังบันทึก audit"""
     sql = MIGRATION.read_text(encoding="utf-8")
     assert "current_setting('govdoc.purge_document', true)" in sql
-    assert "tg_table_name = 'documents' and old.id::text = v_purge" in sql
+    assert "tg_table_name = 'documents' and v_old ->> 'id' = v_purge" in sql
+    # trigger ใช้หลายตาราง: อ้าง old.<คอลัมน์> ไม่ได้ (documents ไม่มี document_id → ลบถาวรล้มทั้งชุด)
+    fix = MIGRATION.with_name("20261116000011_fix_purge_trigger.sql").read_text(encoding="utf-8")
+    for text in (sql, fix):
+        body = text[text.index("function public.forbid_change()"):]
+        body = body[:body.index("$$;")]
+        assert "old.document_id" not in body and "old.id" not in body
+        assert "to_jsonb(old)" in body
     for guard in ("v_doc.status <> 'archived'", "public.final_files", "public.outgoing_register",
                   "current_role_is('admin')", "write_audit(v_org, 'purge'"):
         assert guard in sql
