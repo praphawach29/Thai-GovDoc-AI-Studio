@@ -797,16 +797,22 @@
   const citeOf = (r) => ({ id: String(r.id), title: r.title || '', section: r.section || '', source_id: r.source_id || null,
     page_from: r.page_from || null, page_to: r.page_to || null });
   const pagesOf = (r) => r.page_from ? ` · หน้า ${toThai(r.page_from)}${r.page_to && r.page_to !== r.page_from ? '–' + toThai(r.page_to) : ''}` : '';
-  // ข้อความในหัวข้อ "ข้อกฎหมาย": ชื่อ + ข้อ + เนื้อความที่ยกมา (ตัดเลขข้อซ้ำ, ไม่เกิน ~๔๐๐ ตัวอักษร)
+  // ข้อความในหัวข้อ "ข้อกฎหมาย" = เนื้อหาที่ผู้ใช้เขียน/แก้ไว้ในคลังเท่านั้น (ไม่เติมชื่อฉบับ หัวข้อ หรือ "กำหนดว่า")
+  // บรรทัดที่ขึ้นใหม่เพราะการตัดบรรทัดของไฟล์สแกนต่อเป็นย่อหน้าเดียว; คงการขึ้นบรรทัดหน้า มาตรา / ข้อ / (๑) / ๑.
+  const LAW_BREAK = /^(มาตรา|ข้อ|หมวด|ส่วนที่|\([0-9๐-๙]+\)|[0-9๐-๙]+(\.[0-9๐-๙]+)*\.?\s)/;
+  function lawBody(quote) {
+    const out = [];
+    for (const raw of String(quote || '').split('\n')) {
+      const line = raw.replace(/\s+/g, ' ').trim();
+      if (!line) continue;
+      if (out.length && !LAW_BREAK.test(line)) out[out.length - 1] += ' ' + line;
+      else out.push(line);
+    }
+    return out.join('\n');
+  }
   function lawText(refs) {
-    return refs.map((c, i) => {
-      const full = law.lib?.get(c.id)?.quote || '';
-      let body = full.replace(/\s+/g, ' ').trim();
-      if (c.section && body.startsWith(c.section.split(' ')[0])) body = body.replace(/^(ข้อ|มาตรา)\s*[0-9๐-๙]+(\/[0-9๐-๙]+)?\s*/, '');
-      if (body.length > 400) body = body.slice(0, 400).replace(/\s\S*$/, '') + ' ...';
-      const head = `${refs.length > 1 ? toThai(i + 1) + '. ' : ''}${c.title} ${c.section}`.trim();
-      return body ? `${head} กำหนดว่า “${body}”` : head;
-    }).join('\n');
+    // รายการที่หาเนื้อหาไม่เจอ (เช่น ถูกลบจากคลัง) ใช้ชื่อแทน เพื่อไม่ให้หายไปเงียบ ๆ
+    return refs.map(c => lawBody(law.lib?.get(c.id)?.quote) || `${c.title} ${c.section}`.trim()).join('\n');
   }
   function setLawRefs(next) {
     const auto = entry.lawAuto;
