@@ -130,8 +130,6 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
      บรรทัดที่ ๔ สิ่งที่หน่วยงานต้องดำเนินการ (ถ้ามี)
    - เขียนเฉพาะสิ่งที่มีในต้นเรื่อง ห้ามใส่ [✏️ ระบุ...] ห้ามเดา ไม่ใช้ markdown ไม่ใส่เลขข้อ
    - ไม่มีหนังสือต้นเรื่อง (มีเพียงคำสั่งของผู้ใช้) ให้เป็น ""
-9. ถ้ามี <example> (หนังสือฉบับจริงของหน่วยงาน) ให้เลียนแบบสำนวน ลำดับความ และประโยคขึ้นต้น-ลงท้ายของแต่ละภาค
-   แต่ห้ามนำข้อเท็จจริงในตัวอย่างมาใช้ ข้อเท็จจริงทุกอย่างมาจาก <source>/<instruction> ของเรื่องใหม่เท่านั้น
 """
 
 
@@ -142,9 +140,7 @@ def build_user_prompt(
     source_text: str,
     recipient: str = "",
     review_party: str = "",
-    examples: str = "",
 ) -> str:
-    """examples = ส่วนตัวอย่างสำนวนจาก core.style_examples.few_shot_block (ว่าง = ไม่มี)"""
     if doc_type == DocType.INTERNAL:
         party = review_party or "[ชื่อหน่วยงานผู้เสนอ]"
         kind = f"""ชนิดหนังสือ: บันทึกข้อความ (หนังสือภายใน) เสนอ{(' ' + recipient) if recipient else 'ผู้บังคับบัญชา'}
@@ -162,9 +158,6 @@ def build_user_prompt(
 - paragraph_details (ภาคข้อเท็จจริง): รายละเอียด (ว่างได้ถ้าไม่จำเป็น)
 - paragraph_purpose (ภาคความประสงค์): ขึ้นต้นด้วย "จึงเรียนมาเพื่อ..." """
     parts = [kind]
-    if examples.strip():
-        # ตัวอย่างอยู่ก่อนต้นเรื่อง — ต้นเรื่องของเรื่องใหม่อยู่ท้ายสุดเสมอ
-        parts.append(examples.strip())
     if instruction.strip():
         parts.append(f"คำสั่งของผู้ใช้:\n<instruction>\n{instruction.strip()}\n</instruction>")
     if source_text.strip():
@@ -361,13 +354,11 @@ def _log_failure(kind: str, name: str, model: str, exc: Exception) -> None:
 
 
 def _clean(content: DraftContent) -> DraftContent:
-    """ตัดช่องว่าง/markdown ที่หลุดมา, คำว่า 'เรื่อง' ที่ซ้ำหัวข้อ และส่วนที่ปิดไว้ในตัวอย่างที่ AI คัดลอกมา"""
-    from core.style_examples import unmask_leftovers
-
+    """ตัดช่องว่าง/markdown ที่หลุดมา และคำว่า 'เรื่อง' ที่ซ้ำหัวข้อ"""
     data = {}
     for key, value in content.model_dump().items():
         text = "\n".join(line.rstrip() for line in (value or "").replace("**", "").splitlines()).strip()
-        data[key] = unmask_leftovers(text)
+        data[key] = text
     if data["subject"].startswith("เรื่อง"):
         data["subject"] = data["subject"][len("เรื่อง"):].strip()
     return DraftContent(**data)
@@ -387,7 +378,6 @@ def draft_content_with_llm(
     clock: Callable[[], float] = time.monotonic,
     prefer: Optional[str] = None,
     avoid: Tuple[str, ...] = (),
-    examples: str = "",
 ) -> LLMDraftResult:
     """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)"""
     result = LLMDraftResult()
@@ -416,7 +406,7 @@ def draft_content_with_llm(
     if len(source) > MAX_SOURCE_CHARS:
         source, result.truncated = source[:MAX_SOURCE_CHARS], True
     prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
-                               recipient=recipient, review_party=review_party, examples=examples)
+                               recipient=recipient, review_party=review_party)
 
     deadline = clock() + (config.total_timeout_s if budget_s is None else budget_s)
     for index, (name, model, call) in enumerate(providers):

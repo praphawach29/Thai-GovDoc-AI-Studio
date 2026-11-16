@@ -24,14 +24,12 @@
         {
           "name": "",
           "position": "ผู้เสนอเรื่อง",
-          "is_author": true,
-          "stamp": false
+          "is_author": true
         },
         {
           "name": "",
           "position": "หัวหน้ากลุ่มงานส่งเสริมกีฬา",
-          "is_author": false,
-          "stamp": false
+          "is_author": false
         }
       ],
       "review_party": "กลุ่มงานส่งเสริมกีฬา",
@@ -52,8 +50,7 @@
         {
           "name": "",
           "position": "ผู้อำนวยการกองการกีฬา",
-          "is_author": false,
-          "stamp": false
+          "is_author": false
         }
       ],
       "review_party": "กองการกีฬา",
@@ -74,8 +71,7 @@
         {
           "name": "",
           "position": "ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว",
-          "is_author": false,
-          "stamp": false
+          "is_author": false
         }
       ],
       "review_party": "สำนักวัฒนธรรม กีฬา และการท่องเที่ยว",
