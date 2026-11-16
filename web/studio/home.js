@@ -578,6 +578,32 @@
       });
       $('ex-list').addEventListener('click', onExampleClick);
     },
+    async signers(body) {
+      const server = await auth.serverMode();
+      if (!server) { body.innerHTML = '<p class="text-xs text-amber-700">รายชื่อผู้ลงนามของหน่วยใช้ได้เมื่อเข้าสู่ระบบและเก็บข้อมูลบนเซิร์ฟเวอร์</p>'; return; }
+      body.innerHTML = `
+        <p class="text-xs text-slate-500 mb-3">ใช้ร่วมกันทุกคนในหน่วยงาน — ร่างใหม่เติม <b>ผู้ลงนามเริ่มต้น</b> ให้อัตโนมัติ และช่องผู้ลงนามที่ตำแหน่งตรงกับรายชื่อจะได้ชื่อของคนนั้น
+          · ในหน้าแก้ไขกดปุ่ม <i class="fa-solid fa-signature"></i> ข้างชื่อผู้ลงนามเพื่อเปลี่ยนคนได้ทันที</p>
+        <form id="sg-form" class="mb-4 p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 text-xs space-y-2.5" novalidate>
+          <div class="flex items-center justify-between"><span id="sg-form-title" class="font-semibold text-slate-800"><i class="fa-solid fa-user-plus text-emerald-700 mr-1"></i>เพิ่มผู้ลงนาม</span>
+            <button type="button" id="sg-cancel" hidden class="text-slate-500 hover:text-slate-800 underline">ยกเลิกการแก้ไข</button></div>
+          <label class="block"><span class="text-slate-600">ชื่อเต็ม (ไม่ต้องใส่วงเล็บ)</span>
+            <input id="sg-name" type="text" maxlength="200" autocomplete="off" placeholder="เช่น นายสมชาย ใจดี" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-body focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>
+          <label class="block"><span class="text-slate-600">ตำแหน่ง (Enter ขึ้นบรรทัดใหม่ได้)</span>
+            <textarea id="sg-position" rows="3" maxlength="600" placeholder="เช่น ผู้อำนวยการกองการกีฬา" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-body leading-snug focus:outline-none focus:ring-1 focus:ring-emerald-500"></textarea></label>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <label class="inline-flex items-center gap-2 cursor-pointer text-slate-700"><input id="sg-stamp" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">ใช้ตราประทับชื่อ-ตำแหน่ง</label>
+            <label class="inline-flex items-center gap-2 cursor-pointer text-slate-700"><input id="sg-default" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">ผู้ลงนามเริ่มต้น</label>
+            <button type="submit" id="sg-save" class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-floppy-disk"></i><span>บันทึก</span></button>
+          </div>
+          <p id="sg-error" class="text-rose-700" hidden></p>
+        </form>
+        <div id="sg-list" class="space-y-2"><p class="text-xs text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลด...</p></div>`;
+      await renderSignerList();
+      $('sg-form').addEventListener('submit', onSignerSave);
+      $('sg-cancel').addEventListener('click', () => editSigner(null));
+      $('sg-list').addEventListener('click', onSignerClick);
+    },
     async profile(body) {
       const p = state.profile || await api.profile();
       const row = (k, v) => `<div class="grid grid-cols-3 gap-3 py-2 border-b border-slate-100 last:border-0 text-xs"><dt class="text-slate-500">${k}</dt><dd class="col-span-2 text-slate-800 font-body">${esc(v || '—')}</dd></div>`;
@@ -876,7 +902,76 @@
     }
   }
 
-  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', profile: 'ข้อมูลหน่วยงานและผู้ลงนาม' };
+  // ---------- รายชื่อผู้ลงนามของหน่วย (org_signers ใช้ร่วมกันทั้งหน่วยงาน) ----------
+  let sgRows = [], sgEditing = null;
+  async function renderSignerList() {
+    const list = $('sg-list');
+    if (!list) return;
+    try { sgRows = await api.signers.list(); }
+    catch (err) { list.innerHTML = `<p class="text-xs text-rose-700">${esc(err.message)}</p>`; return; }
+    if (!sgRows.length) { list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">ยังไม่มีรายชื่อ — เพิ่มผู้ลงนามประจำหน่วย แล้วร่างใหม่จะไม่ต้องกรอกชื่อ/ตำแหน่งเองอีก</p>'; return; }
+    list.innerHTML = sgRows.map((r) => `
+      <div class="flex items-start gap-2 px-3 py-2.5 border rounded-xl bg-white text-xs ${r.is_default ? 'border-emerald-300 ring-1 ring-emerald-200' : 'border-slate-200'}" data-sg-row="${esc(r.id)}">
+        <div class="flex-1 min-w-0">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="font-semibold text-slate-800 font-body text-sm">${esc(r.full_name)}</span>
+            ${r.is_default ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800"><i class="fa-solid fa-star mr-0.5"></i>เริ่มต้น</span>' : ''}
+            ${r.stamp ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700"><i class="fa-solid fa-stamp mr-0.5"></i>ตราประทับ</span>' : ''}
+          </div>
+          <p class="mt-0.5 whitespace-pre-line text-slate-600 font-body leading-snug">${esc(r.position || '—')}</p>
+        </div>
+        ${r.is_default ? '' : `<button type="button" data-sg-default="${esc(r.id)}" class="shrink-0 px-2 h-7 rounded-md text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 whitespace-nowrap" title="ตั้งเป็นผู้ลงนามเริ่มต้น"><i class="fa-regular fa-star mr-1"></i>ตั้งเริ่มต้น</button>`}
+        <button type="button" data-sg-edit="${esc(r.id)}" class="shrink-0 w-7 h-7 rounded-md text-slate-500 hover:bg-slate-100" title="แก้ไข" aria-label="แก้ไข ${esc(r.full_name)}"><i class="fa-solid fa-pen"></i></button>
+        <button type="button" data-sg-delete="${esc(r.id)}" class="shrink-0 w-7 h-7 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50" title="ลบ" aria-label="ลบ ${esc(r.full_name)}"><i class="fa-regular fa-trash-can"></i></button>
+      </div>`).join('');
+  }
+  function editSigner(row) {
+    sgEditing = row ? row.id : null;
+    $('sg-name').value = row?.full_name || '';
+    $('sg-position').value = row?.position || '';
+    $('sg-stamp').checked = !!row?.stamp;
+    $('sg-default').checked = !!row?.is_default;
+    $('sg-cancel').hidden = !row;
+    $('sg-error').hidden = true;
+    $('sg-form-title').innerHTML = row ? '<i class="fa-solid fa-user-pen text-emerald-700 mr-1"></i>แก้ไขผู้ลงนาม' : '<i class="fa-solid fa-user-plus text-emerald-700 mr-1"></i>เพิ่มผู้ลงนาม';
+    $('sg-save').querySelector('span').textContent = row ? 'บันทึกการแก้ไข' : 'บันทึก';
+    if (row) $('sg-name').focus();
+  }
+  async function onSignerSave(e) {
+    e.preventDefault();
+    const fields = { full_name: $('sg-name').value.trim(), position: $('sg-position').value, stamp: $('sg-stamp').checked, is_default: $('sg-default').checked };
+    const err = $('sg-error');
+    if (!fields.full_name) { err.textContent = 'ใส่ชื่อผู้ลงนาม'; err.hidden = false; $('sg-name').focus(); return; }
+    $('sg-save').disabled = true;
+    try {
+      if (sgEditing) await api.signers.update(sgEditing, fields);
+      else await api.signers.create(fields);
+      toast(sgEditing ? 'บันทึกการแก้ไขแล้ว' : 'เพิ่มผู้ลงนามแล้ว');
+      editSigner(null);
+      await renderSignerList();
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    finally { $('sg-save').disabled = false; }
+  }
+  async function onSignerClick(e) {
+    const def = e.target.closest('[data-sg-default]'), ed = e.target.closest('[data-sg-edit]'), del = e.target.closest('[data-sg-delete]');
+    if (ed) { editSigner(sgRows.find(r => r.id === ed.dataset.sgEdit)); return; }
+    if (def) {
+      try { await api.signers.update(def.dataset.sgDefault, { is_default: true }); toast('ตั้งผู้ลงนามเริ่มต้นแล้ว'); await renderSignerList(); }
+      catch (ex) { toast(ex.message, 'error'); }
+      return;
+    }
+    if (del) {
+      const row = sgRows.find(r => r.id === del.dataset.sgDelete);
+      if (!confirm(`ลบ "${row?.full_name || ''}" ออกจากรายชื่อผู้ลงนามของหน่วย? (ร่างที่เติมชื่อไปแล้วไม่เปลี่ยน)`)) return;
+      try {
+        await api.signers.remove(del.dataset.sgDelete);
+        if (sgEditing === del.dataset.sgDelete) editSigner(null);
+        toast('ลบแล้ว'); await renderSignerList();
+      } catch (ex) { toast('ลบไม่สำเร็จ: ' + ex.message, 'error'); }
+    }
+  }
+
+  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงานและผู้ลงนาม' };
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => {
     const key = b.dataset.open;
     setSidebar(false);

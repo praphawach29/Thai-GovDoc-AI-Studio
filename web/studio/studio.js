@@ -94,6 +94,13 @@
       fileUrl: (id) => request('/examples/' + encodeURIComponent(id) + '/file-url').then(r => r.json()).then(r => r.url),
       remove: (id) => request('/examples/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json()),
     },
+    // รายชื่อผู้ลงนามประจำหน่วยงาน (ใช้ร่วมกันทั้งหน่วยงาน)
+    signers: {
+      list: () => request('/signers').then(r => r.json()),
+      create: (fields) => postJSON('/signers', fields).then(r => r.json()),
+      update: (id, fields) => sendJSON('PATCH', '/signers/' + encodeURIComponent(id), fields).then(r => r.json()),
+      remove: (id) => request('/signers/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json()),
+    },
     health: () => fetch(API + '/health').then(r => r.ok),
     me: () => request('/me').then(r => r.json()),
     // โหมดเซิร์ฟเวอร์: อัปโหลดไฟล์ต้นเรื่องตรงเข้า Supabase Storage (ไม่ผ่าน API ซึ่งรับไฟล์ใหญ่ไม่ได้)

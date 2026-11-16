@@ -216,13 +216,18 @@
   }
   // ผู้ลงนามที่ใช้ตราประทับชื่อ-ตำแหน่ง: กรอบเว้นที่แทนช่องพิมพ์ (ไฟล์ส่งออกเว้นบรรทัดว่างระยะเท่าเดิม)
   const stampArea = () => '<div class="stamp-area" contenteditable="false"><i class="fa-solid fa-stamp"></i>พื้นที่ประทับตราชื่อ-ตำแหน่ง</div>';
+  // ปุ่มเลือกผู้ลงนามจากรายชื่อของหน่วย (หน้าแรก > ผู้ลงนามของหน่วย) — คลิกชื่อในรายการแล้วเปลี่ยนทันที
+  let rosterEnabled = false;     // โหมด Supabase เท่านั้น (ตั้งค่าในส่วนรายชื่อผู้ลงนามด้านล่าง)
+  const pickBtn = (slot) => !rosterEnabled ? '' : `<button type="button" data-pick-signer="${slot}" class="no-print absolute -right-[1.3cm] top-0 w-7 h-7 rounded-full bg-white border border-slate-200 text-slate-500 shadow-xs opacity-60 group-hover:opacity-100 focus:opacity-100 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 transition font-sans text-xs" title="เลือกผู้ลงนามจากรายชื่อของหน่วย" aria-label="เลือกผู้ลงนามจากรายชื่อของหน่วย"><i class="fa-solid fa-signature"></i></button>`;
+  const signerSlot = (slot, stamp, nameKey, posKey) =>
+    `<div class="relative group">${stamp ? stampArea() : `<div>${field(nameKey)}</div><div>${field(posKey, 'whitespace-pre-line')}</div>`}${pickBtn(slot)}</div>`;
   function signature() {
     const d = st.doc;
     return `<div class="mt-[1.2cm] ml-auto w-[9cm] text-center space-y-0.5">
       ${isMemo() ? '' : `<div>${field('closing')}</div><div class="h-[1.6cm]"></div>`}
-      ${d.signatory_stamp ? stampArea() : `<div>${field('signatory_name')}</div><div>${field('signatory_position')}</div>`}
+      ${signerSlot('main', d.signatory_stamp, 'signatory_name', 'signatory_position')}
       ${isMemo() ? (d.co_signers || []).slice(0, 3).map((co, i) =>
-        `<div class="h-[1.2cm]"></div>${co.stamp ? stampArea() : `<div>${field('co_name_' + i)}</div><div>${field('co_pos_' + i)}</div>`}`).join('') : ''}
+        `<div class="h-[1.2cm]"></div>${signerSlot(String(i), co.stamp, 'co_name_' + i, 'co_pos_' + i)}`).join('') : ''}
     </div>`;
   }
 
@@ -354,7 +359,8 @@
   sheet.addEventListener('keydown', (e) => {
     const el = e.target.closest('[data-field]');
     if (!el) return;
-    if (e.key === 'Enter' && !el.classList.contains('block') && !['references', 'attachments'].includes(el.dataset.field)) { e.preventDefault(); el.blur(); }
+    const multiLine = ['references', 'attachments', 'signatory_position'].includes(el.dataset.field) || /^co_pos_/.test(el.dataset.field);
+    if (e.key === 'Enter' && !el.classList.contains('block') && !multiLine) { e.preventDefault(); el.blur(); }
     if (e.key === 'Escape') { el.blur(); }
     if (e.key === 'Tab' && el.classList.contains('lines')) { e.preventDefault(); shiftIndent(el, e.shiftKey ? -1 : 1); }
   });
@@ -460,6 +466,71 @@
     $('btn-chain-pdf').hidden = !(memo && chainIds().length > 1);
     fitToolbar();
   }
+  // ---------- รายชื่อผู้ลงนามของหน่วย (ใช้ร่วมกันทั้งหน่วยงาน) ----------
+  let roster = null;      // null = ยังไม่โหลด / โหมดเครื่องเดียว
+  rosterEnabled = (await window.GovDoc.auth.serverMode()) === true;
+  const signerMenu = document.createElement('div');
+  signerMenu.id = 'signer-menu';
+  signerMenu.hidden = true;
+  signerMenu.setAttribute('role', 'menu');
+  signerMenu.className = 'fixed z-50 w-72 max-h-80 overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg p-1.5 text-xs font-sans';
+  document.body.appendChild(signerMenu);
+  async function loadRoster() {
+    if (roster) return roster;
+    roster = await api.signers.list();
+    return roster;
+  }
+  function slotOf(d, slot) {
+    return slot === 'main' ? { name: d.signatory_name, position: d.signatory_position } : d.co_signers?.[+slot];
+  }
+  async function openSignerMenu(btn) {
+    const slot = btn.dataset.pickSigner;
+    const r = btn.getBoundingClientRect();
+    signerMenu.style.top = Math.min(r.bottom + 4, innerHeight - 330) + 'px';
+    signerMenu.style.left = Math.max(8, Math.min(r.right - 288, innerWidth - 296)) + 'px';
+    signerMenu.dataset.slot = slot;
+    signerMenu.innerHTML = '<p class="px-2 py-1.5 text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลด...</p>';
+    signerMenu.hidden = false;
+    let list;
+    try { list = await loadRoster(); }
+    catch (err) { signerMenu.innerHTML = `<p class="px-2 py-1.5 text-rose-700">${esc(err.message)}</p>`; return; }
+    const cur = slotOf(st.doc, slot) || {};
+    const curName = String(cur.name || '').replace(/[()]/g, '').trim();
+    signerMenu.innerHTML = `<div class="px-2 pt-1 pb-1.5 text-[11px] font-semibold text-slate-400">เลือกผู้ลงนาม</div>` + (list.length ? list.map((p, i) => `
+      <button type="button" role="menuitem" data-signer-index="${i}" class="w-full text-left flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-emerald-50 ${p.full_name === curName ? 'bg-emerald-50/70' : ''}">
+        <i class="fa-solid ${p.full_name === curName ? 'fa-check text-emerald-600' : 'fa-user text-slate-300'} mt-0.5 w-3"></i>
+        <span class="min-w-0 flex-1"><span class="block font-medium text-slate-800 font-body text-sm">${esc(p.full_name)}${p.is_default ? ' <span class="text-[10px] text-emerald-700 font-sans">(เริ่มต้น)</span>' : ''}</span>
+          <span class="block whitespace-pre-line text-slate-500 font-body leading-snug">${esc(p.position || '')}</span>
+          ${p.stamp ? '<span class="text-[10px] text-indigo-700"><i class="fa-solid fa-stamp mr-0.5"></i>ใช้ตราประทับ</span>' : ''}</span>
+      </button>`).join('') : '<p class="px-2 py-1.5 text-slate-500 leading-relaxed">ยังไม่มีรายชื่อผู้ลงนามของหน่วย — เพิ่มได้ที่หน้าแรก เมนู <b>ผู้ลงนามของหน่วย</b></p>');
+    signerMenu.querySelector('[data-signer-index]')?.focus();
+  }
+  function applySigner(slot, p) {
+    commit((d) => {
+      const name = `(${p.full_name})`, position = p.position || '';
+      if (slot === 'main') { d.signatory_name = name; d.signatory_position = position; d.signatory_stamp = !!p.stamp; }
+      else if (d.co_signers?.[+slot]) Object.assign(d.co_signers[+slot], { name, position, stamp: !!p.stamp });
+    });
+    runCheck();
+    toast('เปลี่ยนผู้ลงนามเป็น ' + p.full_name);
+  }
+  sheet.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pick-signer]');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!signerMenu.hidden && signerMenu.dataset.slot === b.dataset.pickSigner) { signerMenu.hidden = true; return; }
+    openSignerMenu(b);
+  });
+  signerMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-signer-index]');
+    if (!b || !roster) return;
+    signerMenu.hidden = true;
+    applySigner(signerMenu.dataset.slot, roster[+b.dataset.signerIndex]);
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#signer-menu, [data-pick-signer]')) signerMenu.hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') signerMenu.hidden = true; });
+  $('doc-viewport').addEventListener('scroll', () => { signerMenu.hidden = true; }, { passive: true });
+
   api.units().then((list) => {
     units = list;
     const current = currentUnitKey();

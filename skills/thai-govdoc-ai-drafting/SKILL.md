@@ -38,8 +38,9 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 | เสนอ/แนบข้อกฎหมาย | `core/legal_suggest.py` (`/legal/suggest`), `core/legal_pages.py`, `server/routers/export.py` | คัดด้วยคำ → AI เลือกจากรหัสในรายการที่ยืนยันแล้วเท่านั้น; PDF ต่อหน้าจริงจากไฟล์ใน Storage (header `X-GovDoc-Legal-Pages`) |
 | ฉบับจริง | `core/final_file.py`, `server/routers/finals.py` | อัปโหลด Word/PDF ที่แก้เสร็จกลับเข้าระบบ (sha256, append-only) |
 | ตัวอย่างของหน่วย (สำนวน) | `core/style_examples.py`, `server/routers/examples.py`, migration 10 | หนังสือฉบับจริง (อัปโหลดหลายไฟล์จากหน้าแรก / ปุ่ม "นี่คือฉบับจริง" ในแท็บ ฉบับจริง) → `parse_example`/`from_document` แยก เรื่อง/ภาคเหตุ/ข้อเท็จจริง/ความประสงค์ + `keywords` → ตอนร่าง `example_finder` → `rank_examples` (คำที่ตรงกัน ประเภทเดียวกัน ≤ ๓) → `few_shot_block` (ปิดเลข/วันที่/ชื่อ, งบ ~4,800 ตัวอักษร) → `result.style_examples` แสดงในแชท/แท็บต้นเรื่อง |
+| ผู้ลงนามของหน่วย | `core/signers.py`, `server/routers/signers.py`, migration 12 | `org_signers` (ใช้ร่วมทั้งหน่วย) → `apply_issuing_unit(roster, use_default)` / `fill_document_signers`: ตำแหน่งตรง = เติมชื่อ, ร่างใหม่ = ผู้ลงนามเริ่มต้นในช่องหลักที่ว่าง (ไม่แตะผู้เสนอเรื่อง/ชื่อที่มีอยู่); หน้าแก้ไขปุ่ม `[data-pick-signer]` |
 | หน้าเว็บ | `web/studio/index.html`/`home.js` (หน้าแรก), `editor.html`/`editor.js`/`studio.css` (หน้าแก้ไข) | |
-| ฐานข้อมูล | `supabase/migrations/2026111*` (10 ไฟล์) | RLS ตาม org, RPC security definer, audit |
+| ฐานข้อมูล | `supabase/migrations/2026111*` (12 ไฟล์) | RLS ตาม org, RPC security definer, audit |
 
 ## 3. กฎรูปแบบที่ตกลงกับผู้ใช้แล้ว (ห้ามเปลี่ยนโดยไม่ถาม)
 
@@ -104,9 +105,10 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 ## 7. ทดสอบก่อน push ทุกครั้ง
 
 ```bash
-.venv/bin/python -m pytest -q          # ปัจจุบัน 386 รายการ 1 ข้าม (Windows: test_width_measure_counts_letter_spacing ไม่ผ่าน — PyThaiNLP)
+.venv/bin/python -m pytest -q          # ปัจจุบัน 403 รายการ 1 ข้าม (Windows: test_width_measure_counts_letter_spacing ไม่ผ่าน — PyThaiNLP)
 ```
 - ทดสอบที่เกี่ยวข้อง: `test_step7_unit_chain`, `test_step8_font_spacing` (ระยะ/เส้นประ/ไอคอน), `test_step9_final_files`, `test_step10_llm_drafting`, `test_phase6_memo_template`
+- ผู้ลงนามของหน่วย: `test_step20_org_signers.py` (เติมชื่อ/เริ่มต้น/API/ตารางยังไม่มี)
 - คลังตัวอย่าง: `test_step18_style_examples.py` (แยกส่วน/ปิดข้อเท็จจริง/เลือก), `test_step18_style_examples_api.py` (API + few-shot ใน prompt ตอนร่าง)
 - หน้าเว็บโหมด Supabase บนเครื่อง: รันแอปจริงกับ `FakeSupabase` แล้ว mount proxy `/fake-sb/{path}` → `fake.handle` ให้ supabase-js ในเบราว์เซอร์ล็อกอินได้ (รหัสผ่าน `correct-password`) — ต้อง (๑) ตั้ง `supabase_url` = URL proxy และออก token ด้วย `iss` = `<proxy>/auth/v1` (๒) `transport_factory` ตัด `/fake-sb` ออกก่อนส่งให้ fake ไม่งั้น JWKS 404 → API ตอบ 503 "ตรวจสอบการเข้าสู่ระบบไม่ได้ชั่วคราว"; fake เก็บข้อมูลในหน่วยความจำ — รีสตาร์ทก่อนรันชุดทดสอบใหม่
 - Playwright: `chromium.launch({ channel: 'chrome' })` ใช้ Chrome ในเครื่อง (ติดตั้งแพ็กเกจด้วย `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`); ไฟล์อัปโหลดส่งเป็น buffer ผ่าน `setInputFiles([{name, mimeType, buffer}])` ได้

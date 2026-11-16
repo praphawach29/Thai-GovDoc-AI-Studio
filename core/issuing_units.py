@@ -6,9 +6,10 @@
 
 import re
 from datetime import date
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Sequence
 
 from core.models import HANDWRITE_GAP, GovDocumentSchema, IssuingUnit, Signer
+from core.signers import OrgSigner, fill_from_roster
 from core.thai_date import THAI_MONTHS, today_bangkok
 
 SIGNER_NAME_PLACEHOLDER = "([✏️ ระบุชื่อผู้ลงนาม])"
@@ -72,6 +73,8 @@ def apply_issuing_unit(
     author: Optional[Signer] = None,
     units: Iterable[IssuingUnit] = (),
     replace_request: bool = False,
+    roster: Sequence[OrgSigner] = (),
+    use_default: bool = False,
 ) -> GovDocumentSchema:
     """คืนสำเนาเอกสารที่ใช้ค่าของหน่วยออกหนังสือ
 
@@ -79,6 +82,8 @@ def apply_issuing_unit(
 
     author: ชื่อ/ตำแหน่งของผู้ใช้ (แทนผู้ลงนามที่เป็น 'ผู้เสนอเรื่อง')
     units: หน่วยทั้งหมดในสาย — ใช้เปลี่ยนชื่อผู้พิจารณาและภาคความประสงค์มาตรฐานของหน่วยอื่นให้เป็นของหน่วยนี้
+    roster: รายชื่อผู้ลงนามของหน่วยงาน — เติมชื่อในช่องที่ตำแหน่งตรงกัน (core/signers.py)
+    use_default: ร่างใหม่ — ช่องผู้ลงนามหลักที่ยังว่างใช้ผู้ลงนามเริ่มต้นของหน่วยงาน
     """
     units = list(units)
     updated = doc.model_copy(deep=True)
@@ -99,6 +104,7 @@ def apply_issuing_unit(
         signers = [_resolve_signer(s, author) for s in unit.signers]
         for i, s in enumerate(signers):
             s.stamp = stamps[i] if i < len(stamps) else False
+        fill_from_roster(signers, roster, use_default)   # ชื่อจากรายชื่อผู้ลงนามของหน่วยงาน
         updated.signatory_name, updated.signatory_position = signers[0].name, signers[0].position
         updated.signatory_stamp = signers[0].stamp
         updated.co_signers = signers[1:] or None

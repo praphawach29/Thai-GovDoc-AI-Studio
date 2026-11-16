@@ -10,6 +10,7 @@ from core.issuing_units import apply_issuing_unit, pick_unit
 from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, Signer, UrgencyLevel
 from core.profile_manager import get_user_profile
 from core.fact_check import check_facts
+from core.signers import OrgSigner, fill_document_signers
 from core.studio import (
     StudioCheck,
     StudioDraftResult,
@@ -23,6 +24,7 @@ from server import source_store
 from server.auth import CurrentUser, get_current_user, get_profile, get_supabase
 from server.deps import save_upload
 from server.routers.examples import example_finder
+from server.routers.signers import load_roster
 from server.settings import Settings, get_settings, llm_config
 from server.supabase import SupabaseClient
 
@@ -71,16 +73,29 @@ def _author(user: Optional[CurrentUser], settings: Settings) -> Optional[Signer]
     return Signer(name=f"({name})" if name else "", position=profile.position.strip(), is_author=True)
 
 
+def _roster(user: Optional[CurrentUser], settings: Settings) -> List[OrgSigner]:
+    """รายชื่อผู้ลงนามของหน่วยงาน (โหมด Supabase เท่านั้น; ไม่มี/ขัดข้อง = รายการว่าง)"""
+    if not isinstance(user, CurrentUser):
+        return []
+    return load_roster(get_supabase(user, settings))
+
+
+def _fill_signers(doc: GovDocumentSchema, user, settings, fresh: bool = False) -> GovDocumentSchema:
+    """หนังสือภายนอก: ผู้ลงนามจากรายชื่อของหน่วยงาน (ตำแหน่งตรงกัน หรือผู้ลงนามเริ่มต้นเมื่อร่างใหม่)"""
+    return fill_document_signers(doc, _roster(user, settings), use_default=fresh)
+
+
 def _apply_unit(doc: GovDocumentSchema, unit_key: Optional[str], user, settings,
                 fresh: bool = False) -> GovDocumentSchema:
-    """fresh = ร่างใหม่ (ใช้ภาคความประสงค์มาตรฐานของหน่วยแทนข้อความที่ร่างมา)"""
+    """fresh = ร่างใหม่ (ใช้ภาคความประสงค์มาตรฐานของหน่วยแทนข้อความที่ร่างมา และผู้ลงนามเริ่มต้นของหน่วยงาน)"""
     units = load_units(user, settings)
     unit = pick_unit(units, unit_key)
     if unit_key and (unit is None or unit.key != unit_key):
         raise HTTPException(status_code=404, detail="ไม่พบหน่วยออกหนังสือนี้")
     if unit is None:
         return doc
-    return apply_issuing_unit(doc, unit, author=_author(user, settings), units=units, replace_request=fresh)
+    return apply_issuing_unit(doc, unit, author=_author(user, settings), units=units, replace_request=fresh,
+                              roster=_roster(user, settings), use_default=fresh)
 
 
 @router.get("/api/v1/studio/units")
@@ -173,6 +188,8 @@ async def studio_draft(
     if response.document is not None and response.document.doc_type == DocType.INTERNAL:
         # บันทึกข้อความ: ส่วนราชการ/เลขที่/วันที่ ตามหน่วยออกหนังสือที่เลือก
         response.document = _apply_unit(response.document, unit_key, user, settings, fresh=True)
+    elif response.document is not None:
+        response.document = _fill_signers(response.document, user, settings, fresh=True)
     display_name = Path(file.filename).name if has_file else (Path(stored[1]).name if stored else None)
     if response.context is not None and display_name:
         response.context.source_filename = display_name
@@ -194,6 +211,8 @@ def studio_blank(
     doc = normalize_for_editor(create_blank_document(req.doc_type))
     if req.doc_type == DocType.INTERNAL:
         doc = _apply_unit(doc, req.unit_key, user, settings, fresh=True)
+    else:
+        doc = _fill_signers(doc, user, settings, fresh=True)
     return doc
 
 
