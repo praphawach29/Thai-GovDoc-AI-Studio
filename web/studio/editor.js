@@ -782,6 +782,108 @@
     goToPoint(p);
   }
 
+  // ---------- ข้อกฎหมายจากคลัง (ยืนยันแล้วเท่านั้น) ----------
+  // เลือกแล้วเก็บใน doc.legal_refs (ใช้แนบหน้าจากไฟล์ต้นฉบับท้าย PDF) และเขียนหัวข้อ "ข้อกฎหมาย" ให้
+  // ถ้าผู้ใช้แก้ข้อความหัวข้อเองแล้ว ถามก่อนเขียนทับ
+  const law = { lib: null, loading: null, suggestions: [] };
+  async function lawLibrary() {
+    if (law.lib) return law.lib;
+    law.loading = law.loading || api.legal().then(({ references }) => {
+      law.lib = new Map(references.filter(r => r.verified).map(r => [String(r.id), r]));
+      return law.lib;
+    }).finally(() => { law.loading = null; });
+    return law.loading;
+  }
+  const citeOf = (r) => ({ id: String(r.id), title: r.title || '', section: r.section || '', source_id: r.source_id || null,
+    page_from: r.page_from || null, page_to: r.page_to || null });
+  const pagesOf = (r) => r.page_from ? ` · หน้า ${toThai(r.page_from)}${r.page_to && r.page_to !== r.page_from ? '–' + toThai(r.page_to) : ''}` : '';
+  // ข้อความในหัวข้อ "ข้อกฎหมาย": ชื่อ + ข้อ + เนื้อความที่ยกมา (ตัดเลขข้อซ้ำ, ไม่เกิน ~๔๐๐ ตัวอักษร)
+  function lawText(refs) {
+    return refs.map((c, i) => {
+      const full = law.lib?.get(c.id)?.quote || '';
+      let body = full.replace(/\s+/g, ' ').trim();
+      if (c.section && body.startsWith(c.section.split(' ')[0])) body = body.replace(/^(ข้อ|มาตรา)\s*[0-9๐-๙]+(\/[0-9๐-๙]+)?\s*/, '');
+      if (body.length > 400) body = body.slice(0, 400).replace(/\s\S*$/, '') + ' ...';
+      const head = `${refs.length > 1 ? toThai(i + 1) + '. ' : ''}${c.title} ${c.section}`.trim();
+      return body ? `${head} กำหนดว่า “${body}”` : head;
+    }).join('\n');
+  }
+  function setLawRefs(next) {
+    const auto = entry.lawAuto;
+    const cur = st.doc.memo_law;
+    const untouched = cur == null || !cur.trim() || hasPlaceholder(cur) || cur === auto;
+    const text = lawText(next);
+    if (!untouched && isMemo() && !confirm('หัวข้อ "ข้อกฎหมาย" มีข้อความที่แก้เองอยู่ — เขียนใหม่ตามรายการที่เลือก?')) {
+      commit(d => { d.legal_refs = next.length ? next : null; });
+    } else {
+      commit(d => {
+        d.legal_refs = next.length ? next : null;
+        if (isMemo()) d.memo_law = next.length ? text : null;
+      });
+      entry.lawAuto = next.length ? text : null;
+    }
+    renderLaw();
+  }
+  function lawItem(r, action, extra = '') {
+    return `<li class="p-3 rounded-xl bg-white border border-slate-200 space-y-1.5" data-law-id="${esc(r.id)}">
+      <div class="flex items-start gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-slate-800">${esc(r.section || '')}<span class="font-normal text-slate-400">${pagesOf(r)}</span></div>
+          <div class="text-[11px] text-slate-500 truncate" title="${esc(r.title || '')}">${esc(r.title || '')}</div>
+        </div>
+        ${action}
+      </div>
+      ${extra}
+    </li>`;
+  }
+  function renderLaw() {
+    const refs = st.doc.legal_refs || [];
+    $('law-count').textContent = toThai(refs.length);
+    $('law-external-note').classList.toggle('hidden', isMemo());
+    $('law-selected').innerHTML = refs.length ? refs.map(c => lawItem(c,
+      `<button type="button" data-law-remove="${esc(c.id)}" class="shrink-0 px-2 py-0.5 rounded-md border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-600">เอาออก</button>`)).join('')
+      : '<li class="text-slate-400">ยังไม่ได้เลือกข้อกฎหมาย</li>';
+    const chosen = new Set(refs.map(c => c.id));
+    const addBtn = (r) => chosen.has(String(r.id))
+      ? '<span class="shrink-0 text-emerald-700"><i class="fa-solid fa-check"></i> ใส่แล้ว</span>'
+      : `<button type="button" data-law-add="${esc(r.id)}" class="shrink-0 px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white">ใส่ในบันทึก</button>`;
+    $('law-suggestions').innerHTML = law.suggestions.map(s => lawItem(s.reference, addBtn(s.reference),
+      `<p class="text-slate-600"><i class="fa-solid ${s.by === 'ai' ? 'fa-wand-magic-sparkles text-emerald-600' : 'fa-magnifying-glass text-slate-400'} mr-1"></i>${esc(s.reason)}</p>`)).join('');
+    const q = $('law-search').value.trim();
+    const hits = q && law.lib ? [...law.lib.values()].filter(r => [r.title, r.section, r.chapter, r.quote].join(' ').includes(q)).slice(0, 15) : [];
+    $('law-results').innerHTML = !q ? '' : hits.length ? hits.map(r => lawItem(r, addBtn(r),
+      `<p class="text-slate-500 font-body line-clamp-2">${esc(String(r.quote || '').replace(/\s+/g, ' ').slice(0, 200))}</p>`)).join('')
+      : '<li class="text-slate-400">ไม่พบในคลังที่ยืนยันแล้ว</li>';
+  }
+  async function openLawTab() {
+    renderLaw();
+    try { await lawLibrary(); renderLaw(); } catch (err) { $('law-results').innerHTML = `<li class="text-rose-600">${esc(err.message)}</li>`; }
+  }
+  $('law-search').addEventListener('input', renderLaw);
+  $('law-suggest').addEventListener('click', async (e) => {
+    const btn = e.currentTarget, html = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>กำลังหา...</span>';
+    try {
+      await lawLibrary();
+      const d = st.doc;
+      const text = [d.subject, d.memo_intro, d.memo_facts, d.memo_consideration, d.paragraph_reason, d.paragraph_details,
+        aiSummary()].filter(Boolean).join('\n').replace(PH_RE, ' ');
+      law.suggestions = (await api.legalSuggest(text)).suggestions;
+      if (!law.suggestions.length) toast(law.lib?.size ? 'ไม่พบข้อที่เกี่ยวข้องในคลังที่ยืนยันแล้ว' : 'คลังกฎหมายยังไม่มีรายการที่ยืนยันแล้ว — นำเข้าได้ที่หน้าแรก > คลังกฎหมาย', 'warn');
+      renderLaw();
+    } catch (err) { toast('เสนอข้อกฎหมายไม่สำเร็จ: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = html; }
+  });
+  $('tab-law').addEventListener('click', async (e) => {
+    const add = e.target.closest('[data-law-add]'), rm = e.target.closest('[data-law-remove]');
+    if (!add && !rm) return;
+    const refs = st.doc.legal_refs || [];
+    if (rm) { setLawRefs(refs.filter(c => c.id !== rm.dataset.lawRemove)); return; }
+    const lib = await lawLibrary();
+    const r = lib.get(add.dataset.lawAdd) || law.suggestions.map(s => s.reference).find(x => String(x.id) === add.dataset.lawAdd);
+    if (r) setLawRefs([...refs, citeOf(r)]);
+  });
+
   // ---------- ฉบับจริง (ไฟล์ Word/PDF ที่แก้เสร็จแล้วอัปโหลดกลับ) ----------
   const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
   const plainText = (s) => String(s || '').replace(/[​\s]+/g, '');
@@ -844,7 +946,8 @@
       t.setAttribute('aria-selected', String(on));
       t.className = 'pb-2 border-b-2 ' + (on ? 'border-brand-600 text-slate-900 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800');
     });
-    ['chat', 'source', 'checks', 'finals'].forEach(n => { $('tab-' + n).hidden = n !== name; });
+    ['chat', 'source', 'checks', 'law', 'finals'].forEach(n => { $('tab-' + n).hidden = n !== name; });
+    if (name === 'law') openLawTab();
   }
   document.querySelectorAll('[data-tab]').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
   $('rail-source').addEventListener('click', () => { showLeft(); selectTab('source'); });
@@ -1202,6 +1305,7 @@
     renderChecks();
     renderChat();
     renderTodo();
+    renderLaw();
     fitSheet();
   }
 

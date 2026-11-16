@@ -47,6 +47,7 @@
     templates: () => request('/studio/templates').then(r => r.json()),
     template: (id) => request('/studio/templates/' + encodeURIComponent(id)).then(r => r.json()),
     legal: () => request('/legal/references').then(r => r.json()),
+    legalSuggest: (text) => postJSON('/legal/suggest', { text }).then(r => r.json()),
     // คลังกฎหมาย: นำเข้าไฟล์สแกน → AI อ่านทีละหน้า → แยกเป็นข้อ → ยืนยัน (โหมดเซิร์ฟเวอร์)
     legalImport: {
       async upload(file) {

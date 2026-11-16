@@ -168,6 +168,16 @@ class Signer(BaseModel):
     stamp: bool = Field(default=False, description="ใช้ตราประทับชื่อ-ตำแหน่ง: เว้นบรรทัดชื่อและตำแหน่งว่างไว้ประทับ")
 
 
+class LegalCitation(BaseModel):
+    """ข้อกฎหมายจากคลังที่ผู้ใช้เลือกใส่ในบันทึก — ใช้แนบหน้าของข้อนั้นจากไฟล์สแกนจริงท้าย PDF"""
+    id: str
+    title: str = ""
+    section: str = ""
+    source_id: Optional[str] = None      # ไฟล์ต้นฉบับในคลัง (ไม่มี = รายการที่เพิ่มเอง ไม่มีหน้าให้แนบ)
+    page_from: Optional[int] = None
+    page_to: Optional[int] = None
+
+
 class IssuingUnit(BaseModel):
     """หน่วยออกหนังสือ = หนึ่งขั้นในสายการเสนอ (กลุ่มงาน -> กอง -> สำนัก)
 
@@ -569,6 +579,10 @@ class GovDocumentSchema(BaseModel):
     co_signers: Optional[List[Signer]] = Field(
         default=None,
         description="ผู้ลงนามเพิ่มเติมของบันทึกข้อความ ต่อจากผู้ลงนามหลัก (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอ)",
+    )
+    legal_refs: Optional[List[LegalCitation]] = Field(
+        default=None,
+        description="ข้อกฎหมายจากคลังที่เลือกใส่ในหัวข้อ ข้อกฎหมาย (ใช้แนบหน้าจากไฟล์ต้นฉบับท้าย PDF)",
     )
     signatory_stamp: bool = Field(
         default=False,

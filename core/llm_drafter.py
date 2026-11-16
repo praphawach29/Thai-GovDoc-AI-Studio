@@ -253,6 +253,50 @@ def _call_gemini(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
     return DraftContent.model_validate_json(response.text or "")
 
 
+def structured_call(system: str, prompt: str, schema, config: "LLMConfig", timeout_s: float = 25.0):
+    """คำขอเล็ก ๆ ที่ตอบเป็น JSON ตาม schema (pydantic) — ลองตามลำดับผู้ให้บริการ (Gemini → Claude)
+    คืนวัตถุตาม schema หรือ raise ถ้าทุกตัวล้มเหลว / ไม่มีคีย์"""
+    errors = []
+    for name in config.provider_order:
+        try:
+            if name == "gemini" and config.gemini_api_key:
+                from google import genai
+                from google.genai import types
+
+                client = genai.Client(api_key=config.gemini_api_key,
+                                      http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
+                response = _gemini_generate(client, config.gemini_model, prompt, system_instruction=system,
+                                            response_mime_type="application/json", response_schema=schema)
+                if isinstance(getattr(response, "parsed", None), schema):
+                    return response.parsed
+                return schema.model_validate_json(response.text or "")
+            if name == "claude" and config.anthropic_api_key:
+                sch = schema.model_json_schema()
+
+                def closed(node):          # โหมด JSON เข้มงวดต้องปิด additionalProperties ทุกระดับ
+                    if isinstance(node, dict):
+                        if node.get("type") == "object" or "properties" in node:
+                            node["additionalProperties"] = False
+                        for v in node.values():
+                            closed(v)
+                    elif isinstance(node, list):
+                        for v in node:
+                            closed(v)
+                closed(sch)
+                client = _anthropic_client(config, timeout_s)
+                response = _claude_create(client, dict(
+                    model=config.claude_model, max_tokens=2000, system=system,
+                    messages=[{"role": "user", "content": prompt}],
+                    output_config={"effort": "low", "format": {"type": "json_schema", "schema": sch}},
+                ))
+                text = next((b.text for b in response.content if b.type == "text"), "")
+                return schema.model_validate_json(text)
+        except Exception as exc:
+            _log_failure("structured", name, config.gemini_model if name == "gemini" else config.claude_model, exc)
+            errors.append(f"{name}: {_short_error(exc)}")
+    raise RuntimeError("; ".join(errors) or "ไม่ได้ตั้งค่า AI")
+
+
 def _status_and_message(exc: Exception) -> Tuple[Optional[int], str]:
     """รหัสสถานะ HTTP และข้อความจากผู้ให้บริการ (Anthropic: status_code/body, Google: code/message)"""
     status = getattr(exc, "status_code", None) or getattr(exc, "code", None)

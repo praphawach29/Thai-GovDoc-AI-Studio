@@ -8,10 +8,13 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from core.legal_sources import LegalLibrary, LegalReference
 from server.auth import CurrentUser, get_current_user, get_profile, get_supabase
-from server.settings import Settings, get_settings
+from core.legal_suggest import LegalPicks, suggest
+from core.llm_drafter import structured_call
+from server.settings import Settings, get_settings, llm_config
 from server.supabase import SupabaseError
 
 router = APIRouter(tags=["legal"])
@@ -43,6 +46,37 @@ def list_legal_references(
     except SupabaseError:
         params["select"] = _COLUMNS
         return {"references": client.select("legal_references", params)}
+
+
+class SuggestRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20000)   # เรื่อง + เนื้อความ + สรุปต้นเรื่อง
+    limit: int = Field(5, ge=1, le=10)
+
+
+@router.post("/api/v1/legal/suggest")
+def suggest_legal_references(
+    req: SuggestRequest,
+    user: Optional[CurrentUser] = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
+    """ข้อกฎหมายที่เกี่ยวข้องกับเรื่อง จากคลังที่ยืนยันแล้วเท่านั้น (AI เลือก; ไม่มี AI ใช้คำที่ตรงกัน)"""
+    client = _client(user, settings)
+    if client is None:
+        refs = [ref.model_dump() for ref in LegalLibrary().list(verified_only=True)]
+    else:
+        params = {"select": _COLUMNS + _IMPORT_COLUMNS, "verified": "eq.true", "limit": "1000"}
+        try:
+            refs = client.select("legal_references", params)
+        except SupabaseError:
+            params["select"] = _COLUMNS
+            refs = client.select("legal_references", params)
+    config = llm_config(settings)
+    ai = None
+    if config.gemini_api_key or config.anthropic_api_key:
+        ai = lambda system, prompt: structured_call(system, prompt, LegalPicks, config, timeout_s=25.0)
+    picks = suggest(req.text, refs, ai=ai, limit=req.limit)
+    by_id = {str(r["id"]): r for r in refs}
+    return {"suggestions": [{"reference": by_id[p.id], "reason": p.reason, "by": p.by} for p in picks]}
 
 
 @router.post("/api/v1/legal/references")

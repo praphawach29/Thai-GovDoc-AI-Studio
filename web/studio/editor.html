@@ -40,6 +40,7 @@
       <button type="button" role="tab" data-tab="chat" aria-selected="true" class="pb-2 border-b-2 border-brand-600 text-slate-900 font-medium">บทสนทนา</button>
       <button type="button" role="tab" data-tab="source" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ต้นเรื่อง</button>
       <button type="button" role="tab" data-tab="checks" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ผลตรวจ</button>
+      <button type="button" role="tab" data-tab="law" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">กฎหมาย <span id="law-count" class="ml-0.5 text-[10px] px-1.5 rounded-full bg-slate-100 text-slate-600">0</span></button>
       <button type="button" role="tab" data-tab="finals" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ฉบับจริง <span id="finals-count" class="ml-0.5 text-[10px] px-1.5 rounded-full bg-slate-100 text-slate-600">0</span></button>
     </div>
 
@@ -90,6 +91,31 @@
     </div>
 
     <div id="tab-checks" class="flex-1 overflow-y-auto px-5 py-4 space-y-2" role="tabpanel" hidden></div>
+
+    <!-- ข้อกฎหมาย: เลือกจากคลังที่ยืนยันแล้ว (AI เสนอ / ค้นเอง) → หัวข้อ ข้อกฎหมาย ในบันทึก -->
+    <div id="tab-law" class="flex-1 overflow-y-auto px-5 py-4 space-y-4 text-xs" role="tabpanel" hidden>
+      <p id="law-external-note" class="hidden bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3">หัวข้อ "ข้อกฎหมาย" ใช้กับบันทึกข้อความ — หนังสือภายนอกให้อ้างในเนื้อความเอง</p>
+      <section>
+        <h3 class="text-[11px] font-semibold text-slate-400 tracking-wider mb-2">ในบันทึกนี้</h3>
+        <ul id="law-selected" class="space-y-2"></ul>
+      </section>
+      <section class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">ข้อที่เกี่ยวข้อง</h3>
+          <button type="button" id="law-suggest" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-wand-magic-sparkles text-emerald-300"></i><span>ให้ AI เสนอ</span></button>
+        </div>
+        <ul id="law-suggestions" class="space-y-2"></ul>
+      </section>
+      <section class="space-y-2">
+        <h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">ค้นในคลังกฎหมาย (ยืนยันแล้ว)</h3>
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]"></i>
+          <label for="law-search" class="sr-only">ค้นในคลังกฎหมาย</label>
+          <input id="law-search" type="search" placeholder="เช่น ค่าใช้สถานที่, มาตรา ๖, เครื่องหมายราชการ" class="w-full pl-7 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
+        </div>
+        <ul id="law-results" class="space-y-2"></ul>
+      </section>
+    </div>
 
     <div id="tab-finals" class="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-xs" role="tabpanel" hidden>
       <ol class="bg-white border border-slate-200 rounded-xl p-3 space-y-1 text-slate-600 list-decimal list-inside">
