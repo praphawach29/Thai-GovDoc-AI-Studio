@@ -83,7 +83,7 @@ def _join(lines: Iterable[str]) -> str:
         if not line:
             fresh = True
             continue
-        if fresh or _ITEM.match(line) or not paras:
+        if fresh or _ITEM.match(line) or _PURPOSE.match(line) or not paras:
             paras.append(line)
         else:
             # OCR ตัดบรรทัดกลางประโยค: ภาษาไทยต่อกันไม่เว้นวรรค (ยกเว้นท้ายบรรทัดเป็นตัวเลข/ละติน)

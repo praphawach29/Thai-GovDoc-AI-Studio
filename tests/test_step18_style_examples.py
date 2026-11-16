@@ -73,7 +73,9 @@ def test_parse_memo_by_headings():
     assert "\n" not in ex.part_reason
     assert ex.part_details.splitlines()[1].startswith("๒. ผู้ประสานงาน")
     assert ex.part_purpose.startswith("กลุ่มงานส่งเสริมกีฬาพิจารณาแล้ว")
-    assert ex.part_purpose.endswith("จึงเรียนมาเพื่อโปรดพิจารณา")
+    assert ex.part_purpose.splitlines() == [
+        "กลุ่มงานส่งเสริมกีฬาพิจารณาแล้ว เห็นว่า การจัดการแข่งขันดังกล่าวเป็นการส่งเสริมกีฬาเยาวชน",
+        "จึงเห็นควรอนุญาตให้ใช้สนามกีฬาตามที่ขอ", "จึงเรียนมาเพื่อโปรดพิจารณา"]   # "จึง..." ขึ้นย่อหน้าใหม่
     assert "สุดา" not in ex.part_purpose and "ตราครุฑ" not in ex.part_reason   # ผู้ลงนาม/คำอธิบายภาพไม่ปน
     assert ex.usable
 

@@ -69,6 +69,7 @@
         </summary>
         <p id="source-summary-text" class="mt-1.5 whitespace-pre-line leading-relaxed text-slate-700 font-body"></p>
       </details>
+      <p id="style-refs" class="px-3 py-1.5 bg-indigo-50/60 border-b border-indigo-100 text-[11px] text-indigo-900 shrink-0" hidden></p>
       <div id="source-pagebar" class="px-3 py-1 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-[11px] text-slate-600 shrink-0" hidden>
         <div class="flex items-center gap-1">
           <button id="source-page-prev" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="หน้าก่อนหน้า"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>
@@ -123,6 +124,15 @@
     </div>
 
     <div id="tab-finals" class="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-xs" role="tabpanel" hidden>
+      <!-- ร่างที่แก้เสร็จแล้ว → ตัวอย่างสำนวนของหน่วย (AI ใช้เป็นแบบสำนวนในเรื่องคล้ายกันครั้งต่อไป) -->
+      <section id="mark-example-box" class="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3 space-y-2">
+        <div class="font-semibold text-slate-800"><i class="fa-solid fa-stamp text-indigo-700 mr-1"></i>ร่างนี้คือฉบับที่ลงนาม/ส่งออกจริงแล้ว?</div>
+        <p class="text-slate-600">เก็บข้อความของร่างนี้ (ตามที่แก้ล่าสุด) เป็น "ตัวอย่างของหน่วย" ให้ AI ร่างเรื่องคล้ายกันครั้งต่อไปได้สำนวนเดียวกัน — ใช้เฉพาะสำนวน ไม่ใช้เลข ชื่อ วันที่</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="mark-example" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-stamp"></i><span>นี่คือฉบับจริง</span></button>
+          <span id="mark-example-note" class="text-slate-500"></span>
+        </div>
+      </section>
       <ol class="bg-white border border-slate-200 rounded-xl p-3 space-y-1 text-slate-600 list-decimal list-inside">
         <li>กดปุ่ม <b>Word</b> ด้านบน แล้วแก้/จัดหน้าต่อใน Microsoft Word จนเสร็จ</li>
         <li>อัปโหลดไฟล์ที่แก้แล้วที่นี่ ระบบเก็บไฟล์ตามที่ได้รับทุกตัวอักษร (ไม่แปลงกลับ) แก้หรือลบภายหลังไม่ได้</li>

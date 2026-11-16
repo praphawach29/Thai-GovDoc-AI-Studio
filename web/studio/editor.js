@@ -1010,6 +1010,36 @@
   });
   loadFinals();
 
+  // ---------- นี่คือฉบับจริง → ตัวอย่างสำนวนของหน่วย ----------
+  function markExampleState(row) {
+    $('mark-example').querySelector('span').textContent = row ? 'อัปเดตตัวอย่าง' : 'นี่คือฉบับจริง';
+    const when = row ? relTime(row.updated_at || row.created_at) : '';
+    $('mark-example-note').textContent = row
+      ? `เก็บเป็นตัวอย่างแล้ว${when ? ` (${when})` : ''} — แก้ร่างแล้วกดอีกครั้งเพื่ออัปเดต`
+      : '';
+  }
+  async function loadMarkExample() {
+    if (!finalsEnabled) {
+      $('mark-example').disabled = true;
+      $('mark-example-note').textContent = 'ใช้ได้เมื่อเข้าสู่ระบบ';
+      return;
+    }
+    try { markExampleState((await api.examples.list(entry.id))[0]); }
+    catch (err) { $('mark-example-note').textContent = err.message; }
+  }
+  $('mark-example').addEventListener('click', async () => {
+    const btn = $('mark-example');
+    btn.disabled = true;
+    try {
+      await persist();
+      const res = await api.examples.fromDocument(entry.id);
+      markExampleState(res.example);
+      toast(res.created ? 'เก็บเป็นตัวอย่างของหน่วยแล้ว — AI จะใช้สำนวนนี้กับเรื่องคล้ายกัน' : 'อัปเดตตัวอย่างแล้ว');
+    } catch (err) { toast('เก็บเป็นตัวอย่างไม่สำเร็จ: ' + err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+  loadMarkExample();
+
   // ---------- แท็บซ้าย ----------
   function selectTab(name) {
     document.querySelectorAll('[data-tab]').forEach(t => {
@@ -1064,7 +1094,14 @@
         <div class="flex-1 space-y-1 min-w-0"><div class="text-xs font-medium text-slate-500">สรุปต้นเรื่อง <span class="font-normal text-slate-400">· ตรวจกับต้นฉบับเสมอ</span></div>
           <p id="chat-summary" class="text-xs text-slate-700 leading-relaxed bg-white border border-slate-200/80 p-3 rounded-lg font-body whitespace-pre-line">${esc(aiSummary())}</p></div>
       </div>` : '';
-    $('tab-chat').innerHTML = user + file + summary + tools + ready;
+    const refs = entry.styleExamples || [];
+    const style = refs.length ? `
+      <div class="flex items-start gap-2.5">${avatar}
+        <div id="chat-style" class="flex-1 space-y-1 min-w-0"><div class="text-xs font-medium text-slate-500">อ้างสำนวนจากตัวอย่างของหน่วย <span class="font-normal text-slate-400">· ใช้เฉพาะสำนวน ข้อเท็จจริงมาจากต้นเรื่องนี้</span></div>
+          <ul class="text-xs text-slate-700 bg-indigo-50/60 border border-indigo-100 p-2.5 rounded-lg space-y-0.5">${refs.map(r =>
+            `<li class="truncate"><i class="fa-solid fa-stamp text-indigo-500 text-[10px] mr-1"></i>${DOC_TYPE_LABEL[r.doc_type] || ''} เรื่อง${esc(r.subject || '-')}</li>`).join('')}</ul></div>
+      </div>` : '';
+    $('tab-chat').innerHTML = user + file + summary + tools + style + ready;
     $('card-open')?.addEventListener('click', () => $('doc-viewport').scrollTo({ top: 0, behavior: 'smooth' }));
   }
 
@@ -1146,6 +1183,10 @@
   function renderSource() {
     $('source-summary').hidden = !aiSummary();
     $('source-summary-text').textContent = aiSummary();
+    const refs = entry.styleExamples || [];
+    $('style-refs').hidden = !refs.length;
+    $('style-refs').innerHTML = refs.length ? `<i class="fa-solid fa-stamp mr-1"></i>ร่างนี้อ้างสำนวนจาก${toThai(refs.length)} ตัวอย่างของหน่วย: `
+      + refs.map(r => `<span class="font-medium">เรื่อง${esc(r.subject || '-')}</span>`).join(' · ') : '';
     const ctx = entry.context;
     if (!ctx) {
       $('source-meta').innerHTML = '';
@@ -1279,6 +1320,7 @@
     st.doc = res.document; st.check = res.check;
     // ต้นเรื่องเดิมยังเป็นข้อความที่อ่านจากไฟล์ (คงไว้ ไม่แทนด้วยข้อความที่ส่งไปร่างใหม่)
     entry.steps = res.steps;
+    entry.styleExamples = res.style_examples || [];
     if (!entry.context) entry.context = res.context;
     else if (res.context?.summary_by_ai) entry.context = { ...entry.context, summary: res.context.summary, summary_by_ai: true };
     if (extra) entry.prompt = [entry.prompt, extra].filter(Boolean).join('\n\n');

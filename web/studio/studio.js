@@ -74,6 +74,26 @@
       rename: (sourceId, title) => sendJSON('PATCH', '/legal/sources/' + encodeURIComponent(sourceId), { title }).then(r => r.json()),
       verify: (ids, verified = true) => sendJSON('PATCH', '/legal/references/verify', { ids, verified }).then(r => r.json()),
     },
+    // คลังตัวอย่างของหน่วย (หนังสือฉบับจริง → สำนวนให้ AI) — โหมดเซิร์ฟเวอร์
+    examples: {
+      list: (documentId) => request('/examples' + (documentId ? '?document_id=' + encodeURIComponent(documentId) : '')).then(r => r.json()),
+      // อัปโหลด + ลงทะเบียน → แถวตัวอย่าง หรือ { needs_ocr, page_count, path } (PDF สแกน: อ่านทีละหน้าแล้วเรียก register)
+      async upload(file) {
+        const { path, upload_url } = await postJSON('/examples/upload-url', { filename: file.name, size_bytes: file.size }).then(r => r.json());
+        await putToStorage(upload_url, file, 'อัปโหลดไฟล์ตัวอย่างไม่สำเร็จ');
+        return postJSON('/examples', { path, filename: file.name }).then(r => r.json());
+      },
+      register: (path, filename, pageTexts) => postJSON('/examples', { path, filename, page_texts: pageTexts }).then(r => r.json()),
+      ocrPage(blob, page) {
+        const fd = new FormData();
+        fd.append('image', blob, 'page-' + page + '.jpg');
+        fd.append('page', String(page));
+        return request('/examples/ocr-page', { method: 'POST', body: fd }).then(r => r.json());
+      },
+      fromDocument: (documentId) => postJSON('/examples/from-document', { document_id: documentId }).then(r => r.json()),
+      fileUrl: (id) => request('/examples/' + encodeURIComponent(id) + '/file-url').then(r => r.json()).then(r => r.url),
+      remove: (id) => request('/examples/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json()),
+    },
     health: () => fetch(API + '/health').then(r => r.ok),
     me: () => request('/me').then(r => r.json()),
     // โหมดเซิร์ฟเวอร์: อัปโหลดไฟล์ต้นเรื่องตรงเข้า Supabase Storage (ไม่ผ่าน API ซึ่งรับไฟล์ใหญ่ไม่ได้)

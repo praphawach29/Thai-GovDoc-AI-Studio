@@ -32,7 +32,7 @@ router = APIRouter(tags=["examples"])
 logger = logging.getLogger("govdoc.api")
 
 _SUFFIXES = {".pdf", ".docx"}
-_LIST_COLUMNS = ("id,origin,document_id,filename,doc_type,subject,doc_number,doc_date,"
+_LIST_COLUMNS = ("id,origin,document_id,filename,doc_type,subject,doc_number,doc_date,updated_at,"
                  "part_reason,part_details,part_purpose,page_count,created_at")
 _MIGRATION_HINT = ("ฐานข้อมูลยังไม่เห็นตารางคลังตัวอย่าง — ให้ผู้ดูแลรัน supabase/migrations/20261116000010_style_examples.sql "
                    "ทั้งไฟล์ใน SQL Editor (ถ้ารันแล้ว ให้รัน: notify pgrst, 'reload schema';)")

@@ -421,6 +421,7 @@
         doc: res.document, context: res.context, classification: res.classification,
         check: res.check, steps: res.steps, prompt, cloudBlocked: res.cloud_ai_blocked,
         sourceName: state.file?.name || null, sourceFileId: res.source_file_id || null, unitKey: $('unit').value || null,
+        styleExamples: res.style_examples || [],
       });
     } catch (err) {
       stopProgress();
@@ -547,6 +548,35 @@
         catch (err) { lawStatus('นำเข้าไม่สำเร็จ: ' + err.message, null, true); }
         finally { $('law-pick').disabled = false; }
       });
+    },
+    async examples(body) {
+      const server = await auth.serverMode();
+      if (!server) { body.innerHTML = '<p class="text-xs text-amber-700">คลังตัวอย่างของหน่วยใช้ได้เมื่อเข้าสู่ระบบและเก็บข้อมูลบนเซิร์ฟเวอร์</p>'; return; }
+      body.innerHTML = `
+        <div class="mb-4 p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/50 text-xs space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div><div class="font-semibold text-slate-800"><i class="fa-solid fa-stamp text-indigo-700 mr-1"></i>เพิ่มหนังสือฉบับจริงที่ลงนาม/ส่งออกแล้ว</div>
+              <div class="text-slate-500 mt-0.5">PDF สแกน หรือ Word (.docx) เลือกได้หลายไฟล์ — ระบบแยก เรื่อง/ภาคเหตุ/ข้อเท็จจริง/ความประสงค์ เก็บเป็นตัวอย่างสำนวน</div></div>
+            <input id="ex-file" type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only">
+            <button type="button" id="ex-pick" class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-upload"></i>เลือกไฟล์</button>
+          </div>
+          <ul id="ex-progress" class="space-y-1 empty:hidden"></ul>
+        </div>
+        <p class="text-xs text-slate-500 mb-3">ตอนร่าง AI จะเลือกตัวอย่างประเภทเดียวกันที่ใกล้เรื่องที่สุด ๒–๓ ฉบับมาเป็นแบบ <b>สำนวน</b> เท่านั้น — เลข ชื่อ วันที่ ในตัวอย่างถูกปิดก่อนส่งให้ AI
+          · ร่างที่แก้เสร็จแล้วกด <b>"นี่คือฉบับจริง"</b> ในแท็บ ฉบับจริง ของหน้าแก้ไขได้เช่นกัน</p>
+        <div id="ex-list" class="space-y-2"><p class="text-xs text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลด...</p></div>`;
+      await renderExampleList();
+      $('ex-pick').addEventListener('click', () => $('ex-file').click());
+      $('ex-file').addEventListener('change', async (e) => {
+        const files = [...e.target.files];
+        e.target.value = '';
+        if (!files.length) return;
+        $('ex-pick').disabled = true;
+        try {
+          for (const file of files) await importExample(file);      // ทีละไฟล์ (แต่ละไฟล์อ่านพร้อมกัน ๓ หน้า)
+        } finally { $('ex-pick').disabled = false; await renderExampleList(); }
+      });
+      $('ex-list').addEventListener('click', onExampleClick);
     },
     async profile(body) {
       const p = state.profile || await api.profile();
@@ -766,7 +796,87 @@
     };
   }
 
-  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', profile: 'ข้อมูลหน่วยงานและผู้ลงนาม' };
+  // ---------- คลังตัวอย่างของหน่วย: หนังสือฉบับจริง → สำนวนให้ AI ----------
+  function exampleProgress(file) {
+    const li = document.createElement('li');
+    li.className = 'flex items-center gap-2 text-slate-600';
+    $('ex-progress').appendChild(li);
+    return (text, tone) => {
+      const icon = tone === 'ok' ? 'fa-check text-emerald-600' : tone === 'error' ? 'fa-xmark text-rose-600' : 'fa-circle-notch fa-spin text-indigo-500';
+      li.className = 'flex items-start gap-2 ' + (tone === 'error' ? 'text-rose-700' : 'text-slate-600');
+      li.innerHTML = `<i class="fa-solid ${icon} mt-0.5 shrink-0"></i><span class="min-w-0"><span class="font-medium text-slate-800">${esc(file.name)}</span> — ${esc(text)}</span>`;
+    };
+  }
+  async function importExample(file) {
+    const status = exampleProgress(file);
+    if (!/\.(pdf|docx)$/i.test(file.name)) { status('รับเฉพาะ .pdf หรือ .docx', 'error'); return; }
+    try {
+      status('อัปโหลด...');
+      let res = await api.examples.upload(file);
+      if (res.needs_ocr) {
+        // PDF สแกน: เบราว์เซอร์เรนเดอร์ทีละหน้า → AI อ่านหน้าละคำขอ (ไม่ชนเพดานเวลาของเซิร์ฟเวอร์)
+        const lib = await window.GovDocSourceViewer.loadPdfJs();
+        const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+        const total = pdf.numPages, texts = new Array(total).fill('');
+        let done = 0, next = 1;
+        status(`AI กำลังอ่าน ๐/${toThai(total)} หน้า...`);
+        async function worker() {
+          while (next <= total) {
+            const n = next++;
+            const blob = await pageJpeg(pdf, n);
+            let out;
+            try { out = await api.examples.ocrPage(blob, n); } catch (_) { out = await api.examples.ocrPage(blob, n); }
+            texts[n - 1] = out.text;
+            status(`AI กำลังอ่าน ${toThai(++done)}/${toThai(total)} หน้า...`);
+          }
+        }
+        await Promise.all([worker(), worker(), worker()]);
+        status('แยกภาคเหตุ/ข้อเท็จจริง/ความประสงค์...');
+        res = await api.examples.register(res.path, file.name, texts);
+      }
+      status(`เก็บแล้ว: ${DOC_TYPE_LABEL[res.doc_type] || ''} เรื่อง${res.subject || ' (ไม่พบชื่อเรื่อง)'}`, 'ok');
+    } catch (err) { status('ไม่สำเร็จ: ' + err.message, 'error'); }
+  }
+  const exOpen = new Set();
+  let exRows = [];
+  const exPart = (label, text) => text ? `<div><div class="text-[11px] font-semibold text-slate-500">${label}</div><p class="whitespace-pre-line font-body text-slate-700 leading-relaxed">${esc(text)}</p></div>` : '';
+  async function renderExampleList() {
+    const list = $('ex-list');
+    if (!list) return;
+    try { exRows = await api.examples.list(); }
+    catch (err) { list.innerHTML = `<p class="text-xs text-rose-700">${esc(err.message)}</p>`; return; }
+    if (!exRows.length) { list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">ยังไม่มีตัวอย่าง — เพิ่มหนังสือฉบับจริงของหน่วยงานเพื่อให้ AI ร่างได้สำนวนเหมือนงานจริง</p>'; return; }
+    const labels = { internal: ['ต้นเรื่อง', 'ข้อเท็จจริง', 'ข้อพิจารณาและเสนอแนะ'], external: ['ภาคเหตุ', 'ภาคข้อเท็จจริง', 'ภาคความประสงค์'] };
+    list.innerHTML = `<p class="text-[11px] text-slate-400">${toThai(exRows.length)} ฉบับ</p>` + exRows.map((r) => {
+      const open = exOpen.has(r.id), lb = labels[r.doc_type] || labels.internal;
+      const from = r.origin === 'document' ? 'จากร่างในระบบ' : esc(r.filename || 'ไฟล์ที่อัปโหลด');
+      return `<div class="border border-slate-200 rounded-xl bg-white text-xs" data-ex-row="${esc(r.id)}">
+        <div class="flex items-center gap-2 px-3 py-2">
+          <button type="button" data-ex-toggle="${esc(r.id)}" class="flex-1 min-w-0 text-left flex items-center gap-2" aria-expanded="${open}">
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">${DOC_TYPE_LABEL[r.doc_type] || ''}</span>
+            <span class="min-w-0"><span class="block truncate font-medium text-slate-800">${esc(r.subject || '(ไม่มีชื่อเรื่อง)')}</span>
+              <span class="block truncate text-[11px] text-slate-400">${from}${r.doc_number ? ' · ที่ ' + esc(r.doc_number) : ''} · ${relTime(r.created_at)}</span></span>
+          </button>
+          ${r.origin === 'upload' ? `<button type="button" data-ex-file="${esc(r.id)}" class="shrink-0 w-7 h-7 rounded-md text-slate-500 hover:bg-slate-100" title="เปิดไฟล์" aria-label="เปิดไฟล์"><i class="fa-regular fa-file-pdf"></i></button>` : ''}
+          <button type="button" data-ex-delete="${esc(r.id)}" class="shrink-0 w-7 h-7 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50" title="ลบตัวอย่าง" aria-label="ลบตัวอย่าง"><i class="fa-regular fa-trash-can"></i></button>
+        </div>
+        ${open ? `<div class="px-3 pb-3 pt-1 space-y-2 border-t border-slate-100">${exPart(lb[0], r.part_reason)}${exPart(lb[1], r.part_details)}${exPart(lb[2], r.part_purpose)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+  async function onExampleClick(e) {
+    const t = e.target.closest('[data-ex-toggle]'), f = e.target.closest('[data-ex-file]'), d = e.target.closest('[data-ex-delete]');
+    if (t) { const id = t.dataset.exToggle; exOpen.has(id) ? exOpen.delete(id) : exOpen.add(id); await renderExampleList(); return; }
+    if (f) { try { window.open(await api.examples.fileUrl(f.dataset.exFile), '_blank', 'noopener'); } catch (err) { toast(err.message, 'error'); } return; }
+    if (d) {
+      const row = exRows.find(r => r.id === d.dataset.exDelete);
+      if (!confirm(`ลบตัวอย่าง "${row?.subject || ''}" ออกจากคลัง? AI จะไม่ใช้สำนวนจากฉบับนี้อีก (เอกสารและฉบับจริงในระบบไม่ถูกลบ)`)) return;
+      try { await api.examples.remove(d.dataset.exDelete); toast('ลบตัวอย่างแล้ว'); await renderExampleList(); }
+      catch (err) { toast('ลบไม่สำเร็จ: ' + err.message, 'error'); }
+    }
+  }
+
+  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', profile: 'ข้อมูลหน่วยงานและผู้ลงนาม' };
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => {
     const key = b.dataset.open;
     setSidebar(false);
