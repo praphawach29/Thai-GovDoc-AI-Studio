@@ -201,6 +201,45 @@ def legal_source_file_url(
     return {"url": client.signed_download_url(settings.source_bucket, rows[0]["storage_path"], expires_in=3600)}
 
 
+class SectionAdd(BaseModel):
+    """ข้อย่อยที่ผู้ใช้แยกเอง จากไฟล์ที่นำเข้าแล้ว (เช่น ข้อ ๒ จากหนังสือเวียนที่นำเข้าเป็น "ทั้งฉบับ")"""
+    section: str = Field(min_length=1, max_length=200)
+    quote: str = Field(min_length=1, max_length=20000)
+    page_from: int = Field(ge=1)
+    page_to: Optional[int] = Field(None, ge=1)
+    verified: bool = False
+
+
+@router.post("/api/v1/legal/sources/{source_id}/references", status_code=201)
+def legal_add_section(
+    source_id: UUID,
+    req: SectionAdd,
+    user: CurrentUser = Depends(require_supabase_user),
+    profile: Profile = Depends(get_profile),
+    client: SupabaseClient = Depends(get_supabase),
+):
+    """เพิ่มข้อในไฟล์เดิม — เลขหน้าใช้แนบหน้าจริงท้าย PDF จึงต้องอยู่ในจำนวนหน้าของไฟล์"""
+    section, quote = req.section.strip(), req.quote.strip()
+    if not section or not quote:
+        raise HTTPException(status_code=422, detail="หัวข้อและเนื้อหาว่างไม่ได้")
+    page_to = req.page_to or req.page_from
+    try:
+        rows = client.select("legal_sources", {"select": "id,title,page_count", "id": f"eq.{source_id}"})
+        if not rows:
+            raise HTTPException(status_code=404, detail="ไม่พบไฟล์กฎหมาย")
+        pages = rows[0].get("page_count") or 0
+        if page_to < req.page_from or (pages and page_to > pages):
+            raise HTTPException(status_code=422, detail=f"หน้าต้องอยู่ระหว่าง ๑–{pages} และหน้าเริ่มไม่เกินหน้าสุดท้าย")
+        row = client.insert("legal_references", {
+            "org_id": profile.org_id, "recorded_by": user.id, "title": rows[0]["title"], "section": section,
+            "quote": quote, "verified": req.verified, "source_id": str(source_id),
+            "page_from": req.page_from, "page_to": page_to, "chapter": None,
+        })
+    except SupabaseError as exc:
+        raise _schema_guard(exc)
+    return {"reference": row}
+
+
 @router.patch("/api/v1/legal/sources/{source_id}")
 def legal_rename_source(source_id: UUID, req: SourceEdit, client: SupabaseClient = Depends(get_supabase)):
     """เปลี่ยนชื่อฉบับ — ใช้กับทุกข้อในไฟล์นั้น (ชื่อที่แสดงในหัวข้อ ข้อกฎหมาย ของบันทึก)"""

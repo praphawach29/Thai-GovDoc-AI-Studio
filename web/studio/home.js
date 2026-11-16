@@ -559,7 +559,7 @@
     lawOpen.add(source.id);
   }
   const lawOpen = new Set();                 // กลุ่มที่กางไว้ (ไฟล์ที่เพิ่งนำเข้ากางให้อัตโนมัติ)
-  const lawEdit = { ref: null, source: null };   // รายการ/ฉบับที่กำลังแก้
+  const lawEdit = { ref: null, source: null, split: null };   // รายการ/ฉบับที่กำลังแก้ / รายการที่กำลังแยกข้อย่อย
   const lawNum = (r) => parseFloat(String(r.section || '').replace(/[๐-๙]/g, d => '๐๑๒๓๔๕๖๗๘๙'.indexOf(d)).replace(/[^\d.]/g, '')) || 9999;
   function lawItemHTML(r) {
     if (lawEdit.ref === String(r.id)) {
@@ -585,9 +585,31 @@
           <p class="mt-1 text-slate-600 font-body leading-relaxed whitespace-pre-line line-clamp-3 cursor-pointer" data-law-expand title="กดเพื่อดูทั้งหมด">${esc(r.quote || '')}</p>
         </div>
         <div class="shrink-0 flex items-center gap-1">
+          ${r.source_id ? `<button type="button" data-law-split="${esc(r.id)}" class="px-2 py-0.5 rounded-full border border-slate-300 bg-white text-[10px] text-slate-600 hover:border-slate-400" title="เลือกเฉพาะบางข้อจากรายการนี้ เป็นรายการใหม่"><i class="fa-solid fa-scissors mr-0.5"></i>แยกข้อย่อย</button>` : ''}
           <button type="button" data-law-edit="${esc(r.id)}" class="px-2 py-0.5 rounded-full border border-slate-300 bg-white text-[10px] text-slate-600 hover:border-slate-400" title="แก้หัวข้อหรือเนื้อหา"><i class="fa-solid fa-pen mr-0.5"></i>แก้ไข</button>
           <button type="button" data-law-verify="${esc(r.id)}" data-on="${r.verified ? '1' : ''}" class="px-2 py-0.5 rounded-full border text-[10px] ${r.verified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-300 hover:border-emerald-400'}">${r.verified ? '<i class="fa-solid fa-check mr-0.5"></i>ยืนยันแล้ว' : 'ยืนยัน'}</button>
         </div>
+      </div>
+    </li>`;
+  }
+  // ฟอร์มแยกข้อย่อย: เริ่มจากเนื้อหาและหน้าของรายการเดิม ให้ตัดเหลือเฉพาะข้อที่ใช้
+  function lawSplitHTML(r) {
+    const rows = Math.min(16, Math.max(6, String(r.quote || '').split('\n').length + 1));
+    const num = (name, v) => `<input data-law-f="${name}" type="number" min="1" value="${v || ''}" class="w-16 px-2 py-1 border border-slate-300 rounded-lg text-center focus:outline-none focus:ring-1 focus:ring-emerald-500">`;
+    return `<li class="px-3.5 py-3 text-xs bg-emerald-50/50 space-y-2" data-law-split-form="${esc(r.id)}">
+      <div class="font-medium text-emerald-800"><i class="fa-solid fa-scissors mr-1"></i>แยกข้อย่อยจาก "${esc(r.section || '')}" — ได้รายการใหม่ (รายการเดิมยังอยู่)</div>
+      <label class="block"><span class="text-[11px] font-medium text-slate-600">หัวข้อ (เช่น "ข้อ ๒")</span>
+        <input data-law-f="section" maxlength="200" placeholder="ข้อ ..." class="mt-1 w-full px-2.5 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>
+      <label class="block"><span class="text-[11px] font-medium text-slate-600">เนื้อหา (ลบส่วนที่ไม่ใช้ เหลือเฉพาะข้อนี้)</span>
+        <textarea data-law-f="quote" rows="${rows}" class="mt-1 w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-body text-[13px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500">${esc(r.quote || '')}</textarea></label>
+      <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+        <span>หน้าที่จะแนบท้าย PDF:</span> ${num('page_from', r.page_from)} <span>ถึง</span> ${num('page_to', r.page_to || r.page_from)}
+        <button type="button" data-law-file="${esc(r.source_id)}" class="ml-auto px-2 py-1 rounded-md text-slate-600 hover:bg-slate-200"><i class="fa-regular fa-file-pdf mr-1"></i>เปิดไฟล์จริง</button>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" data-law-split-save="${esc(r.id)}" class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 text-white font-medium">บันทึก</button>
+        <button type="button" data-law-split-save="${esc(r.id)}" data-and-verify="1" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium">บันทึกและยืนยัน</button>
+        <button type="button" data-law-cancel class="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100">ยกเลิก</button>
       </div>
     </li>`;
   }
@@ -623,10 +645,11 @@
           <button type="button" data-law-file="${esc(key)}" class="shrink-0 px-2 py-1 rounded-md text-[11px] text-slate-600 hover:bg-slate-200" title="เปิดไฟล์จริง"><i class="fa-regular fa-file-pdf mr-1"></i>ไฟล์</button>` : ''}
           ${ok < g.items.length ? `<button type="button" data-law-verify-all="${esc(key)}" class="shrink-0 px-2 py-1 rounded-md text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white">ยืนยันทั้งหมด</button>` : ''}`}
         </header>
-        <ul class="${open || g.items.some(r => lawEdit.ref === String(r.id)) ? '' : 'hidden'} divide-y divide-slate-100">${g.items.map(lawItemHTML).join('')}</ul>
+        <ul class="${open || g.items.some(r => lawEdit.ref === String(r.id) || lawEdit.split === String(r.id)) ? '' : 'hidden'} divide-y divide-slate-100">${g.items.map(r => lawItemHTML(r) + (lawEdit.split === String(r.id) ? lawSplitHTML(r) : '')).join('')}</ul>
       </section>`;
     }).join('');
     list.querySelector('[data-law-editing] [data-law-f="quote"]')?.focus();
+    list.querySelector('[data-law-split-form] [data-law-f="section"]')?.focus();
     list.querySelector('#law-rename')?.select();
     list.onclick = async (e) => {
       const t = e.target.closest('[data-law-toggle]');
@@ -635,7 +658,27 @@
       if (x) { x.classList.toggle('line-clamp-3'); return; }
       const f = e.target.closest('[data-law-file]');
       if (f) { try { window.open(await api.legalImport.fileUrl(f.dataset.lawFile), '_blank', 'noopener'); } catch (err) { toast(err.message, 'error'); } return; }
-      if (e.target.closest('[data-law-cancel]')) { lawEdit.ref = lawEdit.source = null; return renderLawList(body); }
+      if (e.target.closest('[data-law-cancel]')) { lawEdit.ref = lawEdit.source = lawEdit.split = null; return renderLawList(body); }
+      const sp = e.target.closest('[data-law-split]');
+      if (sp) { lawEdit.split = sp.dataset.lawSplit; lawEdit.ref = lawEdit.source = null; return renderLawList(body); }
+      const ss = e.target.closest('[data-law-split-save]');
+      if (ss) {
+        const form = ss.closest('[data-law-split-form]');
+        const val = (n) => form.querySelector(`[data-law-f="${n}"]`).value.trim();
+        const fields = { section: val('section'), quote: val('quote'), page_from: Number(val('page_from')), page_to: Number(val('page_to')) || null };
+        if (!fields.section || !fields.quote) { toast('ใส่หัวข้อและเนื้อหาก่อน', 'warn'); return; }
+        if (!(fields.page_from >= 1)) { toast('ใส่หน้าที่จะแนบ', 'warn'); return; }
+        if (ss.dataset.andVerify) fields.verified = true;
+        const parent = references.find(x => String(x.id) === ss.dataset.lawSplitSave);
+        ss.disabled = true;
+        try {
+          await api.legalImport.addSection(parent.source_id, fields);
+          lawEdit.split = null; lawOpen.add(parent.source_id);
+          toast(`เพิ่ม "${fields.section}" แล้ว${fields.verified ? ' (ยืนยันแล้ว)' : ''}`);
+          await renderLawList(body);
+        } catch (err) { ss.disabled = false; toast('เพิ่มไม่สำเร็จ: ' + err.message, 'error'); }
+        return;
+      }
       const ed = e.target.closest('[data-law-edit]');
       if (ed) { lawEdit.ref = ed.dataset.lawEdit; lawEdit.source = null; return renderLawList(body); }
       const rn = e.target.closest('[data-law-rename]');

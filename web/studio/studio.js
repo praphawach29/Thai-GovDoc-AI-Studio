@@ -70,6 +70,7 @@
       sections: (sourceId, pageTexts, title) => postJSON('/legal/sources/' + encodeURIComponent(sourceId) + '/sections', { page_texts: pageTexts, title: title || '' }).then(r => r.json()),
       sources: () => request('/legal/sources').then(r => r.json()),
       fileUrl: (sourceId) => request('/legal/sources/' + encodeURIComponent(sourceId) + '/file-url').then(r => r.json()).then(r => r.url),
+      addSection: (sourceId, fields) => postJSON('/legal/sources/' + encodeURIComponent(sourceId) + '/references', fields).then(r => r.json()),
       rename: (sourceId, title) => sendJSON('PATCH', '/legal/sources/' + encodeURIComponent(sourceId), { title }).then(r => r.json()),
       verify: (ids, verified = true) => sendJSON('PATCH', '/legal/references/verify', { ids, verified }).then(r => r.json()),
     },

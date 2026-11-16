@@ -84,6 +84,34 @@ def test_rename_source_updates_all_sections(fake):
     assert _c().patch(f"/api/v1/legal/sources/{fake.sid}", json={"title": "   "}, headers=h).status_code == 422
 
 
+def test_add_sub_section_to_imported_file(fake):
+    h = {"Authorization": f"Bearer {fake.token()}"}
+    fake.tables["legal_sources"][0]["page_count"] = 2
+    r = _c().post(f"/api/v1/legal/sources/{fake.sid}/references", json={
+        "section": " ข้อ ๒ ", "quote": "ข้อ ๒ การใช้ตราเครื่องหมายประจำกรุงเทพมหานคร กรณีอื่น ๆ ต้องได้รับอนุญาต",
+        "page_from": 2, "verified": True}, headers=h)
+    assert r.status_code == 201, r.text
+    row = r.json()["reference"]
+    assert (row["section"], row["page_from"], row["page_to"], row["source_id"], row["verified"]) == ("ข้อ ๒", 2, 2, fake.sid, True)
+    assert row["title"] == "พระราชบัญญัติ" and row["org_id"] and row["recorded_by"]       # ชื่อฉบับเดียวกับไฟล์
+    assert len(fake.tables["legal_references"]) == 3                                    # รายการเดิมยังอยู่
+
+
+@pytest.mark.parametrize("body, code", [
+    ({"section": "ข้อ ๒", "quote": "x", "page_from": 3}, 422),           # เกินจำนวนหน้า
+    ({"section": "ข้อ ๒", "quote": "x", "page_from": 2, "page_to": 1}, 422),
+    ({"section": " ", "quote": "x", "page_from": 1}, 422),
+    ({"section": "ข้อ ๒", "quote": "x", "page_from": 0}, 422),
+])
+def test_add_sub_section_validates(fake, body, code):
+    h = {"Authorization": f"Bearer {fake.token()}"}
+    fake.tables["legal_sources"][0]["page_count"] = 2
+    assert _c().post(f"/api/v1/legal/sources/{fake.sid}/references", json=body, headers=h).status_code == code
+    missing = "99999999-9999-9999-9999-999999999999"
+    assert _c().post(f"/api/v1/legal/sources/{missing}/references",
+                     json={"section": "ข้อ ๑", "quote": "x", "page_from": 1}, headers=h).status_code == 404
+
+
 def test_local_mode_edit(tmp_path, monkeypatch):
     from core import legal_sources
     from core.legal_sources import LegalLibrary, LegalReference
