@@ -46,6 +46,21 @@ wait
               else 'FAIL concurrency: ' || count(*) || ' rows, ' || count(distinct doc_number) || ' distinct' end
   from public.outgoing_register where book = 'outgoing:PAR/'" | tee "$WORK/conc"
 grep -q '^concurrency:' "$WORK/conc"
+
+# ออกเลขจากหน้าแก้ไขพร้อมกัน (issue_outgoing_number รูปแบบเลขอยู่หน้า) → 200 เลขไม่ซ้ำ
+for i in $(seq 1 20); do
+  "${PSQL[@]}" -c "
+    set role authenticated;
+    set request.jwt.claims = '{\"sub\":\"00000000-0000-0000-0000-00000000000b\"}';
+    select public.issue_outgoing_number('', 'concurrent', '', null, null, '/PAR') from generate_series(1, 10);" >/dev/null &
+done
+wait
+"${PSQL[@]}" -t -A -c "
+  select case when count(*) = 200 and count(distinct doc_number) = 200 and max(reg_no) = 200
+              then 'concurrency issue: 200 เลข ไม่ซ้ำ'
+              else 'FAIL concurrency issue: ' || count(*) || ' rows, ' || count(distinct doc_number) || ' distinct' end
+  from public.outgoing_register where book = 'outgoing:|/PAR'" | tee "$WORK/conc2"
+grep -q '^concurrency issue:' "$WORK/conc2"
 "${PSQL[@]}" -t -A -c "set role authenticated;
   set request.jwt.claims = '{\"sub\":\"00000000-0000-0000-0000-00000000000b\"}';
   select 'audit chain after concurrency: ' || ok from public.verify_audit_chain()" | tee "$WORK/chain"

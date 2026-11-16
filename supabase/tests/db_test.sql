@@ -135,6 +135,77 @@ select pg_temp.check((select ok from public.verify_audit_chain()), 'audit chain 
 select pg_temp.check((select count(*) from public.audit_log) >= 10, 'มี audit อัตโนมัติ');
 commit;
 
+-- ---------------------------------------------------------------- ทะเบียนรับ-ส่ง (migration 13)
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a"}';
+insert into public.documents (id, org_id, owner_id, subject) values
+    ('44444444-4444-4444-4444-444444444444', '11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-00000000000a', 'ตอบหนังสือ'),
+    ('66666666-6666-6666-6666-666666666666', '11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-00000000000a', 'ใช้เลขที่จอง');
+insert into public.source_files (id, org_id, uploaded_by, storage_path, filename) values
+    ('55555555-5555-5555-5555-555555555555', '11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-00000000000a',
+     '11111111-1111-1111-1111-111111111111/src.pdf', 'src.pdf');
+
+-- ลงรับต้นเรื่อง ผูกไฟล์และเอกสารที่ร่างจากต้นเรื่อง; ไฟล์เดิมลงรับซ้ำไม่ได้
+select pg_temp.check((select reg_no = 3 and document_id = '44444444-4444-4444-4444-444444444444'
+    from public.register_incoming('ศธ ๐๔/๗', '๑ พฤศจิกายน ๒๕๖๙', 'กรม ค', 'ขอความอนุเคราะห์', '',
+         '55555555-5555-5555-5555-555555555555', '', '44444444-4444-4444-4444-444444444444')), 'ลงรับผูกต้นเรื่องและเอกสาร');
+select pg_temp.expect_error($$select public.register_incoming('x', 'y', 'z', 'w', '', '55555555-5555-5555-5555-555555555555')$$,
+    'ต้นเรื่องเดิมลงรับซ้ำ');
+select pg_temp.check((select action from public.audit_log where entity = 'incoming_register' order by id desc limit 1) = 'receive',
+    'audit ลงรับ');
+
+-- รูปแบบเลขอยู่หน้า (กลุ่มงาน ___/๒๕๖๙): เล่มของตัวเอง เลขไทยตามปี
+select pg_temp.check((public.issue_outgoing_number('', 'บันทึก', 'หัวหน้ากลุ่มงาน', '๑๖ พฤศจิกายน ๒๕๖๙', null, '/๒๕๖๙')).doc_number = '๑/๒๕๖๙', 'เลขหน้า/ปี');
+select pg_temp.check((public.issue_outgoing_number('', 'บันทึก ๒', '', null, null, '/๒๕๖๙')).doc_number = '๒/๒๕๖๙', 'เลขหน้า/ปี ถัดไป');
+select pg_temp.expect_error($$select public.issue_outgoing_number(' ', 'ไม่มีรหัส')$$, 'ออกเลขโดยไม่มีรหัส');
+
+-- ออกเลขผูกเอกสาร + หนังสือรับ → ออกแล้ว (issued) พร้อมผู้ออกเลข
+select pg_temp.check((public.issue_outgoing_number('กท 1205/', 'ตอบ', 'กรม ค', '๑๖ พฤศจิกายน ๒๕๖๙',
+    '44444444-4444-4444-4444-444444444444', '', 'กองการกีฬา', false, false,
+    (select id from public.incoming_register where source_file_id = '55555555-5555-5555-5555-555555555555'))).doc_number = 'กท 1205/1',
+    'ออกเลขจากหน้าแก้ไข');
+select pg_temp.check((select status = 'issued' and issued_by = auth.uid() and issued_at is not null and incoming_id is not null
+    and to_recipient = 'กรม ค' and doc_date = '๑๖ พฤศจิกายน ๒๕๖๙' from public.outgoing_register where doc_number = 'กท 1205/1'),
+    'ทะเบียนส่งมี วันที่ เรื่อง ผู้รับ ผู้ออกเลข');
+select pg_temp.check((select doc_number = 'กท 1205/1' and status = 'numbered' from public.documents
+    where id = '44444444-4444-4444-4444-444444444444'), 'เอกสารได้เลขที่');
+select pg_temp.expect_error($$select public.issue_outgoing_number('กท 1205/', 'ซ้ำ', '', null, '44444444-4444-4444-4444-444444444444')$$,
+    'ออกเลขซ้ำให้เอกสารเดิม');
+select pg_temp.expect_error($$select public.issue_outgoing_number('กท 1205/', 'x', '', null, null, '', '', false, false, 999999)$$,
+    'ผูกหนังสือรับที่ไม่มี');
+
+-- ยกเลิก → เลขยังอยู่ในทะเบียนพร้อมเหตุผล ถอดจากเอกสาร ออกใหม่ได้เลขถัดไป (ไม่นำเลขเดิมกลับมา)
+select pg_temp.check((select cancelled_by = auth.uid() and cancelled_at is not null and cancel_reason = 'พิมพ์ผู้รับผิด'
+    from public.cancel_outgoing_number((select id from public.outgoing_register where doc_number = 'กท 1205/1'), ' พิมพ์ผู้รับผิด ')),
+    'ยกเลิกเลขบันทึกผู้ยกเลิก');
+select pg_temp.check((select doc_number is null and status = 'draft' from public.documents
+    where id = '44444444-4444-4444-4444-444444444444'), 'ยกเลิกแล้วเอกสารไม่มีเลข');
+select pg_temp.check((public.issue_outgoing_number('กท 1205/', 'ตอบ', 'กรม ค', null, '44444444-4444-4444-4444-444444444444')).doc_number = 'กท 1205/2',
+    'เลขที่ยกเลิกไม่ถูกนำกลับมาใช้');
+select pg_temp.check((select count(*) from public.outgoing_register where doc_number = 'กท 1205/1' and status = 'cancelled') = 1,
+    'เลขที่ยกเลิกยังอยู่ในทะเบียน');
+
+-- จองล่วงหน้า แล้วนำมาใช้กับเอกสาร
+select pg_temp.check((public.issue_outgoing_number('กท 1205/', 'จองไว้', '', null, null, '', '', false, true)).status = 'reserved', 'จองเลข');
+select pg_temp.check((select status = 'issued' and subject = 'เรื่องจริง' and to_recipient = 'ผู้รับ' and document_id = '66666666-6666-6666-6666-666666666666'
+    from public.use_reserved_number((select id from public.outgoing_register where doc_number = 'กท 1205/3'),
+         '66666666-6666-6666-6666-666666666666', 'เรื่องจริง', 'ผู้รับ', '๑๗ พฤศจิกายน ๒๕๖๙')), 'ใช้เลขที่จองไว้');
+select pg_temp.check((select doc_number from public.documents where id = '66666666-6666-6666-6666-666666666666') = 'กท 1205/3',
+    'เอกสารได้เลขที่จองไว้');
+select pg_temp.expect_error($$select public.use_reserved_number((select id from public.outgoing_register where doc_number = 'กท 1205/3'))$$,
+    'ใช้เลขที่จองซ้ำ');
+select pg_temp.expect_error($$select public.use_reserved_number((select id from public.outgoing_register where doc_number = 'กท 1205/2'),
+    '66666666-6666-6666-6666-666666666666')$$, 'ใช้เลขที่ออกแล้ว');
+
+-- audit: ใคร ทำอะไร กับเลขไหน
+select pg_temp.check((select array_agg(action order by id) from public.audit_log
+    where entity = 'outgoing_register' and details->>'doc_number' like 'กท 1205/%') = array['issue', 'cancel', 'issue', 'reserve', 'issue'],
+    'ชื่อการกระทำใน audit');
+select pg_temp.check((select bool_and(actor_id = auth.uid()) from public.audit_log where entity = 'outgoing_register'), 'audit มีผู้กระทำ');
+select pg_temp.check((select ok from public.verify_audit_chain()), 'audit chain ถูกต้องหลังออก/ยกเลิกเลข');
+commit;
+
 -- ---------------------------------------------------------------- ผู้ใช้ B (หน่วยงานอื่น)
 begin;
 set local role authenticated;
