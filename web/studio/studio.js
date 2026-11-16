@@ -42,7 +42,12 @@
     check: (doc) => postJSON('/studio/check', doc).then(r => r.json()),
     refine: (text, command) => postJSON('/copilot/refine', { text, command }).then(r => r.json()),
     exportDocx: (doc) => postJSON('/export/docx', doc).then(r => r.blob()),
-    exportPdf: (doc) => postJSON('/export/pdf', doc).then(r => r.blob()),
+    // PDF: เซิร์ฟเวอร์บอกจำนวนหน้าข้อกฎหมายที่แนบท้ายใน header (แจ้งผู้ใช้ได้)
+    exportPdf: (doc) => postJSON('/export/pdf', doc).then(async (r) => {
+      const blob = await r.blob();
+      blob.legalPages = Number(r.headers.get('X-GovDoc-Legal-Pages') || 0);
+      return blob;
+    }),
     exportPdfBundle: (documents) => postJSON('/export/pdf-bundle', { documents }).then(r => r.blob()),
     templates: () => request('/studio/templates').then(r => r.json()),
     template: (id) => request('/studio/templates/' + encodeURIComponent(id)).then(r => r.json()),

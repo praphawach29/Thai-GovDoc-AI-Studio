@@ -35,6 +35,7 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 | ชุดเสนอ PDF | `server/routers/export.py` (`/export/pdf-bundle`) | รวมทุกขั้น ขั้นสูงสุดอยู่หน้าแรก |
 | ตรวจข้อเท็จจริง | `core/fact_check.py`, `/api/v1/studio/fact-check` | วันที่/เวลา/ตัวเลขในเนื้อความเทียบต้นเรื่อง (ไม่ใช้ AI) → `check.facts`; ผู้ใช้ยืนยันเก็บใน `workspace.factOk` |
 | คลังกฎหมาย (นำเข้า) | `core/legal_import.py`, `server/routers/legal_import.py`, migration 8 | ไฟล์สแกน → AI อ่านทีละหน้า (`/legal/ocr-page`, เบราว์เซอร์เรนเดอร์ภาพด้วย pdf.js) → `split_sections` (ข้อ/มาตรา, หมวด, บัญชีท้าย, ตัดหัวกระดาษราชกิจจาฯ) → `legal_references` (source_id, page_from/to) ยังไม่ยืนยัน |
+| เสนอ/แนบข้อกฎหมาย | `core/legal_suggest.py` (`/legal/suggest`), `core/legal_pages.py`, `server/routers/export.py` | คัดด้วยคำ → AI เลือกจากรหัสในรายการที่ยืนยันแล้วเท่านั้น; PDF ต่อหน้าจริงจากไฟล์ใน Storage (header `X-GovDoc-Legal-Pages`) |
 | ฉบับจริง | `core/final_file.py`, `server/routers/finals.py` | อัปโหลด Word/PDF ที่แก้เสร็จกลับเข้าระบบ (sha256, append-only) |
 | หน้าเว็บ | `web/studio/index.html`/`home.js` (หน้าแรก), `editor.html`/`editor.js`/`studio.css` (หน้าแก้ไข) | |
 | ฐานข้อมูล | `supabase/migrations/2026111*` (7 ไฟล์) | RLS ตาม org, RPC security definer, audit |

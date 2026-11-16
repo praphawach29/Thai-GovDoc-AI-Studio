@@ -836,9 +836,24 @@
       ${extra}
     </li>`;
   }
+  // หน้าที่จะแนบท้าย PDF (นับแบบเดียวกับเซิร์ฟเวอร์: หน้าซ้ำในไฟล์เดียวกันนับครั้งเดียว)
+  function lawPageCount(refs) {
+    const seen = new Set();
+    for (const c of refs) {
+      if (!c.source_id || !c.page_from) continue;
+      for (let p = c.page_from; p <= Math.max(c.page_from, c.page_to || c.page_from); p++) seen.add(c.source_id + ':' + p);
+    }
+    return seen.size;
+  }
   function renderLaw() {
     const refs = st.doc.legal_refs || [];
     $('law-count').textContent = toThai(refs.length);
+    const pages = lawPageCount(refs);
+    $('law-attach-wrap').hidden = !refs.length;
+    $('law-attach').checked = st.doc.attach_legal_pages !== false;
+    $('law-attach-info').textContent = pages
+      ? `${toThai(pages)} หน้า จากไฟล์สแกนในคลัง (Word ไม่แนบหน้าสแกน — ใช้ PDF)`
+      : 'ข้อที่เลือกไม่มีไฟล์ต้นฉบับในคลัง จึงไม่มีหน้าให้แนบ';
     $('law-external-note').classList.toggle('hidden', isMemo());
     $('law-selected').innerHTML = refs.length ? refs.map(c => lawItem(c,
       `<button type="button" data-law-remove="${esc(c.id)}" class="shrink-0 px-2 py-0.5 rounded-md border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-600">เอาออก</button>`)).join('')
@@ -860,6 +875,7 @@
     try { await lawLibrary(); renderLaw(); } catch (err) { $('law-results').innerHTML = `<li class="text-rose-600">${esc(err.message)}</li>`; }
   }
   $('law-search').addEventListener('input', renderLaw);
+  $('law-attach').addEventListener('change', (e) => commit(d => { d.attach_legal_pages = e.target.checked; }));
   $('law-suggest').addEventListener('click', async (e) => {
     const btn = e.currentTarget, html = btn.innerHTML;
     btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>กำลังหา...</span>';
@@ -1176,6 +1192,9 @@
     try {
       const blob = kind === 'pdf' ? await api.exportPdf(st.doc) : await api.exportDocx(st.doc);
       download(blob, `${safeName()}.${kind}`);
+      const expected = kind === 'pdf' && st.doc.attach_legal_pages !== false ? lawPageCount(st.doc.legal_refs || []) : 0;
+      if (expected && blob.legalPages >= expected) toast(`แนบหน้าข้อกฎหมาย ${toThai(blob.legalPages)} หน้าท้าย PDF แล้ว`);
+      else if (expected) toast(`แนบหน้าข้อกฎหมายได้ ${toThai(blob.legalPages || 0)} จาก ${toThai(expected)} หน้า — ไฟล์ต้นฉบับบางไฟล์ไม่พบในคลัง`, 'warn');
       st.doc.edit_status = 'saved'; persist();
       snapshot(kind === 'pdf' ? 'ส่งออก PDF' : 'ส่งออก Word');
     } catch (err) { toast('ส่งออกไม่สำเร็จ: ' + err.message, 'error'); }

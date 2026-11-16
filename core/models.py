@@ -584,6 +584,10 @@ class GovDocumentSchema(BaseModel):
         default=None,
         description="ข้อกฎหมายจากคลังที่เลือกใส่ในหัวข้อ ข้อกฎหมาย (ใช้แนบหน้าจากไฟล์ต้นฉบับท้าย PDF)",
     )
+    attach_legal_pages: bool = Field(
+        default=True,
+        description="แนบหน้าของข้อกฎหมายที่เลือก (จากไฟล์สแกนต้นฉบับในคลัง) ต่อท้าย PDF",
+    )
     signatory_stamp: bool = Field(
         default=False,
         description="ผู้ลงนามหลักใช้ตราประทับชื่อ-ตำแหน่ง: เว้นบรรทัดชื่อและตำแหน่งว่าง (ระยะเท่าเดิม) ไว้ประทับ",
