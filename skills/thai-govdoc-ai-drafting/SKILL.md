@@ -39,6 +39,7 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 | ฉบับจริง | `core/final_file.py`, `server/routers/finals.py` | อัปโหลด Word/PDF ที่แก้เสร็จกลับเข้าระบบ (sha256, append-only) |
 | ตัวอย่างของหน่วย (สำนวน) | `core/style_examples.py`, `server/routers/examples.py`, migration 10 | หนังสือฉบับจริง (อัปโหลดหลายไฟล์จากหน้าแรก / ปุ่ม "นี่คือฉบับจริง" ในแท็บ ฉบับจริง) → `parse_example`/`from_document` แยก เรื่อง/ภาคเหตุ/ข้อเท็จจริง/ความประสงค์ + `keywords` → ตอนร่าง `example_finder` → `rank_examples` (คำที่ตรงกัน ประเภทเดียวกัน ≤ ๓) → `few_shot_block` (ปิดเลข/วันที่/ชื่อ, งบ ~4,800 ตัวอักษร) → `result.style_examples` แสดงในแชท/แท็บต้นเรื่อง |
 | ผู้ลงนามของหน่วย | `core/signers.py`, `server/routers/signers.py`, migration 12 | `org_signers` (ใช้ร่วมทั้งหน่วย) → `apply_issuing_unit(roster, use_default)` / `fill_document_signers`: ตำแหน่งตรง = เติมชื่อ, ร่างใหม่ = ผู้ลงนามเริ่มต้นในช่องหลักที่ว่าง (ไม่แตะผู้เสนอเรื่อง/ชื่อที่มีอยู่); หน้าแก้ไขปุ่ม `[data-pick-signer]` |
+| ทะเบียนรับ-ส่ง / ออกเลข | `core/registry.py` (`split_number_template`, `issue_draft_for`, `search_rows`), `core/register_export.py` (แบบทะเบียน ข้อ ๓๘/๕๐ → xlsx เขียนเอง + Typst PDF), `server/routers/registry.py`, migration 2 + 13, `web/studio/registry*.{html,js}` | ปุ่ม "ออกเลข" (`#btn-issue`) อ่านเอกสารจากเซิร์ฟเวอร์ → `issue_outgoing_number`/`use_reserved_number` (ล็อกแถวเอกสาร กดซ้ำไม่ได้สองเลข) → เติมช่อง "ที่"; ยกเลิก = เลขอยู่ในทะเบียนพร้อมเหตุผล ช่อง "ที่" กลับเป็นรหัส+ช่องว่าง (จาก `book`); แท็บต้นเรื่อง `#receive-box` ลงรับ (ไฟล์ละครั้ง) → หนังสือตอบเชื่อมเลขรับเองผ่าน `sourceFileId` |
 | หน้าเว็บ | `web/studio/index.html`/`home.js` (หน้าแรก), `editor.html`/`editor.js`/`studio.css` (หน้าแก้ไข) | |
 | ฐานข้อมูล | `supabase/migrations/2026111*` (12 ไฟล์) | RLS ตาม org, RPC security definer, audit |
 
@@ -109,6 +110,7 @@ skill นี้สรุปสิ่งที่ระบบทำได้จ�
 ```
 - ทดสอบที่เกี่ยวข้อง: `test_step7_unit_chain`, `test_step8_font_spacing` (ระยะ/เส้นประ/ไอคอน), `test_step9_final_files`, `test_step10_llm_drafting`, `test_phase6_memo_template`
 - ผู้ลงนามของหน่วย: `test_step20_org_signers.py` (เติมชื่อ/เริ่มต้น/API/ตารางยังไม่มี)
+- ทะเบียนรับ-ส่ง: `test_step21_registry.py` (รูปแบบเลขที่, แบบทะเบียน, xlsx/PDF, API ออกเลข/ยกเลิก/จอง/ลงรับ/ส่งออก); ฐานข้อมูลจริง `bash supabase/tests/run_local.sh` — บน Windows รันใน Docker: `docker run --rm -v "<repo>/supabase:/src:ro" postgres:16 bash -c 'cp -r /src /w && find /w -type f -exec sed -i "s/\r$//" {} + && chown -R postgres /w && PGBIN=/usr/lib/postgresql/16/bin bash /w/tests/run_local.sh'` (รวมออกเลขพร้อมกัน 200 ครั้ง)
 - คลังตัวอย่าง: `test_step18_style_examples.py` (แยกส่วน/ปิดข้อเท็จจริง/เลือก), `test_step18_style_examples_api.py` (API + few-shot ใน prompt ตอนร่าง)
 - หน้าเว็บโหมด Supabase บนเครื่อง: รันแอปจริงกับ `FakeSupabase` แล้ว mount proxy `/fake-sb/{path}` → `fake.handle` ให้ supabase-js ในเบราว์เซอร์ล็อกอินได้ (รหัสผ่าน `correct-password`) — ต้อง (๑) ตั้ง `supabase_url` = URL proxy และออก token ด้วย `iss` = `<proxy>/auth/v1` (๒) `transport_factory` ตัด `/fake-sb` ออกก่อนส่งให้ fake ไม่งั้น JWKS 404 → API ตอบ 503 "ตรวจสอบการเข้าสู่ระบบไม่ได้ชั่วคราว"; fake เก็บข้อมูลในหน่วยความจำ — รีสตาร์ทก่อนรันชุดทดสอบใหม่
 - Playwright: `chromium.launch({ channel: 'chrome' })` ใช้ Chrome ในเครื่อง (ติดตั้งแพ็กเกจด้วย `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`); ไฟล์อัปโหลดส่งเป็น buffer ผ่าน `setInputFiles([{name, mimeType, buffer}])` ได้
@@ -152,4 +154,5 @@ for p in d.paragraphs:
 | production ถูกทับด้วย commit จาก master | production ติดตาม branch อื่น | ตั้ง Branch Tracking เป็น branch งาน |
 | ร่างลอกชื่อ/เลข/วันที่จากหนังสือเก่า (เสี่ยงเมื่อใส่ตัวอย่าง) | few-shot ส่งข้อความดิบ | `mask_facts` ก่อนใส่ prompt + `unmask_leftovers` หลังได้คำตอบ + `fact_check` ตามเดิม |
 | ข้อความ OCR ต่อกันเป็นก้อน "...เยาวชนจึงเห็นควร..." | รวมบรรทัดที่ OCR ตัดกลางประโยคโดยไม่ดูคำขึ้นต้น | `_join`: บรรทัดที่ขึ้นต้น เลขข้อ หรือ "จึง..." ขึ้นย่อหน้าใหม่ |
+| ข้อความ sr-only ในตารางทำหน้าล้นแนวนอนบนมือถือ | `position:absolute` หลุดจากกล่อง `overflow-x-auto` ที่ไม่ใช่ positioned | ใส่ `relative` ที่กล่องเลื่อนของตาราง |
 | หลาย session แก้โฟลเดอร์เดียวกันบน branch เดียว แล้ว commit ไฟล์ของกันและกัน | `git add` ทั้งไฟล์/ทั้งโฟลเดอร์ | ดู `git status` ก่อน commit, `git add` เฉพาะไฟล์ของงานตัวเอง, เลข migration ไม่ซ้ำ (ดูไฟล์ล่าสุดใน `supabase/migrations/` ก่อนตั้งชื่อ) |
