@@ -21,6 +21,7 @@
     <a href="./" class="w-9 h-9 rounded-lg border border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-100 flex items-center justify-center transition" title="สร้างเอกสารใหม่"><i class="fa-regular fa-pen-to-square"></i></a>
     <div class="w-6 h-px bg-slate-200"></div>
     <button id="rail-history" type="button" class="w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition" title="ประวัติเวอร์ชัน"><i class="fa-regular fa-clock"></i></button>
+    <a href="registry.html" class="w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition" title="ทะเบียนรับ-ส่ง"><i class="fa-solid fa-book"></i></a>
     <button id="rail-source" type="button" class="w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition" title="ต้นเรื่อง"><i class="fa-regular fa-file-lines"></i></button>
   </div>
   <div id="rail-avatar" class="w-7 h-7 rounded-full bg-slate-200 text-slate-700 font-semibold text-[11px] flex items-center justify-center" title="">–</div>
@@ -69,6 +70,8 @@
         </summary>
         <p id="source-summary-text" class="mt-1.5 whitespace-pre-line leading-relaxed text-slate-700 font-body"></p>
       </details>
+      <!-- ทะเบียนรับ: ลงรับต้นเรื่อง (เลขรับ วันเวลารับ) หรือแสดงเลขรับที่ลงไว้แล้ว -->
+      <section id="receive-box" class="px-3 py-2 bg-sky-50/70 border-b border-sky-100 text-xs shrink-0" hidden></section>
       <p id="style-refs" class="px-3 py-1.5 bg-indigo-50/60 border-b border-indigo-100 text-[11px] text-indigo-900 shrink-0" hidden></p>
       <div id="source-pagebar" class="px-3 py-1 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-[11px] text-slate-600 shrink-0" hidden>
         <div class="flex items-center gap-1">
@@ -212,6 +215,7 @@
             </div>
           </div>
         </div>
+        <button id="btn-issue" type="button" hidden title="ออกเลขที่หนังสือจากทะเบียนส่ง แล้วเติมลงช่อง &quot;ที่&quot;" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-medium text-xs"><i class="fa-solid fa-hashtag"></i><span id="issue-label" class="tb-h4">ออกเลข</span></button>
         <button id="btn-docx" type="button" title="ส่งออก Word (.docx)" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs"><i class="fa-solid fa-file-word text-brand-600"></i><span class="tb-h5">Word</span></button>
         <button id="btn-pdf" type="button" title="ส่งออก PDF" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-xs"><i class="fa-solid fa-file-pdf"></i><span class="tb-h5">PDF</span></button>
         <button id="btn-chain-pdf" type="button" hidden class="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium" title="รวมทุกฉบับในสายการเสนอเป็น PDF เดียว ฉบับขั้นสูงสุดอยู่หน้าแรก"><i class="fa-solid fa-layer-group text-brand-600"></i><span class="tb-h4">ชุดเสนอ</span></button>
@@ -301,10 +305,22 @@
   </div>
 </div>
 
+<!-- ออกเลขที่หนังสือ (ทะเบียนส่ง) -->
+<div id="modal-issue" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm no-print" role="dialog" aria-modal="true" aria-labelledby="issue-title" hidden>
+  <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[88vh] overflow-hidden animate-fadeIn">
+    <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+      <h3 id="issue-title" class="text-sm font-semibold text-slate-900"><i class="fa-solid fa-hashtag text-amber-600 mr-1"></i>ออกเลขที่หนังสือ</h3>
+      <button type="button" data-close class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60" aria-label="ปิด"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="issue-body" class="flex-1 overflow-y-auto p-5 space-y-3 text-xs"></div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="auth.js"></script>
 <script src="studio.js"></script>
 <script src="source-viewer.js"></script>
+<script src="registry-api.js"></script>
 <script src="editor.js"></script>
 </body>
 </html>

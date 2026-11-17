@@ -1081,6 +1081,191 @@
   });
   loadFinals();
 
+  // ---------- ทะเบียนส่ง: ปุ่ม "ออกเลข" (เลขมาจากฐานข้อมูลเท่านั้น) ----------
+  const reg = window.GovDocRegistry;
+  const regEnabled = finalsEnabled && !!reg;
+  const GAP = ' '.repeat(10);                    // ช่องว่างเขียนมือ (เหมือน core.models.HANDWRITE_GAP)
+  const issue = { info: null, error: '' };
+  const fmtReg = (r) => r ? `${num(r.reg_no)}/${num(r.year_be)}` : '';
+  function renderIssueButton() {
+    if (!regEnabled) return;
+    const active = issue.info?.active;
+    const btn = $('btn-issue');
+    btn.hidden = false;
+    btn.className = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-medium text-xs ' +
+      (active ? 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900' : 'border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900');
+    $('issue-label').textContent = active ? 'ที่ ' + num(active.doc_number) : 'ออกเลข';
+    btn.title = active ? 'ออกเลขแล้ว — ดูรายละเอียด/ยกเลิกเลข' : 'ออกเลขที่หนังสือจากทะเบียนส่ง แล้วเติมลงช่อง "ที่"';
+  }
+  async function loadIssue() {
+    if (!regEnabled) return;
+    try { issue.info = await reg.forDocument(entry.id); issue.error = ''; }
+    catch (err) { issue.info = null; issue.error = err.message; }
+    renderIssueButton();
+  }
+  const regField = (id, label, value, hint = '') => `<label class="block space-y-1"><span class="font-medium text-slate-700">${label}</span>
+    <input id="${id}" type="text" value="${esc(value || '')}" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 font-body text-sm">
+    ${hint ? `<span class="block text-[11px] text-slate-500">${hint}</span>` : ''}</label>`;
+  function renderIssueBody() {
+    const info = issue.info;
+    const body = $('issue-body');
+    if (!info) {
+      body.innerHTML = `<p class="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3">${esc(issue.error || 'โหลดข้อมูลทะเบียนไม่สำเร็จ')}</p>`;
+      return;
+    }
+    const cancelled = info.entries.filter(e => e.status === 'cancelled');
+    const history = cancelled.length ? `<div class="pt-2 border-t border-slate-100 space-y-1"><div class="font-medium text-slate-600">เลขที่ยกเลิกของเอกสารนี้ (ยังอยู่ในทะเบียน)</div>
+      ${cancelled.map(e => `<div class="text-slate-500"><s>ที่ ${esc(num(e.doc_number))}</s> — ${esc(e.cancel_reason || '')}${e.cancelled_by_name ? ` · ${esc(e.cancelled_by_name)}` : ''}${e.cancelled_at ? ` · ${fmtTime(e.cancelled_at)}` : ''}</div>`).join('')}</div>` : '';
+    const incoming = info.incoming ? `<p class="bg-sky-50 border border-sky-200 text-sky-900 rounded-lg p-2"><i class="fa-solid fa-link mr-1"></i>เชื่อมกับหนังสือรับ เลขรับ ${fmtReg(info.incoming)} — ${esc(info.incoming.subject || '')}</p>` : '';
+    const a = info.active;
+    if (a) {
+      const differs = (st.doc.doc_number || '').trim() !== a.doc_number;
+      body.innerHTML = `
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-1">
+          <div class="text-base font-semibold text-emerald-900 font-body">ที่ ${esc(num(a.doc_number))}</div>
+          <div class="text-emerald-800">ทะเบียนส่งเลข ${fmtReg(a)} · ${a.status === 'reserved' ? 'จองไว้' : 'ออกเลขแล้ว'}${a.issued_by_name ? ` โดย ${esc(a.issued_by_name)}` : ''}${a.issued_at ? ` · ${fmtTime(a.issued_at)}` : ''}</div>
+          <div class="text-slate-600">ลงวันที่ ${esc(num(a.doc_date || '–'))} · ถึง ${esc(a.to_recipient || '–')}</div>
+          <div class="text-slate-600">เรื่อง ${esc(a.subject || '–')}</div>
+        </div>
+        ${differs ? `<button type="button" id="issue-fill" class="w-full px-3 py-1.5 rounded-lg border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-medium"><i class="fa-solid fa-arrow-down mr-1"></i>ใส่เลขนี้ลงช่อง "ที่" (ตอนนี้ในเอกสารไม่ตรง)</button>` : ''}
+        ${incoming}
+        <div class="pt-2 border-t border-slate-100 space-y-2">
+          <div class="font-medium text-rose-700"><i class="fa-solid fa-ban mr-1"></i>ยกเลิกเลขนี้</div>
+          <p class="text-slate-500">เลขที่ยกเลิกยังอยู่ในทะเบียนพร้อมเหตุผล และจะไม่ถูกนำกลับมาใช้ — ออกเลขใหม่ได้เลขถัดไป</p>
+          <textarea id="issue-cancel-reason" rows="2" maxlength="500" placeholder="เหตุผล เช่น พิมพ์ผู้รับผิด / เรื่องยกเลิก" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500"></textarea>
+          <button type="button" id="issue-cancel" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-medium">ยกเลิกเลข</button>
+        </div>${history}`;
+      return;
+    }
+    const d = info.draft || {};
+    const t = d.template;
+    const reserved = info.reserved || [];
+    body.innerHTML = `
+      ${!t && d.current_number ? `<p class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">ช่อง "ที่" มีเลข ${esc(num(d.current_number))} ที่พิมพ์เองอยู่ (ยังไม่อยู่ในทะเบียน) — ระบุรหัสด้านล่างเพื่อออกเลขจากทะเบียนแทน</p>` : ''}
+      <div class="grid grid-cols-[1fr,auto,1fr] gap-2 items-end">
+        ${regField('issue-prefix', 'รหัสหนังสือ', t ? t.prefix : '', 'เช่น กท 1205/')}
+        <span class="pb-2 text-slate-400 font-body text-sm">${t?.is_circular ? 'ว ' : ''}เลข</span>
+        ${regField('issue-suffix', 'ส่วนท้าย (ถ้ามี)', t ? t.suffix : '', 'เช่น /2569')}
+      </div>
+      ${reserved.length ? `<fieldset class="space-y-1"><legend class="font-medium text-slate-700 mb-1">เลขที่จะใช้</legend>
+        <label class="flex items-center gap-2"><input type="radio" name="issue-use" value="" checked> ออกเลขใหม่ (ลำดับถัดไปจากทะเบียน)</label>
+        ${reserved.map(r => `<label class="flex items-center gap-2"><input type="radio" name="issue-use" value="${esc(r.id)}"> ใช้เลขที่จองไว้ <b>${esc(num(r.doc_number))}</b> <span class="text-slate-500 truncate">${esc(r.subject || '')}</span></label>`).join('')}
+      </fieldset>` : ''}
+      ${regField('issue-subject', 'เรื่อง', d.subject)}
+      ${regField('issue-to', 'ถึง (ผู้รับ)', d.to_recipient)}
+      ${regField('issue-date', 'ลงวันที่ (ในทะเบียน)', d.doc_date, 'ช่องวันที่ในหนังสือไม่ถูกเปลี่ยน')}
+      ${regField('issue-from', 'จาก', d.from_unit)}
+      ${incoming}
+      <p class="text-slate-500">เลขลำดับออกจากฐานข้อมูลของหน่วยงาน ไม่ซ้ำแม้ออกพร้อมกันหลายคน และบันทึกผู้ออกเลข/เวลาไว้ในทะเบียน</p>
+      <button type="button" id="issue-submit" class="w-full px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white font-semibold text-sm"><i class="fa-solid fa-hashtag mr-1"></i>ออกเลขและลงทะเบียนส่ง</button>
+      ${history}`;
+  }
+  async function openIssue() {
+    $('modal-issue').hidden = false;
+    $('issue-body').innerHTML = '<p class="text-slate-500"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลดทะเบียน...</p>';
+    await persist();                                   // เซิร์ฟเวอร์อ่านเรื่อง/ผู้รับ/ช่อง "ที่" จากฉบับที่บันทึกล่าสุด
+    await loadIssue();
+    renderIssueBody();
+  }
+  const closeIssue = () => { $('modal-issue').hidden = true; };
+  $('btn-issue').addEventListener('click', openIssue);
+  $('modal-issue').addEventListener('click', (e) => { if (e.target === $('modal-issue') || e.target.closest('[data-close]')) closeIssue(); });
+  $('issue-body').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.id === 'issue-fill') {
+      commit(d => { d.doc_number = issue.info.active.doc_number; });
+      await persist(); renderIssueBody();
+      return;
+    }
+    if (btn.id === 'issue-submit') {
+      const val = (id) => $(id).value.trim();
+      const t = issue.info.draft?.template;
+      const body = { subject: val('issue-subject'), to_recipient: val('issue-to'), doc_date: val('issue-date'), from_unit: val('issue-from') };
+      const used = document.querySelector('input[name="issue-use"]:checked')?.value;
+      if (used) body.reserved_id = Number(used);
+      else if (!t || val('issue-prefix') !== t.prefix || val('issue-suffix') !== t.suffix) {
+        Object.assign(body, { prefix: val('issue-prefix'), suffix: val('issue-suffix'), is_circular: !!t?.is_circular });
+      }
+      if (!body.subject) { toast('ใส่เรื่องก่อนออกเลข', 'warn'); return; }
+      btn.disabled = true;
+      try {
+        const res = await reg.issueForDocument(entry.id, body);
+        commit(d => { d.doc_number = res.doc_number; });
+        await persist();
+        toast(`ออกเลขแล้ว: ที่ ${num(res.doc_number)}`);
+        await loadIssue(); renderIssueBody();
+      } catch (err) { toast('ออกเลขไม่สำเร็จ: ' + err.message, 'error'); btn.disabled = false; }
+      return;
+    }
+    if (btn.id === 'issue-cancel') {
+      const reason = $('issue-cancel-reason').value.trim();
+      if (!reason) { toast('ต้องระบุเหตุผลการยกเลิกเลข', 'warn'); $('issue-cancel-reason').focus(); return; }
+      const a = issue.info.active;
+      if (!confirm(`ยกเลิกเลข ${num(a.doc_number)}?\nเลขนี้จะยังอยู่ในทะเบียนพร้อมเหตุผล และจะไม่ถูกนำกลับมาใช้`)) return;
+      btn.disabled = true;
+      try {
+        await reg.cancel(a.id, reason);
+        // คืนช่อง "ที่" เป็นรหัส + ช่องว่าง — รหัส/ส่วนท้ายเอาจากเล่มทะเบียน ('outgoing:<รหัส>[ว][|<ส่วนท้าย>]')
+        const [head, tail = ''] = String(a.book || '').replace(/^outgoing:/, '').split('|');
+        const circ = head.endsWith('ว') && a.doc_number.startsWith(head.slice(0, -1) + 'ว ');
+        const prefix = circ ? head.slice(0, -1) + 'ว ' : head;
+        if (a.book && st.doc.doc_number === a.doc_number) commit(d => { d.doc_number = prefix + GAP + tail; });
+        await persist();
+        toast('ยกเลิกเลขแล้ว — ออกเลขใหม่ได้');
+        await loadIssue(); renderIssueBody();
+      } catch (err) { toast('ยกเลิกไม่สำเร็จ: ' + err.message, 'error'); btn.disabled = false; }
+    }
+  });
+  loadIssue();
+
+  // ---------- ทะเบียนรับ: ลงรับต้นเรื่องที่แนบ ----------
+  async function renderReceive() {
+    const box = $('receive-box');
+    if (!regEnabled || !entry.sourceFileId) return;
+    box.hidden = false;
+    let found = null;
+    try { found = (await reg.incomingBySource(entry.sourceFileId)).entry; }
+    catch (err) { box.innerHTML = `<span class="text-rose-700">${esc(err.message)}</span>`; return; }
+    if (found) {
+      const replies = (found.replies || []).filter(r => r.status !== 'cancelled');
+      box.innerHTML = `<div class="flex items-center gap-2 flex-wrap text-sky-900">
+        <i class="fa-solid fa-inbox"></i><b>ลงรับแล้ว เลขรับ ${fmtReg(found)}</b>
+        <span class="text-slate-600">${fmtTime(found.received_at)}${found.created_by_name ? ` · ${esc(found.created_by_name)}` : ''}</span>
+        ${replies.length ? `<span class="text-emerald-800">· ตอบแล้ว ${replies.map(r => 'ที่ ' + esc(num(r.doc_number))).join(', ')}</span>` : ''}
+        <a href="registry.html?tab=incoming" class="ml-auto text-sky-700 underline">ทะเบียนรับ</a></div>`;
+      return;
+    }
+    const c = entry.context || {};
+    const clean = (s) => (s && !hasPlaceholder(s)) ? s : '';
+    box.innerHTML = `<details id="receive-details">
+      <summary class="cursor-pointer select-none flex items-center gap-2 text-sky-900"><i class="fa-solid fa-inbox"></i><b>ยังไม่ลงทะเบียนรับ</b><span class="text-slate-600">— ลงรับเพื่อออกเลขรับและเวลารับ</span><i class="fa-solid fa-chevron-down ml-auto text-[10px]"></i></summary>
+      <div class="mt-2 grid grid-cols-2 gap-2">
+        ${regField('recv-no', 'ที่ (ของหนังสือที่รับ)', clean(c.source_doc_no))}
+        ${regField('recv-date', 'ลงวันที่', clean(c.source_date))}
+        ${regField('recv-from', 'จาก', clean(c.source_dept))}
+        ${regField('recv-to', 'ถึง', '')}
+      </div>
+      <div class="mt-2">${regField('recv-subject', 'เรื่อง', clean(c.source_subject) || clean(st.doc.subject))}</div>
+      <button type="button" id="recv-submit" class="mt-2 px-3 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-800 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-inbox mr-1"></i>ลงรับ</button>
+      <span class="ml-2 text-slate-500">เลขรับและเวลารับออกจากฐานข้อมูล</span>
+    </details>`;
+  }
+  $('receive-box').addEventListener('click', async (e) => {
+    const btn = e.target.closest('#recv-submit');
+    if (!btn) return;
+    const val = (id) => $(id).value.trim();
+    if (!val('recv-subject')) { toast('ใส่เรื่องของหนังสือที่รับก่อน', 'warn'); return; }
+    btn.disabled = true;
+    try {
+      const res = await reg.receive({ source_doc_number: val('recv-no'), source_doc_date: val('recv-date'), from_org: val('recv-from'),
+        to_unit: val('recv-to'), subject: val('recv-subject'), source_file_id: entry.sourceFileId, document_id: entry.id });
+      toast(`ลงรับแล้ว เลขรับ ${fmtReg(res.entry)}`);
+      renderReceive(); loadIssue();
+    } catch (err) { toast('ลงรับไม่สำเร็จ: ' + err.message, 'error'); btn.disabled = false; }
+  });
+  renderReceive();
+
   // ---------- นี่คือฉบับจริง → ตัวอย่างสำนวนของหน่วย ----------
   function markExampleState(row) {
     $('mark-example').querySelector('span').textContent = row ? 'อัปเดตตัวอย่าง' : 'นี่คือฉบับจริง';
