@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 176" role="img" aria-labelledby="title desc">
+<title id="title">Thai GovDoc AI Studio</title><desc id="desc">A refined document mark with connected drafting lines and a small AI glint.</desc>
+<g transform="translate(8 8)">
+  <rect x="0" y="0" width="160" height="160" rx="38" fill="#153944"/>
+  <path d="M48 30h45l29 29v77H48z" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M93 31v30h29" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M65 80h39M65 98h39M65 116h24" stroke="#83d2bd" stroke-width="7" stroke-linecap="round"/>
+  <path d="M128 27l5 13 13 5-13 5-5 13-5-13-13-5 13-5z" fill="#f1b95b"/>
+</g>
+<text x="198" y="91" font-family="'TH Sarabun New','TH SarabunPSK','Noto Sans Thai',Tahoma,sans-serif" font-size="47" font-weight="700" fill="#153944">Thai GovDoc</text>
+<text x="200" y="127" font-family="'TH Sarabun New','TH SarabunPSK','Noto Sans Thai',Tahoma,sans-serif" font-size="25" font-weight="600" letter-spacing="1.2" fill="#3f746e">AI STUDIO</text>
+<path d="M199 140h49" stroke="#e2a947" stroke-width="4" stroke-linecap="round"/>
+</svg>

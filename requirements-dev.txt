@@ -1,0 +1,12 @@
+# ใช้บนเครื่องพัฒนา: ทุกอย่างใน requirements.txt + เครื่องมือ local/ทดสอบ
+-r requirements.txt
+
+# --- รันเซิร์ฟเวอร์บนเครื่อง: uvicorn server.main:app --port 8600 ---
+uvicorn==0.49.0
+
+# --- legacy/ (ใช้บนเครื่องเท่านั้น) ---
+streamlit==1.52.0
+opencv-python==5.0.0.93   # ปรับภาพก่อน OCR (Deskew/Contrast); ไม่มีก็ทำงานได้
+
+# --- Testing ---
+pytest==9.1.1

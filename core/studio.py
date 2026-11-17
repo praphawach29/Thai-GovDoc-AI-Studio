@@ -1,5 +1,5 @@
 """
-studio.py — Business logic สำหรับหน้าเว็บ GovDoc Studio (web/studio)
+studio.py — Business logic สำหรับหน้าเว็บ Thai GovDoc AI Studio (web/studio)
 
 รวมขั้นตอน "รับมอบหมาย → สกัดข้อความ → จำแนกชนิด → ร่าง → ตรวจ" ไว้ในที่เดียว
 เพื่อให้ frontend เรียกผ่าน API ครั้งเดียว โดยไม่ผูกกับ Streamlit session state
@@ -7,16 +7,25 @@ studio.py — Business logic สำหรับหน้าเว็บ GovDoc S
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from pydantic import BaseModel, Field
 
 from core.ai_drafter import draft_from_context_rule_based
 from core.classifier import ClassificationResult, classify_source_document
 from core.extractor import extract_from_raw_text, extract_source_document
+from core.fact_check import FactIssue, check_facts, source_text_of
 from core.linter import LintResult, lint_gov_document
+import logging
+import time
+
+from core.llm_drafter import LLMConfig, apply_draft_content, draft_content_with_llm, ocr_images_with_llm
+from core.doc_forms import apply_form, blank_body
 from core.models import (
+    FORM_KEYS,
+    FORM_LABELS,
     DocType,
+    DocumentKind,
     GovDocumentSchema,
     MemoHierarchyLevel,
     SecretLevel,
@@ -26,6 +35,7 @@ from core.models import (
 )
 from core.profile_manager import get_user_profile
 from core.security import cloud_ai_allowed
+from core.style_examples import few_shot_block
 from core.thai_date import blank_doc_number, format_thai_date
 
 
@@ -37,10 +47,42 @@ class StudioStep(BaseModel):
     detail: str = ""
 
 
+_PROVIDER_LABEL = {"claude": "Claude", "gemini": "Gemini"}
+
+
+def _ai_step(ai) -> StudioStep:
+    """สรุปการใช้ AI เป็นขั้นตอนเดียว เช่น 'Claude หมดเวลารอคำตอบ → ร่างด้วย Gemini'"""
+    failed = [f"{_PROVIDER_LABEL.get(a.provider, a.provider)} {a.error}" for a in ai.attempts if not a.ok]
+    if ai.content is not None:
+        used = f"{_PROVIDER_LABEL.get(ai.provider, ai.provider)} ({ai.model})"
+        detail = " · ".join(failed + [f"เรียบเรียงด้วย {used}"])
+        if ai.truncated:
+            detail += " · ต้นเรื่องยาวมาก ส่งเฉพาะส่วนต้น"
+        return StudioStep(key="ai", label="AI เรียบเรียงเนื้อความ", detail=detail)
+    reason = ai.skipped_reason or " · ".join(failed) or "ไม่สำเร็จ"
+    return StudioStep(key="ai", label="ใช้ร่างตามกฎแทน AI", ok=not failed,
+                      detail=reason + (" — เนื้อความเป็นโครงให้กรอกเอง" if failed or ai.skipped_reason else ""))
+
+
+class StyleExampleRef(BaseModel):
+    """ตัวอย่างของหน่วยที่ใส่ใน prompt (ไม่รวมเนื้อความ)"""
+    id: str
+    subject: str = ""
+    doc_type: str = ""
+    score: float = 0.0
+
+
+# ผู้เรียก (server/) หาตัวอย่างจากคลังของหน่วยงาน: (ข้อความเรื่องใหม่, ประเภทที่จะร่าง) → แถวที่เลือกแล้ว
+# แต่ละแถว {"id","subject","doc_type","part_reason","part_details","part_purpose","score"}
+ExampleFinder = Callable[[str, DocType], List[dict]]
+
+
 class StudioCheck(BaseModel):
     """ผลตรวจเอกสาร: placeholder ที่ค้าง + Linter ระเบียบสารบรรณ"""
     placeholders: List[str] = Field(default_factory=list)
     lint: LintResult
+    # ข้อเท็จจริงในร่าง (วันที่ เวลา ตัวเลข) ที่หาในต้นเรื่องไม่เจอ — ตรวจเมื่อมีต้นเรื่องเท่านั้น
+    facts: List[FactIssue] = Field(default_factory=list)
 
 
 class StudioDraftResult(BaseModel):
@@ -50,6 +92,9 @@ class StudioDraftResult(BaseModel):
     check: Optional[StudioCheck] = None
     steps: List[StudioStep] = Field(default_factory=list)
     cloud_ai_blocked: bool = False
+    ai_provider: Optional[str] = None      # "claude" | "gemini" | None (ร่างตามกฎ)
+    # ตัวอย่างของหน่วยที่ AI อ้างสำนวน (แสดงในหน้าแก้ไข) — ว่าง = ไม่ได้ใช้ตัวอย่าง
+    style_examples: List[StyleExampleRef] = Field(default_factory=list)
 
 
 def normalize_for_editor(doc: GovDocumentSchema) -> GovDocumentSchema:
@@ -67,18 +112,32 @@ def normalize_for_editor(doc: GovDocumentSchema) -> GovDocumentSchema:
     return doc
 
 
+def _clean_summary(text: str) -> str:
+    """สรุปต้นเรื่องจาก AI: ตัดบรรทัดว่าง/สัญลักษณ์นำหน้า/placeholder, ไม่เกิน ๔ บรรทัด"""
+    lines = []
+    for raw in (text or "").splitlines():
+        line = raw.strip().lstrip("-*•·").strip()
+        if not line or "[✏️" in line or "ระบุ" in line and line.startswith("["):
+            continue
+        lines.append(line[:300])
+    return "\n".join(lines[:4])
+
+
 def check_document(doc: GovDocumentSchema) -> StudioCheck:
     return StudioCheck(placeholders=doc.find_placeholders(), lint=lint_gov_document(doc))
 
 
-def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema] = None) -> GovDocumentSchema:
-    """เอกสารเปล่าพร้อม placeholder — ข้อมูลหน่วยงาน/ผู้ลงนามมาจากโปรไฟล์เท่านั้น"""
+def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema] = None,
+                          kind: Optional[DocumentKind] = None) -> GovDocumentSchema:
+    """เอกสารเปล่าพร้อม placeholder — ข้อมูลหน่วยงาน/ผู้ลงนามมาจากโปรไฟล์เท่านั้น
+    kind: ชนิดอื่น (เช่น หนังสือประทับตรา) — doc_type ต้องเป็น EXTERNAL"""
     p = profile or get_user_profile()
     internal = doc_type == DocType.INTERNAL
-    reason = "[✏️ ระบุต้นเรื่อง]" if internal else "[✏️ ระบุภาคเหตุ]"
-    details = "[✏️ ระบุข้อเท็จจริง]" if internal else "[✏️ ระบุภาคข้อเท็จจริง]"
-    purpose = "[✏️ ระบุข้อพิจารณาและเสนอแนะ]" if internal else "[✏️ ระบุภาคความประสงค์]"
-    return GovDocumentSchema(
+    if internal:
+        reason, details, purpose = "[✏️ ระบุต้นเรื่อง]", "[✏️ ระบุข้อเท็จจริง]", "[✏️ ระบุข้อพิจารณาและเสนอแนะ]"
+    else:
+        reason, details, purpose = blank_body(kind or DocumentKind.EXTERNAL_LETTER)
+    doc = GovDocumentSchema(
         doc_type=doc_type,
         urgency=UrgencyLevel.NORMAL,
         secret=SecretLevel.NORMAL,
@@ -104,6 +163,87 @@ def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema
         contact_fax=p.contact_fax,
         contact_email=p.contact_email,
     )
+    if kind is not None and not internal:
+        doc = apply_form(doc, kind, issuer=p.dept_name)
+    return doc
+
+
+DOC_TYPE_THAI = {DocType.INTERNAL: "บันทึกข้อความ (หนังสือภายใน)", DocType.EXTERNAL: "หนังสือภายนอก"}
+# คำในคำสั่งที่บอกชนิดอื่น (ตรวจก่อนบันทึก/ภายนอก) — เรียงจากเฉพาะเจาะจงที่สุด
+_ASK_FORMS = (
+    ("stamp_letter", ("หนังสือประทับตรา", "ประทับตราแทนการลงชื่อ", "ประทับตราส่วนราชการ")),
+    # คำสั่ง: เฉพาะวลีที่บอกว่าจะ "ออกคำสั่ง" (ไม่ใช่ "ตามคำสั่ง..." ที่อ้างถึงในต้นเรื่อง)
+    ("regulation", ("ร่างระเบียบ", "ออกระเบียบ", "วางระเบียบ", "จัดทำระเบียบ", "ทำระเบียบ")),
+    ("bylaw", ("ร่างข้อบังคับ", "ออกข้อบังคับ", "วางข้อบังคับ", "จัดทำข้อบังคับ", "ทำข้อบังคับ")),
+    ("announcement", ("ร่างประกาศ", "จัดทำประกาศ", "ทำประกาศ", "ออกประกาศ", "ประกาศรับสมัคร", "ประกาศรายชื่อ",
+                      "ประกาศผล", "ประกาศให้ทราบ", "ประกาศแจ้ง")),
+    ("order", ("ร่างคำสั่ง", "จัดทำคำสั่ง", "ทำคำสั่ง", "ออกคำสั่ง", "คำสั่งแต่งตั้ง", "คำสั่งมอบหมาย", "เป็นคำสั่ง")),
+)
+_ASK_INTERNAL = ("บันทึกข้อความ", "หนังสือภายใน", "บันทึกเสนอ", "เสนอผู้บังคับบัญชา", "เสนอตามสายงาน",
+                 "เสนอ ผอ", "เสนอผู้อำนวยการ", "เสนอหัวหน้า", "เสนอปลัด")
+_ASK_EXTERNAL = ("หนังสือภายนอก", "หนังสือตอบ", "ตอบหนังสือ", "ตอบกลับ", "มีหนังสือถึง", "แจ้งตอบ")
+
+
+def requested_doc_type(prompt: str) -> Optional[DocType]:
+    """ประเภทที่ผู้ใช้ระบุในคำสั่ง เช่น 'ช่วยร่างบันทึกข้อความ...' (ไม่ระบุ = None)"""
+    text = (prompt or "").replace(" ", "")
+    internal = any(k.replace(" ", "") in text for k in _ASK_INTERNAL)
+    external = any(k.replace(" ", "") in text for k in _ASK_EXTERNAL)
+    if internal != external:
+        return DocType.INTERNAL if internal else DocType.EXTERNAL
+    return None
+
+
+def requested_form(prompt: str) -> Optional[str]:
+    """ประเภทที่ผู้ใช้ระบุในคำสั่ง เป็นคีย์ (internal / external / stamp_letter / ...) — ไม่ระบุ = None"""
+    text = (prompt or "").replace(" ", "")
+    for key, words in _ASK_FORMS:
+        if any(w.replace(" ", "") in text for w in words):
+            return key
+    asked = requested_doc_type(prompt)
+    return asked.value if asked is not None else None
+
+
+def choose_output_form(hint: Optional[str], prompt: str, *, has_source_file: bool,
+                       classified: DocType) -> tuple:
+    """ประเภทที่จะร่างเป็นคีย์: ผู้ใช้เลือก > คำสั่งที่พิมพ์ > มีไฟล์ต้นเรื่อง = บันทึกข้อความ > ตัวจำแนก"""
+    if hint:
+        return hint, "ผู้ใช้เลือกเอง"
+    asked = requested_form(prompt)
+    if asked is not None:
+        return asked, "ตามคำสั่งที่พิมพ์"
+    doc_type, why = choose_output_type(None, prompt, has_source_file=has_source_file, classified=classified)
+    return doc_type.value, why
+
+
+def choose_output_type(hint: Optional[DocType], prompt: str, *, has_source_file: bool,
+                       classified: DocType) -> tuple:
+    """ประเภทหนังสือที่จะร่าง (ไม่ใช่ประเภทของต้นเรื่อง):
+    ผู้ใช้เลือก > คำสั่งที่พิมพ์ > มีไฟล์ต้นเรื่อง = บันทึกข้อความเสนอตามสายงาน > ตัวจำแนก"""
+    if hint is not None:
+        return hint, "ผู้ใช้เลือกเอง"
+    asked = requested_doc_type(prompt)
+    if asked is not None:
+        return asked, "ตามคำสั่งที่พิมพ์"
+    if has_source_file:
+        # ต้นเรื่องที่รับเข้ามา (มักเป็นหนังสือภายนอก) ต้องเสนอผู้บังคับบัญชาด้วยบันทึกข้อความก่อน
+        return DocType.INTERNAL, "ต้นเรื่องรับเข้า จึงร่างบันทึกเสนอตามสายงาน (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
+    return classified, "จำแนกจากเนื้อหา (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
+
+
+def classic_kind(kind: DocumentKind) -> bool:
+    return kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO)
+
+
+def _pick_examples(find: Optional[ExampleFinder], source: str, prompt: str, doc_type: DocType) -> List[dict]:
+    """ตัวอย่างที่ใกล้เรื่องที่สุด ๒–๓ ฉบับ — หาไม่ได้/คลังว่าง/ฐานข้อมูลขัดข้อง = ร่างต่อโดยไม่มีตัวอย่าง"""
+    if find is None:
+        return []
+    try:
+        return list(find("\n".join(x for x in (prompt, source) if x), doc_type) or [])[:3]
+    except Exception as exc:          # ตัวอย่างเป็นตัวเสริม ห้ามทำให้การร่างล้ม
+        logging.getLogger("govdoc.ai").warning("style examples unavailable: %s", exc)
+        return []
 
 
 def start_draft(
@@ -111,9 +251,15 @@ def start_draft(
     prompt: str = "",
     file_path: Optional[str] = None,
     doc_type_hint: Optional[DocType] = None,
+    form_hint: Optional[str] = None,
     urgency: UrgencyLevel = UrgencyLevel.NORMAL,
     secret: SecretLevel = SecretLevel.NORMAL,
     api_key: Optional[str] = None,
+    llm: Optional[LLMConfig] = None,
+    recipient: str = "",
+    review_party: str = "",
+    find_examples: Optional[ExampleFinder] = None,
+    profile: Optional[UserProfileSchema] = None,
 ) -> StudioDraftResult:
     """
     เริ่มร่างจากคำสั่งที่พิมพ์และ/หรือไฟล์ต้นเรื่อง
@@ -122,15 +268,32 @@ def start_draft(
     """
     allow_cloud = cloud_ai_allowed(secret)
     result = StudioDraftResult(cloud_ai_blocked=not allow_cloud)
-    profile = get_user_profile()
+    # ข้อมูลหน่วยงาน: โหมด Supabase ส่งของหน่วยงานมา (ตั้งได้จากหน้าแรก) / โหมดเครื่องเดียวอ่านไฟล์โปรไฟล์
+    profile = profile or get_user_profile()
+    # เวลารวมของคำขอ (อ่านไฟล์ + ร่าง) ต้องทันเพดาน 120 วินาทีของ Vercel (vercel.json)
+    started = time.monotonic()
+    request_budget = 105.0
+
+    # ไฟล์สแกน: AI อ่านทุกหน้าในคำขอเดียว (Gemini → Claude)
+    ocr_attempts = []
+
+    def ai_ocr(images):
+        ocr = ocr_images_with_llm(images, llm, budget_s=llm.ocr_timeout_s)
+        ocr_attempts.extend(ocr.attempts)
+        label = {"gemini": "Gemini", "claude": "Claude"}.get(ocr.provider, ocr.provider)
+        return ocr.text, (f"{label} ({ocr.model})" if ocr.text else None)
+
+    use_ai_ocr = llm is not None and llm.any_provider and allow_cloud
 
     if file_path:
-        ctx = extract_source_document(file_path, api_key=api_key, allow_cloud=allow_cloud, secret=secret)
+        ctx = extract_source_document(file_path, api_key=api_key, allow_cloud=allow_cloud, secret=secret,
+                                      ocr_fn=ai_ocr if use_ai_ocr else None)
         engine = ctx.ocr_engine_used or "ข้อความในไฟล์"
+        failed_ocr = [f"{'Gemini' if a.provider == 'gemini' else 'Claude'} {a.error}" for a in ocr_attempts if not a.ok]
+        detail = (ctx.extraction_error or "อ่านไม่สำเร็จ") if ctx.extraction_failed else f"{ctx.page_count} หน้า · {engine}"
         result.steps.append(StudioStep(
             key="extract", label="อ่านไฟล์ต้นเรื่อง", ok=not ctx.extraction_failed,
-            detail=(ctx.extraction_error or "อ่านไม่สำเร็จ") if ctx.extraction_failed
-            else f"{ctx.page_count} หน้า · {engine}",
+            detail=" · ".join(failed_ocr + [detail]),
         ))
     elif prompt.strip():
         ctx = extract_from_raw_text(prompt.strip(), filename="คำสั่งผู้ใช้.txt")
@@ -146,11 +309,12 @@ def start_draft(
 
     cls = classify_source_document(ctx)
     result.classification = cls
-    doc_type = doc_type_hint or cls.doc_type
+    form, why = choose_output_form(form_hint or (doc_type_hint.value if doc_type_hint else None), prompt,
+                                   has_source_file=bool(file_path), classified=cls.doc_type)
+    doc_type, kind = FORM_KEYS[form]
     result.steps.append(StudioStep(
-        key="classify", label="จำแนกชนิดหนังสือ",
-        detail=f"แบบที่ {cls.form_no} · ความมั่นใจ {round(cls.confidence * 100)}%"
-        + (" · ผู้ใช้เลือกประเภทเอง" if doc_type_hint else ""),
+        key="classify", label="เลือกประเภทหนังสือที่จะร่าง",
+        detail=f"{FORM_LABELS[form]} · {why}",
     ))
 
     doc = draft_from_context_rule_based(
@@ -164,12 +328,53 @@ def start_draft(
         contact_tel=profile.contact_tel,
         secret=secret,
     )
+    doc = apply_form(doc, kind, issuer=profile.dept_name)
     doc.urgency = urgency
     doc.secret = secret
+    doc.contact_fax = profile.contact_fax or doc.contact_fax
+    doc.contact_email = profile.contact_email or doc.contact_email
+
+    # AI เรียบเรียงเนื้อความ (Claude → Gemini) ไม่สำเร็จ/ไม่ได้ตั้งค่า = ใช้ร่างตามกฎข้างบน
+    if llm is not None:
+        # ตัวอย่างของหน่วยมีเฉพาะหนังสือภายนอก/บันทึกข้อความ — ชนิดอื่นใช้แบบในระเบียบ (few-shot ใน prompt)
+        classic = kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO)
+        examples = (_pick_examples(find_examples, ctx.raw_text or "", prompt, doc.doc_type)
+                    if llm.any_provider and allow_cloud and classic else [])
+        ai = draft_content_with_llm(
+            doc_type=doc.doc_type,
+            kind=kind,
+            title=doc.special_title or "",
+            budget_s=min(llm.total_timeout_s, max(0.0, request_budget - (time.monotonic() - started))),
+            instruction=prompt if file_path else "",
+            source_text=ctx.raw_text or "",
+            config=llm, secret=secret,
+            # ใช้ตัวที่อ่านไฟล์สำเร็จร่างต่อ ตัวที่เพิ่งล้มเหลวไว้ท้ายสุด
+            prefer=next((a.provider for a in ocr_attempts if a.ok), None),
+            avoid=tuple(a.provider for a in ocr_attempts if not a.ok),
+            recipient=recipient if doc.doc_type == DocType.INTERNAL else "",
+            review_party=review_party if doc.doc_type == DocType.INTERNAL else "",
+            examples=few_shot_block(examples),
+        )
+        result.ai_provider = ai.provider or None
+        if ai.content is not None:
+            doc = apply_draft_content(doc, ai.content)
+            if examples:
+                result.style_examples = [StyleExampleRef(
+                    id=str(e.get("id")), subject=e.get("subject") or "", doc_type=e.get("doc_type") or "",
+                    score=float(e.get("score") or 0)) for e in examples]
+                result.steps.append(StudioStep(
+                    key="style", label="อ้างสำนวนจากตัวอย่างของหน่วย",
+                    detail=f"{len(examples)} ฉบับ: " + " · ".join(f"เรื่อง{(e.get('subject') or '-')[:60]}" for e in examples)))
+            # สรุปต้นเรื่องที่ AI เขียนมาพร้อมร่าง (ไม่เรียก AI เพิ่ม) แทนบรรทัดที่ตัดมาจากต้นเรื่อง
+            summary = _clean_summary(ai.content.source_summary)
+            if summary:
+                ctx.summary, ctx.summary_by_ai = summary, True
+        result.steps.append(_ai_step(ai))
     result.document = normalize_for_editor(doc)
     result.check = check_document(doc)
+    result.check.facts = check_facts(result.document, source_text_of(ctx.raw_text, prompt if file_path else ""))
     result.steps.append(StudioStep(
-        key="draft", label="ร่างหนังสือตามโครงสร้าง ๓ ภาค",
+        key="draft", label="ร่างหนังสือตามโครงสร้าง ๓ ภาค" if classic_kind(kind) else f"ร่าง{FORM_LABELS[form]}ตามแบบในระเบียบ",
         detail=f"เหลือจุดที่ต้องระบุ {len(result.check.placeholders)} จุด",
     ))
     return result

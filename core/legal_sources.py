@@ -4,7 +4,8 @@ legal_sources.py — คลังข้อกฎหมาย/ระเบีย�
 """
 
 import json
-from datetime import datetime
+
+from core.thai_date import now_bangkok
 from pathlib import Path
 from typing import List, Optional
 from uuid import uuid4
@@ -25,7 +26,7 @@ class LegalReference(BaseModel):
     effective_date: Optional[str] = None
     verified: bool = False
     recorded_by: str = ""
-    recorded_at: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M"))
+    recorded_at: str = Field(default_factory=lambda: now_bangkok().strftime("%Y-%m-%d %H:%M"))
 
 
 LEGAL_LIBRARY_PATH = Path(__file__).resolve().parent.parent / "data" / "legal_references.json"
@@ -72,7 +73,7 @@ class LegalLibrary:
                 for key, value in fields.items():
                     if key in LegalReference.model_fields and value is not None:
                         setattr(item, key, value)
-                item.recorded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+                item.recorded_at = now_bangkok().strftime("%Y-%m-%d %H:%M")
                 self._save(items)
                 return item
         return None

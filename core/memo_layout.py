@@ -13,10 +13,13 @@ memo_layout.py — ตัวจัดโครงสร้างเนื้อ�
 - "numbered" — แบบหัวข้อมีเลขกำกับตัวหนา: ๑. ต้นเรื่อง ๒. ข้อเท็จจริง ๓. ข้อกฎหมาย ๔. ข้อพิจารณาและเสนอแนะ
 
 การย่อหน้า (first-line indent, บรรทัดถัดไปชิดขอบซ้าย ตามแบบหนังสือราชการ)
-- หัวข้อ ต้นเรื่อง / ข้อกฎหมาย / ข้อเท็จจริง / ข้อพิจารณาและเสนอแนะ → ชิดขอบซ้าย (0 ซม.)
+- หัวข้อ ต้นเรื่อง / ข้อกฎหมาย / ข้อเท็จจริง / ข้อพิจารณาและเสนอแนะ → บรรทัดเดี่ยว 2.5 ซม.
+  (เริ่มตรงกับเนื้อความ ตามแบบบันทึกข้อความของหน่วยงาน) ระยะก่อนหัวข้อ 6 pt ทุกหัวข้อ
 - ย่อหน้าปกติ / ข้อระดับ ๑ (๑. ...)           → 2.5 ซม.
 - ข้อระดับ ๒ (๑.๑ ...) / มาตรา / ข้อ ของกฎหมาย → 3.5 ซม.
 - ข้อระดับ ๓ (๑.๑.๑ ...)                       → 4.5 ซม.
+- ผู้ใช้กำหนดเองได้: บรรทัดที่ขึ้นต้นด้วยแท็บ N ตัว = ระดับ N (2.5 + (N-1) ซม.) แทนค่าอัตโนมัติ
+  (หน้าแก้ไขใช้ Tab / Shift+Tab) และเปลี่ยนชื่อหัวข้อได้ผ่าน GovDocumentSchema.memo_headings
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 BASE_INDENT_CM = 2.5
 LEVEL_STEP_CM = 1.0
@@ -49,9 +52,6 @@ SECTION_ORDER = {
     "numbered": ("intro", "facts", "law", "consideration"),
 }
 
-# หัวข้อที่เขียนนำหน้าข้อความในบรรทัดเดียวกัน (run-in) สำหรับรูปแบบ bma (ถ้าข้อความบรรทัดแรกไม่ได้เป็นข้อย่อย ๑.)
-_BMA_RUN_IN = {"intro", "facts", "consideration"}
-
 _THAI_DIGITS = "๐๑๒๓๔๕๖๗๘๙"
 
 
@@ -67,14 +67,25 @@ class MemoBlock:
     section_key: str = ""      # "intro" | "facts" | "law" | "consideration"
 
 
-def line_indent_cm(line: str) -> float:
-    """คำนวณระยะย่อหน้าบรรทัดแรกจากรูปแบบเลขข้อนำหน้า"""
-    s = line.lstrip()
+MAX_LEVEL = 6
+
+
+def line_level(line: str) -> int:
+    """ระดับย่อหน้าของบรรทัด (๑ = 2.5 ซม.): แท็บนำหน้า N ตัวกำหนดเอง ไม่มีแท็บใช้ค่าอัตโนมัติจากเลขข้อ"""
+    tabs = len(line) - len(line.lstrip("\t"))
+    if tabs:
+        return min(tabs, MAX_LEVEL)
+    s = line.strip()
     if _RE_LEVEL3.match(s):
-        return BASE_INDENT_CM + 2 * LEVEL_STEP_CM
+        return 3
     if _RE_LEVEL2.match(s) or _RE_CLAUSE.match(s):
-        return BASE_INDENT_CM + LEVEL_STEP_CM
-    return BASE_INDENT_CM
+        return 2
+    return 1
+
+
+def line_indent_cm(line: str) -> float:
+    """คำนวณระยะย่อหน้าบรรทัดแรกจากแท็บนำหน้า (ผู้ใช้กำหนด) หรือรูปแบบเลขข้อนำหน้า"""
+    return BASE_INDENT_CM + (line_level(line) - 1) * LEVEL_STEP_CM
 
 
 def split_consideration_and_request(consideration: str, request: Optional[str]) -> Tuple[str, str]:
@@ -110,20 +121,30 @@ def _to_thai_digit(n: int) -> str:
 
 
 def build_memo_sections(intro: str, facts: str, law: str, consideration: str,
-                        style: str = "bma") -> List[Tuple[str, str, str]]:
-    """คืนค่า [(key, หัวข้อที่แสดง, เนื้อความ), ...] ตามลำดับของรูปแบบที่เลือก (ข้ามหัวข้อที่ว่าง)"""
+                        style: str = "bma",
+                        titles: Optional[Dict[str, str]] = None) -> List[Tuple[str, str, str]]:
+    """
+    คืนค่า [(key, หัวข้อที่แสดง, เนื้อความ), ...] ตามลำดับของรูปแบบที่เลือก (ข้ามหัวข้อที่ว่าง)
+    titles: ชื่อหัวข้อที่ผู้ใช้แก้เอง (key → ชื่อ); ค่าว่าง = ไม่แสดงหัวข้อนั้น (คงเนื้อความไว้)
+    """
+    titles = titles or {}
     values = {"intro": intro, "facts": facts, "law": law, "consideration": consideration}
     order = SECTION_ORDER.get(style, SECTION_ORDER["bma"])
     out = []
     for key in order:
-        body = (values.get(key) or "").strip()
-        if not body:
+        body = (values.get(key) or "").strip("\r\n ")  # คงแท็บนำหน้าบรรทัดแรก (ระดับย่อหน้าที่ผู้ใช้กำหนด)
+        if not body.strip():
             continue
-        title = SECTION_TITLES[key]
-        if style == "numbered":
+        title = titles[key].strip() if titles.get(key) is not None else SECTION_TITLES[key]
+        if style == "numbered" and title:
             title = f"{_to_thai_digit(len(out) + 1)}. {title}"
         out.append((key, title, body))
     return out
+
+
+# ระยะก่อนย่อหน้าตามแบบบันทึกข้อความที่หน่วยงานใช้จริง: 'เรียน' และทุกหัวข้อ (รวมต้นเรื่อง) 6 pt
+SECTION_GAP_PT = 6.0
+SALUTATION_GAP_PT = 6.0
 
 
 def build_memo_blocks(sections: List[Tuple[str, str, str]], request: str,
@@ -132,27 +153,20 @@ def build_memo_blocks(sections: List[Tuple[str, str, str]], request: str,
     blocks: List[MemoBlock] = []
     lead_style = "bold" if style == "numbered" else "underline"
 
-    for s_idx, (key, title, body) in enumerate(sections):
-        lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
-        gap = 12.0 if s_idx > 0 else 4.0
-        run_in = style == "bma" and key in _BMA_RUN_IN and lines and not _RE_LEVEL1.match(lines[0])
-
-        if run_in:
-            # หัวข้อแบบ run-in ต้องชิดขอบซ้าย (ไม่ย่อหน้า) เพื่อให้ตรงกับแบบบันทึกต้นฉบับ
-            blocks.append(MemoBlock(text=lines[0], indent_cm=0.0, lead=title,
-                                    lead_style=lead_style, space_before_pt=gap, kind="body",
+    for key, title, body in sections:
+        lines = [ln.rstrip() for ln in body.splitlines() if ln.strip()]
+        # ทุกหัวข้อ (รวมต้นเรื่อง) เว้น 6 pt จากบรรทัดบน หัวข้อเป็นบรรทัดเดี่ยวเริ่มตรงกับเนื้อความ (2.5 ซม.)
+        if title:
+            blocks.append(MemoBlock(text="", indent_cm=BASE_INDENT_CM, lead=title, lead_style=lead_style,
+                                    space_before_pt=SECTION_GAP_PT, kind="heading", section_key=key))
+        for i, ln in enumerate(lines):
+            gap = SECTION_GAP_PT if (i == 0 and not title) else 0.0
+            blocks.append(MemoBlock(text=ln.strip(), indent_cm=line_indent_cm(ln), space_before_pt=gap,
                                     section_key=key))
-            lines = lines[1:]
-        else:
-            # หัวข้อบรรทัดเดี่ยวชิดขอบซ้าย ส่วนเนื้อความบรรทัดถัดไปยังย่อหน้า 2.5 ซม.
-            blocks.append(MemoBlock(text="", indent_cm=0.0, lead=title, lead_style=lead_style,
-                                    space_before_pt=gap, kind="heading", section_key=key))
-        for ln in lines:
-            blocks.append(MemoBlock(text=ln, indent_cm=line_indent_cm(ln), section_key=key))
 
-    for i, ln in enumerate([x.strip() for x in (request or "").splitlines() if x.strip()]):
-        blocks.append(MemoBlock(text=ln, indent_cm=BASE_INDENT_CM,
-                                space_before_pt=12.0 if i == 0 else 0.0, kind="request",
+    for i, ln in enumerate([x.rstrip() for x in (request or "").splitlines() if x.strip()]):
+        blocks.append(MemoBlock(text=ln.strip(), indent_cm=line_indent_cm(ln),
+                                space_before_pt=SECTION_GAP_PT if i == 0 else 0.0, kind="request",
                                 section_key="consideration"))
     return blocks
 

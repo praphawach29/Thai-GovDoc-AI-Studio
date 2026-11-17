@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GovDoc Studio — แก้ไขเอกสาร</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<title>Thai GovDoc AI Studio — แก้ไขเอกสาร</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -17,10 +18,11 @@
 <!-- ===== Icon rail ===== -->
 <aside class="w-14 bg-white border-r border-slate-200 hidden sm:flex flex-col items-center py-3.5 justify-between shrink-0 z-30 no-print">
   <div class="flex flex-col items-center gap-4 w-full">
-    <a href="./" class="w-9 h-9 rounded-lg bg-brand-900 flex items-center justify-center text-white shadow-sm hover:bg-brand-700 transition" title="GovDoc Studio — หน้าแรก"><i class="fa-solid fa-landmark"></i></a>
+    <a href="./" class="w-9 h-9 shrink-0 rounded-lg hover:opacity-85 transition" title="Thai GovDoc AI Studio — หน้าแรก"><img src="logo.svg" alt="Thai GovDoc AI Studio" class="w-9 h-9"></a>
     <a href="./" class="w-9 h-9 rounded-lg border border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-100 flex items-center justify-center transition" title="สร้างเอกสารใหม่"><i class="fa-regular fa-pen-to-square"></i></a>
     <div class="w-6 h-px bg-slate-200"></div>
     <button id="rail-history" type="button" class="w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition" title="ประวัติเวอร์ชัน"><i class="fa-regular fa-clock"></i></button>
+    <a href="registry.html" class="w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition" title="ทะเบียนรับ-ส่ง"><i class="fa-solid fa-book"></i></a>
     <button id="rail-source" type="button" class="w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center transition" title="ต้นเรื่อง"><i class="fa-regular fa-file-lines"></i></button>
   </div>
   <div id="rail-avatar" class="w-7 h-7 rounded-full bg-slate-200 text-slate-700 font-semibold text-[11px] flex items-center justify-center" title="">–</div>
@@ -33,34 +35,128 @@
     <header class="h-14 px-5 border-b border-slate-200 bg-white flex items-center justify-between shrink-0 gap-2">
       <h1 id="doc-title" class="text-sm font-medium text-slate-800 truncate">กำลังโหลด...</h1>
       <div class="flex items-center gap-2 shrink-0">
-        <span id="left-status" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs text-emerald-700 bg-emerald-50 border border-emerald-300">เอกสารพร้อมตรวจ</span>
         <a href="./" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs text-slate-600 bg-white border border-slate-300 hover:bg-slate-50"><i class="fa-regular fa-file text-[10px]"></i>เอกสารใหม่</a>
       </div>
     </header>
     <div class="px-5 pt-3 bg-white border-b border-slate-200 flex gap-4 text-xs shrink-0" role="tablist">
       <button type="button" role="tab" data-tab="chat" aria-selected="true" class="pb-2 border-b-2 border-brand-600 text-slate-900 font-medium">บทสนทนา</button>
       <button type="button" role="tab" data-tab="source" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ต้นเรื่อง</button>
-      <button type="button" role="tab" data-tab="checks" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ผลตรวจ <span id="checks-count" class="ml-0.5 text-[10px] px-1.5 rounded-full bg-slate-100 text-slate-600">0</span></button>
+      <button type="button" role="tab" data-tab="checks" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ผลตรวจ</button>
+      <button type="button" role="tab" data-tab="law" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">กฎหมาย <span id="law-count" class="ml-0.5 text-[10px] px-1.5 rounded-full bg-slate-100 text-slate-600">0</span></button>
+      <button type="button" role="tab" data-tab="finals" aria-selected="false" class="pb-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800">ฉบับจริง <span id="finals-count" class="ml-0.5 text-[10px] px-1.5 rounded-full bg-slate-100 text-slate-600">0</span></button>
     </div>
 
     <div id="tab-chat" class="flex-1 overflow-y-auto px-5 py-5 space-y-4" role="tabpanel"></div>
 
-    <div id="tab-source" class="flex-1 overflow-y-auto px-5 py-4" role="tabpanel" hidden>
-      <div class="relative mb-3">
-        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-        <input id="source-search" type="search" placeholder="ค้นหาและไฮไลต์ในต้นเรื่อง..." class="w-full text-xs pl-8 pr-16 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
-        <span id="source-hits" class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"></span>
+    <div id="tab-source" class="flex-1 flex flex-col min-h-0" role="tabpanel" hidden>
+      <div class="px-3 py-2 bg-white border-b border-slate-200 flex items-center gap-2 shrink-0">
+        <div id="source-views" class="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px]" role="group" aria-label="มุมมองต้นเรื่อง" hidden>
+          <button type="button" data-sview="file" class="px-2 py-1 rounded-md">ไฟล์จริง</button>
+          <button type="button" data-sview="text" class="px-2 py-1 rounded-md">ข้อความที่อ่านได้</button>
+        </div>
+        <div class="relative flex-1 min-w-0">
+          <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]"></i>
+          <label for="source-search" class="sr-only">ค้นคำในต้นเรื่อง</label>
+          <input id="source-search" type="search" placeholder="ค้นคำในต้นเรื่อง..." class="w-full text-xs pl-7 pr-14 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
+          <span id="source-hits" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"></span>
+        </div>
+        <button id="source-prev" type="button" class="w-7 h-7 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="ผลก่อนหน้า (Shift+Enter)" aria-label="ผลค้นหาก่อนหน้า" disabled><i class="fa-solid fa-chevron-up text-[11px]"></i></button>
+        <button id="source-next" type="button" class="w-7 h-7 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="ผลถัดไป (Enter)" aria-label="ผลค้นหาถัดไป" disabled><i class="fa-solid fa-chevron-down text-[11px]"></i></button>
       </div>
-      <dl id="source-meta" class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs mb-3"></dl>
-      <pre id="source-text" class="whitespace-pre-wrap font-body text-[13px] leading-relaxed text-slate-700 bg-white border border-slate-200 rounded-xl p-4"></pre>
+      <!-- สรุปต้นเรื่องที่ AI เขียนมาพร้อมร่าง (อ่านเร็ว แล้วเทียบกับไฟล์จริงด้านล่าง) -->
+      <details id="source-summary" class="group px-3 py-2 bg-emerald-50/60 border-b border-emerald-100 text-xs shrink-0" open hidden>
+        <summary class="cursor-pointer list-none flex items-center gap-1.5 font-medium text-emerald-800 select-none">
+          <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>สรุปต้นเรื่อง<span class="font-normal text-emerald-700/70">· โดย AI ตรวจกับต้นฉบับเสมอ</span>
+          <i class="fa-solid fa-chevron-down ml-auto text-[10px] text-emerald-700/60 group-open:rotate-180 transition"></i>
+        </summary>
+        <p id="source-summary-text" class="mt-1.5 whitespace-pre-line leading-relaxed text-slate-700 font-body"></p>
+      </details>
+      <!-- ทะเบียนรับ: ลงรับต้นเรื่อง (เลขรับ วันเวลารับ) หรือแสดงเลขรับที่ลงไว้แล้ว -->
+      <section id="receive-box" class="px-3 py-2 bg-sky-50/70 border-b border-sky-100 text-xs shrink-0" hidden></section>
+      <p id="style-refs" class="px-3 py-1.5 bg-indigo-50/60 border-b border-indigo-100 text-[11px] text-indigo-900 shrink-0" hidden></p>
+      <div id="source-pagebar" class="px-3 py-1 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-[11px] text-slate-600 shrink-0" hidden>
+        <div class="flex items-center gap-1">
+          <button id="source-page-prev" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="หน้าก่อนหน้า"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>
+          <span>หน้า <span id="source-page">๑</span>/<span id="source-pages">๑</span></span>
+          <button id="source-page-next" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="หน้าถัดไป"><i class="fa-solid fa-chevron-right text-[10px]"></i></button>
+        </div>
+        <div class="flex items-center gap-1">
+          <button id="source-zoom-out" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="ย่อ"><i class="fa-solid fa-minus text-[10px]"></i></button>
+          <span id="source-zoom" class="w-9 text-center">๑๐๐%</span>
+          <button id="source-zoom-in" type="button" class="w-6 h-6 rounded hover:bg-slate-200" aria-label="ขยาย"><i class="fa-solid fa-plus text-[10px]"></i></button>
+          <a id="source-open" href="#" target="_blank" rel="noopener" class="ml-1 px-1.5 py-0.5 rounded hover:bg-slate-200" title="เปิดไฟล์ในแท็บใหม่"><i class="fa-solid fa-up-right-from-square text-[10px]"></i></a>
+        </div>
+      </div>
+      <p id="source-note" class="px-3 py-1.5 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-800 shrink-0" hidden></p>
+      <div id="source-file" class="flex-1 overflow-auto bg-slate-200/70 p-3 space-y-3" hidden aria-label="ไฟล์ต้นเรื่อง"></div>
+      <div id="source-textview" class="flex-1 overflow-y-auto px-5 py-4">
+        <dl id="source-meta" class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs mb-3"></dl>
+        <pre id="source-text" class="whitespace-pre-wrap font-body text-[13px] leading-relaxed text-slate-700 bg-white border border-slate-200 rounded-xl p-4"></pre>
+      </div>
     </div>
 
     <div id="tab-checks" class="flex-1 overflow-y-auto px-5 py-4 space-y-2" role="tabpanel" hidden></div>
 
+    <!-- ข้อกฎหมาย: เลือกจากคลังที่ยืนยันแล้ว (AI เสนอ / ค้นเอง) → หัวข้อ ข้อกฎหมาย ในบันทึก -->
+    <div id="tab-law" class="flex-1 overflow-y-auto px-5 py-4 space-y-4 text-xs" role="tabpanel" hidden>
+      <p id="law-external-note" class="hidden bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3">หัวข้อ "ข้อกฎหมาย" ใช้กับบันทึกข้อความ — หนังสือภายนอกให้อ้างในเนื้อความเอง</p>
+      <section>
+        <h3 class="text-[11px] font-semibold text-slate-400 tracking-wider mb-2">ในบันทึกนี้</h3>
+        <ul id="law-selected" class="space-y-2"></ul>
+        <label id="law-attach-wrap" class="mt-2 flex items-start gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer" hidden>
+          <input id="law-attach" type="checkbox" class="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">
+          <span><span class="font-medium text-slate-700">แนบหน้าข้อกฎหมายจากไฟล์ต้นฉบับท้าย PDF</span>
+            <span id="law-attach-info" class="block text-[11px] text-slate-500"></span></span>
+        </label>
+      </section>
+      <section class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">ข้อที่เกี่ยวข้อง</h3>
+          <button type="button" id="law-suggest" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-wand-magic-sparkles text-emerald-300"></i><span>ให้ AI เสนอ</span></button>
+        </div>
+        <ul id="law-suggestions" class="space-y-2"></ul>
+      </section>
+      <section class="space-y-2">
+        <h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">ค้นในคลังกฎหมาย (ยืนยันแล้ว)</h3>
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]"></i>
+          <label for="law-search" class="sr-only">ค้นในคลังกฎหมาย</label>
+          <input id="law-search" type="search" placeholder="เช่น ค่าใช้สถานที่, มาตรา ๖, เครื่องหมายราชการ" class="w-full pl-7 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
+        </div>
+        <ul id="law-results" class="space-y-2"></ul>
+      </section>
+    </div>
+
+    <div id="tab-finals" class="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-xs" role="tabpanel" hidden>
+      <!-- ร่างที่แก้เสร็จแล้ว → ตัวอย่างสำนวนของหน่วย (AI ใช้เป็นแบบสำนวนในเรื่องคล้ายกันครั้งต่อไป) -->
+      <section id="mark-example-box" class="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3 space-y-2">
+        <div class="font-semibold text-slate-800"><i class="fa-solid fa-stamp text-indigo-700 mr-1"></i>ร่างนี้คือฉบับที่ลงนาม/ส่งออกจริงแล้ว?</div>
+        <p class="text-slate-600">เก็บข้อความของร่างนี้ (ตามที่แก้ล่าสุด) เป็น "ตัวอย่างของหน่วย" ให้ AI ร่างเรื่องคล้ายกันครั้งต่อไปได้สำนวนเดียวกัน — ใช้เฉพาะสำนวน ไม่ใช้เลข ชื่อ วันที่</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="mark-example" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-stamp"></i><span>นี่คือฉบับจริง</span></button>
+          <span id="mark-example-note" class="text-slate-500"></span>
+        </div>
+      </section>
+      <ol class="bg-white border border-slate-200 rounded-xl p-3 space-y-1 text-slate-600 list-decimal list-inside">
+        <li>กดปุ่ม <b>Word</b> ด้านบน แล้วแก้/จัดหน้าต่อใน Microsoft Word จนเสร็จ</li>
+        <li>อัปโหลดไฟล์ที่แก้แล้วที่นี่ ระบบเก็บไฟล์ตามที่ได้รับทุกตัวอักษร (ไม่แปลงกลับ) แก้หรือลบภายหลังไม่ได้</li>
+        <li>แก้อีกรอบก็อัปโหลดใหม่ได้ ระบบนับเป็นฉบับที่ ๒, ๓, ... และเก็บทุกฉบับไว้</li>
+      </ol>
+      <p id="finals-local" class="hidden bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3">ใช้ได้เมื่อเข้าสู่ระบบและเก็บเอกสารบนเซิร์ฟเวอร์ (โหมดเครื่องเดียวไม่มีที่เก็บไฟล์ถาวร)</p>
+      <form id="finals-form" class="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+        <label class="block font-medium text-slate-700" for="finals-file">ไฟล์ฉบับจริง (.docx หรือ .pdf ไม่เกิน 50 MB)</label>
+        <input id="finals-file" type="file" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-800">
+        <label class="sr-only" for="finals-note">หมายเหตุ</label>
+        <input id="finals-note" type="text" maxlength="500" placeholder="หมายเหตุ (ถ้ามี) เช่น ฉบับที่ ผอ.ลงนามแล้ว" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500">
+        <button id="finals-submit" type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-cloud-arrow-up"></i><span>อัปโหลดฉบับจริง</span></button>
+      </form>
+      <ul id="finals-list" class="space-y-2"></ul>
+    </div>
+
     <footer class="p-4 border-t border-slate-200 bg-white space-y-2 shrink-0">
       <form id="redraft-form" class="relative bg-slate-50 rounded-2xl border border-slate-200 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:bg-white transition">
         <label for="redraft-input" class="sr-only">ข้อมูลเพิ่มเติมสำหรับร่างใหม่</label>
-        <textarea id="redraft-input" rows="2" class="w-full bg-transparent border-0 resize-none px-4 pt-3 pb-11 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:ring-0 font-body" placeholder="เพิ่มข้อมูลต้นเรื่อง เช่น ชื่อผู้ขอ วันเวลา สถานที่ แล้วให้ร่างใหม่..."></textarea>
+        <textarea id="redraft-input" rows="2" class="w-full bg-transparent border-0 outline-none focus:outline-none resize-none px-4 pt-3 pb-11 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:ring-0 font-body" placeholder="เพิ่มข้อมูลต้นเรื่อง เช่น ชื่อผู้ขอ วันเวลา สถานที่ แล้วให้ร่างใหม่..."></textarea>
         <div class="absolute bottom-2.5 left-3 text-[11px] text-slate-400">ร่างใหม่จะเก็บฉบับปัจจุบันไว้ในประวัติเวอร์ชัน</div>
         <button id="redraft-btn" type="submit" class="absolute bottom-2 right-2.5 w-7 h-7 rounded-full bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white flex items-center justify-center shadow-sm" title="ร่างใหม่"><i class="fa-solid fa-arrow-up text-xs"></i></button>
       </form>
@@ -70,42 +166,86 @@
 
   <!-- ===== ขวา: เอกสาร A4 ===== -->
   <section class="flex-1 bg-[#eaeef2] flex flex-col h-full relative overflow-hidden min-w-0">
-    <header class="min-h-[3.5rem] py-2 px-4 sm:px-6 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between shrink-0 z-20 gap-2 no-print">
-      <div class="flex items-center gap-2.5 min-w-0">
-        <button id="btn-left-toggle" type="button" class="lg:hidden w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-600" title="บทสนทนา/ต้นเรื่อง"><i class="fa-regular fa-comments"></i></button>
-        <span class="flex items-center gap-1.5 font-semibold text-slate-800 text-sm"><i class="fa-regular fa-file-lines text-emerald-600"></i><span id="type-label">เอกสาร</span></span>
-        <span id="status-chip" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border"></span>
-        <span id="save-indicator" class="hidden md:inline-flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-md"></span>
-      </div>
-      <div class="flex items-center gap-2 flex-wrap">
-        <button id="btn-edit-mode" type="button" aria-pressed="true" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition"></button>
-        <button id="btn-docx" type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs shadow-xs"><i class="fa-solid fa-file-word text-brand-600"></i><span>Word</span></button>
-        <button id="btn-pdf" type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-xs shadow-xs"><i class="fa-solid fa-file-pdf"></i><span>PDF (Typst)</span></button>
+    <!-- แถบเครื่องมือแถวเดียว: ประเภท · หน่วย/เสนอขั้นถัดไป · สถานะ · ตั้งค่าเอกสาร · Word · PDF -->
+    <header id="toolbar" class="h-14 px-3 sm:px-4 bg-white border-b border-slate-200 flex items-center gap-2 shrink-0 z-20 no-print">
+      <button id="btn-left-toggle" type="button" class="lg:hidden w-8 h-8 shrink-0 rounded-lg hover:bg-slate-100 text-slate-600" title="บทสนทนา/ต้นเรื่อง" aria-label="บทสนทนา/ต้นเรื่อง"><i class="fa-regular fa-comments"></i></button>
+      <label class="shrink-0 flex items-center" title="เปลี่ยนประเภทหนังสือ: AI ร่างใหม่จากต้นเรื่องเดิม">
+        <span id="type-label" class="sr-only">ประเภทหนังสือ</span>
+        <select id="type-select" class="border border-slate-200 rounded-md bg-white py-1 pl-2 pr-7 text-xs font-semibold text-slate-800 focus:ring-0">
+          <option value="internal">บันทึกข้อความ</option>
+          <option value="external">หนังสือภายนอก</option>
+          <option value="stamp_letter">หนังสือประทับตรา</option>
+          <option value="order">คำสั่ง</option>
+          <option value="announcement">ประกาศ</option>
+          <option value="regulation">ระเบียบ</option>
+          <option value="bylaw">ข้อบังคับ</option>
+        </select>
+      </label>
+      <label id="unit-wrap" class="shrink-0 flex items-center gap-1.5" title="เปลี่ยนหน่วยออกหนังสือ: ส่วนราชการ เลขที่ (เว้นเขียนมือ) วันที่ และผู้ประสาน">
+        <i class="fa-solid fa-sitemap text-brand-600 text-xs"></i>
+        <span class="sr-only">หน่วยออกหนังสือ</span>
+        <select id="unit-select" class="min-w-[8.5rem] max-w-[13rem] border border-slate-200 rounded-md bg-white py-1 pl-2 pr-7 text-xs focus:ring-0"></select>
+      </label>
+      <button id="btn-next-level" type="button" hidden class="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-medium" title="สร้างบันทึกฉบับเสนอขั้นถัดไปจากฉบับนี้ (แก้ไขแยกได้)"><i class="fa-solid fa-turn-up"></i><span id="next-level-label" class="tb-h4">เสนอขั้นถัดไป</span></button>
+      <!-- ป้ายเดียวของจุดที่ต้องแก้ (ต้องระบุ + ข้อควรแก้ตามระเบียบ): กดแล้วไปทีละจุด -->
+      <button id="todo-badge" type="button" class="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border"></button>
+      <span id="save-indicator" class="tb-h1 inline-flex items-center gap-1.5 text-[11px] text-slate-500 truncate"></span>
+      <div class="ml-auto flex items-center gap-1 shrink-0">
+        <button id="btn-undo" type="button" class="tb-h2 w-7 h-7 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 disabled:opacity-30" title="เลิกทำ (Ctrl+Z)" aria-label="เลิกทำ"><i class="fa-solid fa-rotate-left text-xs"></i></button>
+        <button id="btn-redo" type="button" class="tb-h2 w-7 h-7 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 disabled:opacity-30" title="ทำซ้ำ (Ctrl+Y)" aria-label="ทำซ้ำ"><i class="fa-solid fa-rotate-right text-xs"></i></button>
+        <button id="btn-outdent" type="button" class="tb-h1 w-7 h-7 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800" title="ลดระยะย่อหน้า (Shift+Tab)" aria-label="ลดระยะย่อหน้า"><i class="fa-solid fa-outdent text-xs"></i></button>
+        <button id="btn-indent" type="button" class="tb-h1 w-7 h-7 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800" title="เพิ่มระยะย่อหน้า (Tab)" aria-label="เพิ่มระยะย่อหน้า"><i class="fa-solid fa-indent text-xs"></i></button>
+        <div class="w-px h-4 bg-slate-200 mx-1"></div>
+        <div class="relative">
+          <button id="btn-settings" type="button" title="ตั้งค่าเอกสาร: ฟอนต์ เลขไทย หัวข้อเสริม" aria-expanded="false" aria-controls="settings-menu" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs"><i class="fa-solid fa-sliders text-brand-600"></i><span class="tb-h4">ตั้งค่าเอกสาร</span></button>
+          <div id="settings-menu" class="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-lg border border-slate-200 p-3 space-y-3 text-xs z-40 animate-fadeIn" role="dialog" aria-label="ตั้งค่าเอกสาร" hidden>
+            <label class="block space-y-1" title="ฟอนต์ของฉบับนี้ (ใช้ทั้งหน้าจอ PDF และ Word)">
+              <span class="font-medium text-slate-700"><i class="fa-solid fa-font text-brand-600 mr-1"></i>ฟอนต์</span>
+              <select id="font-select" class="w-full border border-slate-200 rounded-md bg-white py-1 pl-2 pr-7 text-xs focus:ring-0">
+                <option value="it9">TH SarabunIT๙</option>
+                <option value="psk">TH SarabunPSK</option>
+                <option value="sarabun_new">TH Sarabun New</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer text-slate-700">
+              <input id="toggle-thai-num" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5"> เลขไทย ๑๒๓
+            </label>
+            <div class="space-y-1.5 pt-2 border-t border-slate-100">
+              <div class="flex items-center justify-between"><span class="font-medium text-slate-700"><i class="fa-regular fa-clipboard text-brand-600 mr-1"></i>หัวข้อเสริม</span><span id="section-count" class="text-[11px] text-slate-500"></span></div>
+              <div id="section-toggles" class="flex flex-col gap-1.5"></div>
+            </div>
+            <div class="space-y-1.5 pt-2 border-t border-slate-100">
+              <div class="font-medium text-slate-700"><i class="fa-solid fa-stamp text-brand-600 mr-1"></i>ผู้ลงนาม: ใช้ตราประทับชื่อ-ตำแหน่ง</div>
+              <p class="text-[11px] text-slate-500 leading-snug">ติ๊กแล้ว ไฟล์ Word/PDF เว้นบรรทัดชื่อและตำแหน่งว่างไว้ประทับ (ระยะเท่าเดิม)</p>
+              <div id="signer-toggles" class="flex flex-col gap-1.5"></div>
+            </div>
+          </div>
+        </div>
+        <button id="btn-issue" type="button" hidden title="ออกเลขที่หนังสือจากทะเบียนส่ง แล้วเติมลงช่อง &quot;ที่&quot;" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-medium text-xs"><i class="fa-solid fa-hashtag"></i><span id="issue-label" class="tb-h4">ออกเลข</span></button>
+        <button id="btn-docx" type="button" title="ส่งออก Word (.docx)" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs"><i class="fa-solid fa-file-word text-brand-600"></i><span class="tb-h5">Word</span></button>
+        <button id="btn-pdf" type="button" title="ส่งออก PDF" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-xs"><i class="fa-solid fa-file-pdf"></i><span class="tb-h5">PDF</span></button>
+        <button id="btn-chain-pdf" type="button" hidden class="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium" title="รวมทุกฉบับในสายการเสนอเป็น PDF เดียว ฉบับขั้นสูงสุดอยู่หน้าแรก"><i class="fa-solid fa-layer-group text-brand-600"></i><span class="tb-h4">ชุดเสนอ</span></button>
       </div>
     </header>
-
-    <nav class="h-9 bg-white/95 backdrop-blur px-4 sm:px-5 border-b border-slate-200 flex items-center justify-between shrink-0 text-slate-600 text-xs no-print">
-      <div class="flex items-center gap-1 min-w-0">
-        <button id="btn-undo" type="button" class="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 disabled:opacity-30" title="เลิกทำ (Ctrl+Z)"><i class="fa-solid fa-rotate-left"></i></button>
-        <button id="btn-redo" type="button" class="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 disabled:opacity-30" title="ทำซ้ำ (Ctrl+Y)"><i class="fa-solid fa-rotate-right"></i></button>
-        <div class="w-px h-3 bg-slate-200 mx-1"></div>
-        <span class="text-[11px] text-slate-400 truncate hidden md:inline">คลิกบนข้อความเพื่อแก้ไขโดยตรง หรือกด <i class="fa-solid fa-wand-magic-sparkles text-emerald-600"></i> ข้างย่อหน้าเพื่อเกลาสำนวน</span>
-      </div>
-      <button id="btn-lint" type="button" class="flex items-center gap-1 px-2 py-0.5 hover:bg-slate-100 rounded text-[11px] shrink-0"></button>
-    </nav>
-
-    <div class="bg-slate-50/95 border-b border-slate-200 px-4 sm:px-6 py-2 flex flex-wrap items-center gap-3 text-xs select-none shrink-0 no-print">
-      <span class="font-medium text-slate-700 flex items-center gap-1"><i class="fa-regular fa-clipboard text-brand-600"></i><span>หัวข้อเสริม:</span></span>
-      <div id="section-toggles" class="flex items-center gap-2 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs"></div>
-      <span id="section-count" class="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium"></span>
-      <label class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
-        <input id="toggle-thai-num" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5"> เลขไทย ๑๒๓
-      </label>
-    </div>
 
     <div id="doc-viewport" class="flex-1 overflow-auto px-4 py-8 relative">
       <div id="sheet-wrap" class="mx-auto sheet-scale" style="width:21cm">
         <article id="sheet" class="a4-sheet shadow-paper border border-slate-200/90 rounded-sm relative edit-on" aria-label="เอกสาร A4"></article>
+      </div>
+    </div>
+
+    <!-- ข้อเท็จจริงที่ไม่พบในต้นเรื่อง (เปิดจากป้าย "ต้องแก้") -->
+    <div id="fact-pop" class="popup-dialog absolute w-[340px] max-w-[calc(100%-2rem)] bg-white rounded-2xl border border-amber-200 p-4 z-40 no-print" role="dialog" aria-labelledby="fact-title" hidden>
+      <div class="flex items-center justify-between">
+        <div id="fact-title" class="flex items-center gap-1.5 text-xs font-semibold text-amber-800"><i class="fa-solid fa-magnifying-glass-chart"></i><span>ตรวจกับต้นเรื่อง</span></div>
+        <button type="button" data-fact="close" class="w-6 h-6 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100" aria-label="ปิด"><i class="fa-solid fa-xmark text-xs"></i></button>
+      </div>
+      <div id="fact-value" class="mt-2 inline-block px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-sm font-medium text-slate-900 font-body"></div>
+      <p id="fact-message" class="mt-2 text-xs text-slate-600 leading-relaxed"></p>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <button type="button" data-fact="source" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-xs font-medium text-slate-700"><i class="fa-regular fa-file-lines text-brand-600"></i>ดูในต้นเรื่อง</button>
+        <button type="button" data-fact="ok" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"><i class="fa-solid fa-check"></i>ถูกต้องแล้ว</button>
+        <button type="button" data-fact="next" class="ml-auto inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-slate-500 hover:bg-slate-100">จุดถัดไป<i class="fa-solid fa-chevron-right text-[9px]"></i></button>
       </div>
     </div>
 
@@ -137,7 +277,7 @@
     <!-- ปุ่มลัด -->
     <div class="absolute bottom-12 right-6 z-20 no-print">
       <div id="quick-menu" class="absolute bottom-full right-0 mb-2 w-60 bg-white rounded-xl shadow-lg border border-slate-200 p-1.5 text-xs animate-fadeIn" hidden>
-        <button type="button" data-quick="jump" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-location-crosshairs text-amber-600 w-4"></i>ไปยังจุดที่ต้องระบุถัดไป</button>
+        <button type="button" data-quick="jump" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-location-crosshairs text-amber-600 w-4"></i>ไปยังจุดที่ต้องแก้ถัดไป</button>
         <button type="button" data-quick="formal" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-wand-magic-sparkles text-emerald-600 w-4"></i>เกลาทุกย่อหน้าให้เป็นทางการ</button>
         <button type="button" data-quick="lint" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-list-check text-brand-600 w-4"></i>ตรวจระเบียบงานสารบรรณ</button>
         <button type="button" data-quick="print" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-50 text-left"><i class="fa-solid fa-print text-slate-500 w-4"></i>พิมพ์ตัวอย่างจากเบราว์เซอร์</button>
@@ -171,7 +311,22 @@
   </div>
 </div>
 
+<!-- ออกเลขที่หนังสือ (ทะเบียนส่ง) -->
+<div id="modal-issue" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm no-print" role="dialog" aria-modal="true" aria-labelledby="issue-title" hidden>
+  <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[88vh] overflow-hidden animate-fadeIn">
+    <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+      <h3 id="issue-title" class="text-sm font-semibold text-slate-900"><i class="fa-solid fa-hashtag text-amber-600 mr-1"></i>ออกเลขที่หนังสือ</h3>
+      <button type="button" data-close class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60" aria-label="ปิด"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="issue-body" class="flex-1 overflow-y-auto p-5 space-y-3 text-xs"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="auth.js"></script>
 <script src="studio.js"></script>
+<script src="source-viewer.js"></script>
+<script src="registry-api.js"></script>
 <script src="editor.js"></script>
 </body>
 </html>

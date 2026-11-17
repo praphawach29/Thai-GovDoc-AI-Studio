@@ -59,7 +59,7 @@ def test_typst_compiles(tmp_path, template_id, style):
     (tmp_path / "assets").mkdir()
     for name in ("internal.typ", "external.typ"):
         shutil.copy(ROOT / "templates" / "typst" / name, tmp_path / "templates" / "typst" / name)
-    shutil.copy(ROOT / "assets" / "garuda.svg", tmp_path / "assets" / "garuda.svg")
+    shutil.copy(ROOT / "assets" / "garuda_krut.png", tmp_path / "assets" / "garuda_krut.png")
     (tmp_path / "main.typ").write_text(generate_typst_content(doc), encoding="utf-8")
 
     cmd, reason = _compile_cmd(tmp_path, "main.typ")
@@ -68,7 +68,7 @@ def test_typst_compiles(tmp_path, template_id, style):
         from core.typst_exporter import compile_typst_to_pdf
 
         ok, message = compile_typst_to_pdf(
-            str(tmp_path / "main.typ"), str(tmp_path / "out.pdf")
+            str(tmp_path / "main.typ"), str(tmp_path / "out.pdf"), font_key="it9"
         )
         assert ok, message
     else:
@@ -76,5 +76,5 @@ def test_typst_compiles(tmp_path, template_id, style):
         assert res.returncode == 0, res.stderr
     pdf = tmp_path / "out.pdf"
     assert pdf.exists() and pdf.read_bytes().startswith(b"%PDF-")
-    # ต้องฝังฟอนต์ TH Sarabun New จาก assets/fonts ไม่ใช่ fallback ภาษาอังกฤษ
-    assert b"SarabunNew" in pdf.read_bytes()
+    # ต้องฝังฟอนต์ TH SarabunIT๙ (ค่าเริ่มต้น; ชื่อภายในไฟล์คือ THSarabunPSK) จาก assets/fonts ไม่ใช่ fallback
+    assert b"THSarabunPSK" in pdf.read_bytes()

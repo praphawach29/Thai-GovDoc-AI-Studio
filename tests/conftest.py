@@ -23,7 +23,7 @@ OCR_DOCKER_IMAGE = "tha-tesseract:latest"
 
 
 def browser_available() -> bool:
-    from core.pdf_exporter import _find_browser_executable
+    from legacy.pdf_exporter import _find_browser_executable
 
     return _find_browser_executable() is not None
 
@@ -101,7 +101,7 @@ def export_pdf():
     เรียก PDF export ผ่าน headless browser และ skip อย่างสม่ำเสมอ
     เมื่อสภาพแวดล้อม (sandbox) บล็อกการทำงานของ browser
     """
-    from core.pdf_exporter import export_govdoc_to_pdf, get_pdf_bytes
+    from legacy.pdf_exporter import export_govdoc_to_pdf, get_pdf_bytes
 
     def _export(doc, out_path=None):
         try:
@@ -116,3 +116,44 @@ def export_pdf():
             raise
 
     return _export
+
+
+@pytest.fixture
+def test_settings(tmp_path):
+    """ค่าตั้งเซิร์ฟเวอร์สำหรับเทสต์: ไฟล์อัปโหลดและทะเบียนอยู่ในโฟลเดอร์ชั่วคราว"""
+    from server.settings import Settings
+
+    return Settings(upload_dir=tmp_path / "uploads", registry_db_path=tmp_path / "edocument.db")
+
+
+@pytest.fixture
+def test_registry(test_settings):
+    from core.registry import DocumentRegistry
+
+    return DocumentRegistry(db_path=str(test_settings.registry_db_path))
+
+
+@pytest.fixture(autouse=True)
+def _isolated_server(test_settings, test_registry):
+    """ทุกเทสต์ใช้ทะเบียนและโฟลเดอร์อัปโหลดชั่วคราว ไม่เขียนลง data/ หรือ uploads/ ของจริง"""
+    from server.deps import get_registry
+    from server.main import app
+    from server.settings import get_settings
+
+    app.dependency_overrides[get_settings] = lambda: test_settings
+    app.dependency_overrides[get_registry] = lambda: test_registry
+    yield
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_ai_calls(monkeypatch):
+    """เทสต์ต้องไม่เรียก Claude/Gemini จริง (เสียเงินและไม่แน่นอน) แม้เครื่องตั้งคีย์ไว้
+    เทสต์ที่ต้องการ AI ให้ส่ง providers จำลองเข้า draft_content_with_llm เอง"""
+    for name in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    from server.settings import get_settings
+
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

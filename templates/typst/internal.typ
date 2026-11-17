@@ -19,6 +19,9 @@
 
 #let _leader = box(width: 1fr, repeat[.])
 
+#let _secret_label(secret) = if secret == "top_secret" { "ลับที่สุด" } else if secret == "very_secret" { "ลับมาก" } else { "ลับ" }
+#let _urgency_label(urgency) = if urgency == "most_urgent" { "ด่วนที่สุด" } else if urgency == "very_urgent" { "ด่วนมาก" } else { "ด่วน" }
+
 // ระยะบรรทัด ≈ 0.75 ซม. ที่ 16pt (เทียบกับบันทึกข้อความต้นแบบที่พิมพ์จาก Word)
 #let _leading = 0.25em
 
@@ -26,11 +29,43 @@
   #text(size: 20pt, weight: "bold")[#label]#h(0.25cm)#value#_leader
 ]
 
+// "ส่วนราชการ" ต้องอยู่บรรทัดเดียวเสมอ (เช่น "สำนัก... (กอง... โทร... โทรสาร ...)")
+// ถ้ายาวเกิน บีบตัวอักษรแนวนอนให้พอดีแบบเดียวกับ Word (w:w) — ไม่ขึ้นบรรทัดใหม่
+#let _field_one_line(label, value) = layout(size => context {
+  let head = text(size: 20pt, weight: "bold")[#label]
+  let room = size.width - measure(head).width - 0.25cm - 0.3cm
+  let w = measure(value).width
+  if w <= room or w == 0pt {
+    _field(label, value)
+  } else {
+    let ratio = room / w * 100%
+    [#head#h(0.25cm)#box(scale(x: ratio, origin: left, reflow: true, box(width: w + 1pt, value)))#_leader]
+  }
+})
+
+// "เรื่อง": เส้นจุดเฉพาะบรรทัดแรก (ยาวถึงขอบขวา) ส่วนที่ยาวเกินขึ้นบรรทัดที่ ๒ เยื้องตรงข้อความ ไม่มีเส้น
+// words = คำที่ตัดแล้วจาก core/typst_exporter._subject_words (เหมือนไฟล์ Word)
+#let _field_first_line(label, words, indent: 1.25cm) = layout(size => context {
+  let head = text(size: 20pt, weight: "bold")[#label]
+  let room = size.width - measure(head).width - 0.25cm - 0.3cm
+  let k = words.len()
+  for i in range(1, words.len() + 1) {
+    if measure(words.slice(0, i).join("")).width > room { k = i - 1; break }
+  }
+  if k == words.len() or k == 0 {
+    par(hanging-indent: indent)[#_field(label, words.join(""))]
+  } else {
+    par[#head#h(0.25cm)#words.slice(0, k).join("").trim()#_leader]
+    pad(left: indent, par(justify: false, words.slice(k).join("").trim()))
+  }
+})
+
 #let govdoc_internal(
   doc_number: "",
   dept_name: "",
   doc_date: "",
   subject: "",
+  subject_words: none,
   salutation: "",
   references: (),
   attachments: (),
@@ -40,37 +75,57 @@
   memo_blocks: (),
   signatory_name: "",
   signatory_position: "",
+  // ผู้ลงนามเพิ่มเติมต่อจากผู้ลงนามหลัก: ((name: "...", position: "..."), ...)
+  co_signers: (),
   urgency: "normal",
   secret: "normal",
   thai_page_numbers: false,
-  garuda_path: "../../assets/garuda.svg",
+  // ฟอนต์หลักของฉบับ: ไฟล์ TH SarabunIT๙ ใช้ชื่อภายใน "TH SarabunPSK"
+  // (core/typst_exporter.py ส่งเฉพาะไฟล์ฟอนต์ที่เลือกให้ Typst จึงไม่ชนกับ PSK)
+  font: "TH SarabunPSK",
+  // โปรไฟล์ค่าเริ่มต้น = แบบกรุงเทพมหานคร (ขอบบน 1.5 ซม., หัว 32 pt)
+  // คู่มือการพิมพ์ทั่วไป: top_margin 2.5cm, title_size 29pt
+  top_margin: 1.5cm,
+  title_size: 32pt,
+  garuda_path: "../../assets/garuda_krut.png",
   // bytes ของภาพครุฑ อ่านจากไฟล์หลักด้วย read(..., encoding: none)
   // (image() หาพาธเทียบกับไฟล์ที่เรียก จึงต้องอ่านจากไฟล์หลักแล้วส่งเข้ามา)
   garuda: none,
 ) = [
   #set page(
     paper: "a4",
-    margin: (top: 1.5cm, bottom: 2.0cm, left: 3.0cm, right: 2.0cm),
+    margin: (top: top_margin, bottom: 2.0cm, left: 3.0cm, right: 2.0cm),
     header: context {
+      // ชั้นความลับ: แดง กลางหน้า ทั้งบนและล่างทุกหน้า
+      if secret != "normal" {
+        align(center, text(size: 20pt, weight: "bold", fill: rgb("#c00000"), _secret_label(secret)))
+      }
       let n = counter(page).get().first()
       if n > 1 {
         let label = if thai_page_numbers { _thai_digits(n) } else { str(n) }
         align(center, text(size: 16pt, "-" + label + "-"))
       }
     },
+    footer: if secret != "normal" {
+      align(center, text(size: 20pt, weight: "bold", fill: rgb("#c00000"), _secret_label(secret)))
+    },
   )
   // ฟอนต์ตระกูล Sarabun มี ascender/descender สูงมาก — กำหนดขอบบรรทัดเองให้ระยะบรรทัดใกล้เคียง Word (single)
-  #set text(font: ("TH Sarabun New", "TH SarabunPSK", "TH Sarabun PSK", "TH SarabunIT๙", "TH Sarabun IT9", "Sarabun"), size: 16pt, lang: "th",
+  #set text(font: (font, "TH Sarabun New", "Sarabun"), size: 16pt, lang: "th",
             top-edge: 0.75em, bottom-edge: -0.3em)
   #set par(leading: _leading, spacing: _leading, justify: true, first-line-indent: 0pt)
 
-  // หัวกระดาษ: ครุฑ 1.5 ซม. ซ้าย + "บันทึกข้อความ" 29 pt หนา กึ่งกลางหน้ากระดาษ
+  // หัวกระดาษ: ครุฑ 1.5 ซม. ซ้าย + ชั้นความเร็ว (แดง 32 pt ถัดจากครุฑ) + "บันทึกข้อความ" ตัวหนา กึ่งกลาง
   #block(height: 1.6cm, width: 100%)[
     #place(top + left, image(if garuda != none { garuda } else { garuda_path }, height: 1.5cm))
-    #align(center + horizon, text(size: 29pt, weight: "bold")[บันทึกข้อความ])
+    #if urgency != "normal" {
+      place(left + horizon, dx: 1.9cm,
+            text(size: 32pt, weight: "bold", fill: rgb("#c00000"), _urgency_label(urgency)))
+    }
+    #align(center + horizon, text(size: title_size, weight: "bold")[บันทึกข้อความ])
   ]
 
-  #_field("ส่วนราชการ", dept_name)
+  #_field_one_line("ส่วนราชการ", dept_name)
 
   #grid(
     columns: (7.5cm, 1fr),
@@ -78,9 +133,14 @@
     _field("วันที่", doc_date),
   )
 
-  #par(hanging-indent: 1.25cm)[#_field("เรื่อง", subject)]
+  #if subject_words != none and subject_words.len() > 0 {
+    _field_first_line("เรื่อง", subject_words)
+  } else {
+    par(hanging-indent: 1.25cm)[#_field("เรื่อง", subject)]
+  }
 
-  #v(0.2cm)
+  // 'เรียน' เว้นก่อนย่อหน้า 6 pt
+  #v(6pt)
   #salutation
 
   #if references.len() > 0 {
@@ -127,4 +187,10 @@
       #signatory_position
     ]
   ]
+
+  // ผู้ลงนามถัดไป (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอเรื่อง)
+  #for s in co_signers {
+    v(1.5cm)
+    pad(left: 6cm, align(center)[#s.name \ #s.position])
+  }
 ]

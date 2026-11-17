@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GovDoc Studio — ร่างหนังสือราชการ</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<title>Thai GovDoc AI Studio — ร่างหนังสือราชการ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -18,11 +19,9 @@
 <div id="sidebar-backdrop" class="fixed inset-0 bg-slate-900/40 z-30 lg:hidden" hidden></div>
 <aside id="sidebar" class="fixed lg:static inset-y-0 left-0 w-72 bg-white border-r border-slate-200/80 flex flex-col h-full shrink-0 select-none z-40 -translate-x-full lg:translate-x-0 transition-transform">
   <div class="px-5 py-4 flex items-center gap-3.5 border-b border-slate-100">
-    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-600 to-brand-900 flex items-center justify-center text-white shadow-sm shrink-0">
-      <i class="fa-solid fa-landmark text-lg"></i>
-    </div>
+    <img src="logo.svg" alt="" class="w-10 h-10 shrink-0">
     <div class="flex flex-col min-w-0">
-      <span class="font-bold text-slate-900 tracking-tight text-base">GovDoc Studio</span>
+      <span class="font-bold text-slate-900 tracking-tight text-base">Thai GovDoc AI Studio</span>
       <span class="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded w-fit mt-0.5">ระเบียบสารบรรณ พ.ศ. ๒๕๒๖</span>
     </div>
   </div>
@@ -40,11 +39,20 @@
         <i class="fa-solid fa-file-pen text-emerald-600 w-5 text-center"></i><span>ร่างหนังสือ</span>
         <span class="ml-auto w-2 h-2 rounded-full bg-emerald-500"></span>
       </a>
+      <a href="registry.html" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 group">
+        <i class="fa-solid fa-book text-slate-400 group-hover:text-slate-600 w-5 text-center"></i><span>ทะเบียนรับ-ส่ง</span>
+      </a>
       <button type="button" data-open="templates" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 group">
         <i class="fa-regular fa-folder-open text-slate-400 group-hover:text-slate-600 w-5 text-center"></i><span>คลังแม่แบบ</span>
       </button>
       <button type="button" data-open="legal" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 group">
         <i class="fa-solid fa-scale-balanced text-slate-400 group-hover:text-slate-600 w-5 text-center"></i><span>คลังกฎหมาย</span>
+      </button>
+      <button type="button" data-open="examples" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 group">
+        <i class="fa-solid fa-stamp text-slate-400 group-hover:text-slate-600 w-5 text-center"></i><span>ตัวอย่างของหน่วย</span>
+      </button>
+      <button type="button" data-open="signers" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 group">
+        <i class="fa-solid fa-signature text-slate-400 group-hover:text-slate-600 w-5 text-center"></i><span>ผู้ลงนามของหน่วย</span>
       </button>
       <button type="button" data-open="profile" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 group">
         <i class="fa-solid fa-gear text-slate-400 group-hover:text-slate-600 w-5 text-center"></i><span>ข้อมูลหน่วยงาน</span>
@@ -59,9 +67,14 @@
     <section aria-labelledby="recent-title">
       <div class="px-1 mb-2 flex items-center justify-between text-xs font-semibold text-slate-400 tracking-wider">
         <span id="recent-title">งานล่าสุด</span>
-        <span class="text-[10px] font-normal text-slate-400">เก็บในเครื่องนี้</span>
+        <span id="recent-where" class="text-[10px] font-normal text-slate-400"></span>
       </div>
-      <ul id="recent-list" class="space-y-1 text-xs"></ul>
+      <ul id="recent-list" class="space-y-0.5 text-xs"></ul>
+      <p id="trash-note" hidden class="mt-2 px-2.5 text-[10px] leading-relaxed text-slate-400">ลบถาวรแล้วกู้คืนไม่ได้ · ฉบับที่ออกเลขหรือมีฉบับจริงแล้วลบถาวรไม่ได้</p>
+      <div class="mt-2 flex items-center justify-between gap-2">
+        <button id="btn-archived" type="button" class="px-2.5 py-1 rounded-lg text-[11px] text-slate-500 hover:text-slate-800 hover:bg-slate-100 inline-flex items-center gap-1.5"><i class="fa-regular fa-trash-can text-[10px]"></i><span>ถังขยะ</span></button>
+        <button id="btn-empty-trash" type="button" hidden class="px-2.5 py-1 rounded-lg text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1.5"><i class="fa-solid fa-trash-can text-[10px]"></i><span>ล้างถังขยะ</span></button>
+      </div>
     </section>
   </div>
 
@@ -73,6 +86,9 @@
         <p id="user-position" class="text-[11px] text-slate-500 truncate"></p>
       </div>
       <i class="fa-solid fa-ellipsis-vertical text-xs text-slate-400"></i>
+    </button>
+    <button type="button" id="btn-signout" hidden class="mt-2 w-full flex items-center justify-center gap-2 px-2 py-1.5 rounded-lg text-xs text-slate-500 hover:text-rose-600 hover:bg-rose-50">
+      <i class="fa-solid fa-right-from-bracket"></i><span>ออกจากระบบ</span>
     </button>
   </div>
 </aside>
@@ -109,44 +125,61 @@
           <i class="fa-solid fa-file-arrow-up mr-2"></i>วางไฟล์ต้นเรื่องที่นี่
         </div>
         <label for="prompt" class="sr-only">คำสั่งหรือเนื้อหาต้นเรื่อง</label>
-        <div class="p-4 pb-2">
-          <textarea id="prompt" rows="4" class="w-full border-0 focus:ring-0 p-0 text-slate-800 placeholder:text-slate-400 text-sm sm:text-base resize-none bg-transparent leading-relaxed font-body" placeholder="พิมพ์คำสั่งหรือวางเนื้อหาต้นเรื่อง เช่น เขียนหนังสือขอความอนุเคราะห์ใช้อาคารกีฬา วันที่ ๑๕ มกราคม ๒๕๗๐ ถึงผู้ว่าราชการกรุงเทพมหานคร..."></textarea>
+        <div class="px-4 pt-4">
+          <textarea id="prompt" rows="3" class="w-full border-0 outline-none focus:outline-none focus:ring-0 p-0 text-slate-800 placeholder:text-slate-400 text-sm sm:text-base resize-none bg-transparent leading-relaxed font-body" placeholder="พิมพ์คำสั่งหรือวางเนื้อหาต้นเรื่อง เช่น เขียนหนังสือขอความอนุเคราะห์ใช้อาคารกีฬา วันที่ ๑๕ มกราคม ๒๕๗๐ ถึงผู้ว่าราชการกรุงเทพมหานคร..."></textarea>
         </div>
-        <div class="border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
-          <div id="file-bar" class="px-4 pt-2.5 pb-1 flex flex-wrap items-center gap-2" hidden></div>
-          <div class="px-3.5 py-2 flex flex-wrap items-center justify-between gap-2">
-            <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-              <input id="file-input" type="file" class="sr-only" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.tif,.tiff">
-              <button id="btn-attach" type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:border-emerald-500 hover:bg-emerald-50/50 text-slate-700 hover:text-emerald-700 text-xs font-medium shadow-xs transition">
-                <i class="fa-solid fa-paperclip text-emerald-700"></i><span>แนบไฟล์</span>
-              </button>
-              <label class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-medium shadow-xs">
-                <i class="fa-regular fa-file-lines text-emerald-700"></i>
-                <span class="sr-only">ประเภทหนังสือ</span>
-                <select id="doc-type" class="border-0 bg-transparent p-0 pr-6 text-xs focus:ring-0">
-                  <option value="">ประเภท: อัตโนมัติ</option>
-                  <option value="internal">บันทึกข้อความ</option>
-                  <option value="external">หนังสือภายนอก</option>
-                </select>
-              </label>
-              <button id="btn-classify" type="button" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-200 bg-white hover:border-emerald-500 hover:bg-emerald-50/50 text-slate-700 hover:text-emerald-700 text-xs font-medium shadow-xs transition" title="ตั้งค่าชั้นความลับและชั้นความเร็ว">
-                <i class="fa-solid fa-shield-halved text-emerald-700"></i><span>ความเร็ว/ความลับ:</span>
-                <span id="classify-badges" class="inline-flex items-center gap-1"></span>
-              </button>
-            </div>
-            <div class="flex items-center gap-2 shrink-0 ml-auto">
-              <kbd class="text-[10px] text-slate-400 bg-slate-100/70 border border-slate-200/80 px-1.5 py-0.5 rounded hidden sm:inline font-sans">Ctrl+↵</kbd>
-              <button id="btn-submit" type="submit" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium text-xs shadow-xs active:scale-95 transition group">
-                <span>เริ่มร่าง</span><i class="fa-solid fa-arrow-up text-[10px] text-emerald-400 group-hover:text-white group-hover:-translate-y-0.5 transition"></i>
-              </button>
-            </div>
+        <!-- ตัวอย่างคำสั่ง / ไฟล์ที่แนบ (แสดงเมื่อยังไม่ได้พิมพ์) -->
+        <div id="examples" class="px-4 pt-1 flex flex-wrap gap-1.5" aria-label="ตัวอย่างคำสั่ง"></div>
+        <div id="file-bar" class="px-4 pt-1 flex flex-wrap items-center gap-2" hidden></div>
+        <!-- แถบเครื่องมือแถวเดียว: แนบไฟล์ · ประเภท · หน่วย · ความเร็ว/ความลับ ······ เริ่มร่าง (Ctrl+Enter ยังใช้ได้) -->
+        <div id="controls-bar" class="px-3 pt-2 pb-3 flex flex-wrap sm:flex-nowrap items-center gap-1.5 min-w-0">
+          <input id="file-input" type="file" class="sr-only" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.tif,.tiff">
+          <button id="btn-attach" type="button" class="shrink-0 inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-within:border-slate-300 text-sm font-medium transition" title="แนบไฟล์ต้นเรื่อง (PDF, Word, รูปภาพ) หรือลากไฟล์มาวาง">
+            <i class="fa-solid fa-paperclip text-emerald-700"></i><span>แนบไฟล์</span>
+          </button>
+          <span class="w-px h-5 bg-slate-200 mx-0.5 shrink-0" aria-hidden="true"></span>
+          <label class="shrink-0 inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-within:border-slate-300 text-sm font-medium transition cursor-pointer" title="ประเภทหนังสือ (อัตโนมัติ: มีไฟล์ต้นเรื่อง = บันทึกข้อความ)">
+            <i class="fa-regular fa-file-lines text-emerald-700"></i>
+            <span class="sr-only">ประเภทหนังสือ</span>
+            <select id="doc-type" class="border-0 bg-transparent p-0 pr-6 text-sm font-medium text-inherit focus:ring-0 cursor-pointer">
+              <option value="">ประเภท: อัตโนมัติ</option>
+              <option value="internal">บันทึกข้อความ</option>
+              <option value="external">หนังสือภายนอก</option>
+              <option value="stamp_letter">หนังสือประทับตรา</option>
+              <option value="order">คำสั่ง</option>
+              <option value="announcement">ประกาศ</option>
+              <option value="regulation">ระเบียบ</option>
+              <option value="bylaw">ข้อบังคับ</option>
+            </select>
+          </label>
+          <label class="min-w-0 inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-within:border-slate-300 text-sm font-medium transition cursor-pointer" title="หน่วยออกหนังสือ: กำหนดส่วนราชการและรูปแบบเลขที่ของบันทึกข้อความ">
+            <i class="fa-solid fa-sitemap text-emerald-700 shrink-0"></i>
+            <span class="sr-only">หน่วยออกหนังสือ</span>
+            <select id="unit" class="min-w-0 max-w-[17rem] truncate border-0 bg-transparent p-0 pr-6 text-sm font-medium text-inherit focus:ring-0 cursor-pointer"></select>
+          </label>
+          <button id="btn-classify" type="button" class="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-within:border-slate-300 text-sm font-medium transition" title="ชั้นความเร็วและชั้นความลับ">
+            <i class="fa-solid fa-shield-halved text-emerald-700"></i><span class="sr-only">ความเร็ว/ความลับ:</span>
+            <span id="classify-badges" class="inline-flex items-center gap-1"></span>
+          </button>
+          <div id="submit-row" class="ml-auto flex items-center gap-2 shrink-0 pl-2">
+            <button id="btn-submit" type="submit" class="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition" title="เริ่มร่าง (Ctrl+Enter)">
+              <i class="fa-solid fa-paper-plane text-emerald-700"></i><span>เริ่มร่าง</span>
+            </button>
           </div>
         </div>
       </form>
 
       <!-- สถานะการทำงาน -->
-      <div id="progress" class="mt-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs animate-fadeIn" hidden aria-live="polite">
-        <ol id="progress-steps" class="space-y-2 text-xs"></ol>
+      <!-- ระหว่างร่าง: ขั้นตอน (ประมาณจากเวลาที่วัดได้จริง ขั้นสุดท้ายรอผลจริง) + เวลา + กระดาษที่กำลังเขียน -->
+      <div id="progress" class="mt-4 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs animate-fadeIn flex items-start gap-5" hidden>
+        <div class="draft-sheet shrink-0 hidden sm:flex" aria-hidden="true">
+          <span class="ds-crest"></span><i></i><i></i><i class="ds-gap"></i><i></i><i></i><i></i><i class="ds-short"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <ol id="progress-steps" class="space-y-2.5 text-sm" aria-live="polite"></ol>
+          <p id="progress-time" class="mt-3.5 text-xs text-slate-500 tabular-nums"></p>
+          <p id="progress-slow" class="mt-1.5 text-xs text-amber-700" role="status" hidden></p>
+        </div>
       </div>
       <div id="error-box" class="mt-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-xs animate-fadeIn" hidden role="alert"></div>
     </section>
@@ -159,15 +192,35 @@
       <button type="button" data-blank="external" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition">
         <i class="fa-solid fa-building-columns text-emerald-600"></i><span>หนังสือภายนอกเปล่า</span>
       </button>
+      <label class="flex items-center gap-2 pl-3.5 pr-2 py-1.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition cursor-pointer" title="เปิดเอกสารเปล่าตามแบบในระเบียบงานสารบรรณ">
+        <i class="fa-solid fa-scroll text-sky-600"></i><span class="sr-only">เอกสารเปล่าประเภทอื่น</span>
+        <select id="blank-other" class="border-0 bg-transparent p-0 pr-6 text-xs font-medium text-inherit focus:ring-0 cursor-pointer">
+          <option value="">ประเภทอื่นเปล่า…</option>
+          <option value="stamp_letter">หนังสือประทับตรา</option>
+          <option value="order">คำสั่ง</option>
+          <option value="announcement">ประกาศ</option>
+          <option value="regulation">ระเบียบ</option>
+          <option value="bylaw">ข้อบังคับ</option>
+        </select>
+      </label>
       <button type="button" data-open="templates" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition">
         <i class="fa-regular fa-clone text-amber-600"></i><span>คลังแม่แบบ</span>
       </button>
       <button type="button" data-open="legal" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition">
         <i class="fa-solid fa-gavel text-rose-600"></i><span>คลังกฎหมาย</span>
       </button>
-      <button type="button" id="btn-example" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition">
-        <i class="fa-regular fa-lightbulb text-indigo-600"></i><span>ตัวอย่างคำสั่ง</span>
+      <button type="button" data-open="examples" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition">
+        <i class="fa-solid fa-stamp text-indigo-600"></i><span>ตัวอย่างของหน่วย</span>
       </button>
+    </section>
+
+    <!-- งานค้าง: เอกสารที่ยังมีจุดต้องแก้ หรือยังไม่ได้ส่งออก -->
+    <section id="pending" class="w-full mb-8" aria-labelledby="pending-title" hidden>
+      <div class="flex items-center justify-between mb-2.5 px-1">
+        <h2 id="pending-title" class="text-sm font-semibold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-list-check text-amber-600"></i><span>งานค้าง</span><span id="pending-count" class="text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"></span></h2>
+        <span class="text-[11px] text-slate-400">ยังมีจุดต้องแก้ หรือยังไม่ได้ส่งออก</span>
+      </div>
+      <ul id="pending-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></ul>
     </section>
 
     <footer class="text-center text-xs text-slate-400 flex items-center justify-center gap-1.5 font-body">
@@ -222,7 +275,10 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="auth.js"></script>
 <script src="studio.js"></script>
+<script src="source-viewer.js"></script>
 <script src="home.js"></script>
 </body>
 </html>

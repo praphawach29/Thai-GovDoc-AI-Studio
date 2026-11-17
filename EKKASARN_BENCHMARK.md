@@ -115,3 +115,15 @@ Test suite after Sprint 1–13: **172 tests collected — 167 passed, 5 skipped,
 - Keep Thai GovDoc-specific rules intact: Thai official document structure, hierarchy-aware language, TH Sarabun export, and DOCX/PDF layout requirements.
 - Treat Ekkasarn's feature claims as a product benchmark, not evidence that its internal implementation or outcomes are reproducible.
 - Treat captured HAR files as sensitive session data: sanitize before analysis, never commit them, and revoke credentials that may still be valid.
+
+## Re-read of the same HAR (14 November 2026)
+
+The second upload is the same capture (44 stream frames, 25,092 input / 427 output tokens). Details not recorded above:
+
+- **Stack:** `/c4b9197afe41d8ad/vitals` posts `@vercel/speed-insights/next`, so the app is Next.js on Vercel. `auth.ekkasarn.com` serves `/auth/v1/token`, `/rest/v1/cases` and `/storage/v1/object/...`, the Supabase Auth, PostgREST and Storage paths. The browser reads some rows directly through PostgREST (`/rest/v1/cases?select=id&conversation_id=eq...`), which implies row-level security on that table.
+- **Agent loop:** the `done` frame reports `rounds: 2` and `tools: ["draft_document"]` on Vertex AI; drafting is a tool the model calls, and the stream relays tool frames (`draft_meta` → `delta` … → `produced` → `final`) followed by a short chat summary (`text` frames).
+- **Server post-processing:** the streamed `delta` text contains a full date (`๑๒ พฤศจิกายน ๒๕๖๙`), but the `final` content blanks the day (`วันที่         พฤศจิกายน ๒๕๖๙`). The final document is normalised after generation rather than trusted as streamed.
+- **Plain-text layout:** indentation and the signature block are literal spaces in the text; `[ระบุ...]` placeholders mark missing facts; the `เรียน` line carries the routing chain with `ผ่าน`.
+- **Metering:** `/api/quota` (documents per 5-hour and monthly windows), `/api/usage` (chat turns, OCR pages, 1 GB storage), and `/api/billing/summary` (credit grants; one document cost 6.7 credits).
+- **Lifecycle:** `/api/conversations/{id}/task` is polled for background tasks; `/api/sessions/finalize` stores `finalContent` on download; `/api/events` records product events such as `generation_wait` (35 s reading the file) and `assistant_turn_shown` (`ms_first_text` 65,146).
+- **Third-party scripts:** Microsoft Clarity (session recording), TikTok pixel, Google Analytics and Sentry run on the drafting page. For a government-document tool this is a privacy risk; Thai GovDoc AI Studio should ship no session-recording or advertising trackers.

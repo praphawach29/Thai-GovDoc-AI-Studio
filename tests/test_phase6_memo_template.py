@@ -14,7 +14,7 @@ import docx
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel, SourceDocumentContext, MemoHierarchyLevel
 from core.templates_library import PRESET_TEMPLATES
 from core.word_exporter import export_govdoc_to_docx
-from core.pdf_exporter import generate_govdoc_html
+from legacy.pdf_exporter import generate_govdoc_html
 from core.typst_exporter import generate_typst_content
 from core.ai_drafter import draft_from_context_rule_based, DraftingIntent
 from core.memo_layout import line_indent_cm, split_consideration_and_request
@@ -130,10 +130,11 @@ def test_split_request_from_consideration():
 
 def test_bma_blocks_heading_and_run_in(bma_cohost_doc):
     blocks = bma_cohost_doc.get_memo_blocks()
-    headings = [b.lead for b in blocks if b.kind == "heading"]
-    run_ins = [b.lead for b in blocks if b.kind == "body" and b.lead]
-    assert headings == ["ต้นเรื่อง", "ข้อกฎหมาย"]
-    assert run_ins == ["ข้อเท็จจริง", "ข้อพิจารณาและเสนอแนะ"]
+    headings = [b for b in blocks if b.kind == "heading"]
+    # หัวข้อเป็นบรรทัดเดี่ยว เริ่มตรงกับเนื้อความ (2.5 ซม.) ตามแบบบันทึกข้อความของหน่วยงาน
+    assert [b.lead for b in headings] == ["ต้นเรื่อง", "ข้อกฎหมาย", "ข้อเท็จจริง", "ข้อพิจารณาและเสนอแนะ"]
+    assert all(b.indent_cm == 2.5 and not b.text for b in headings)
+    assert not [b for b in blocks if b.kind == "body" and b.lead]
     assert all(b.lead_style == "underline" for b in blocks if b.lead)
     assert blocks[-1].kind == "request"
     # Step 0: ข้อกฎหมายเป็น placeholder จนกว่าจะเลือกจากคลังที่ยืนยันแหล่ง
@@ -159,10 +160,12 @@ def test_word_export_memo(bma_cohost_doc, tmp_path):
     heading_runs = [r for p in paras for r in p.runs if r.text == "ต้นเรื่อง"]
     assert heading_runs and heading_runs[0].underline
 
-    # หัวข้อ ส่วนราชการ 20pt ตัวหนา พร้อมเส้นจุดไข่ปลา (dot leader tab)
-    dept_p = next(p for p in paras if p.text.startswith("ส่วนราชการ"))
-    assert dept_p.runs[0].bold and dept_p.runs[0].font.size.pt == 20
-    assert "w:leader=\"dot\"" in dept_p._p.xml
+    # หัวข้อ ส่วนราชการ / ที่ / เรื่อง 20pt ตัวหนา; เส้นประเป็นรูปร่างเส้นตรงที่ล็อกไว้ (ไม่ใช่ขีดเส้นใต้)
+    for start in ("ส่วนราชการ", "ที่", "เรื่อง"):
+        hp = next(p for p in paras if p.text.startswith(start))
+        assert hp.runs[0].bold and hp.runs[0].font.size.pt == 20
+        assert "<v:line" in hp._p.xml and "w10:anchorlock" in hp._p.xml
+        assert 'w:u ' not in hp._p.xml
 
     # เลขหน้า -๒- เริ่มหน้าที่ ๒ (หน้าแรกต่างจากหน้าอื่น) ด้วยฟิลด์ PAGE เลขไทย
     sec = d.sections[0]

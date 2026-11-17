@@ -3,9 +3,12 @@ test_phase15_realtime_preview.py — ชุดทดสอบระบบคล�
 """
 
 import pytest
+
+pytest.importorskip("streamlit", reason="หน้าจอ Streamlit อยู่ใน legacy/ ใช้บนเครื่อง local เท่านั้น")
+
 from core.models import GovDocumentSchema, DocType, UrgencyLevel, SecretLevel
 from core.memo_layout import render_memo_blocks_html, MemoBlock, build_memo_sections, build_memo_blocks
-from web.app import highlight_placeholders_html, _persist_pencil_doc
+from legacy.streamlit_app import highlight_placeholders_html, _persist_pencil_doc
 import streamlit as st
 from datetime import datetime
 

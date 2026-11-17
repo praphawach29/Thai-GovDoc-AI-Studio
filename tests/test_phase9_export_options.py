@@ -33,12 +33,12 @@ def _export(doc, tmp_path, **kwargs):
     return out
 
 
-def test_default_profile_resolves_to_sarabun_new():
+def test_default_profile_resolves_to_it9():
     options = ExportOptions()
     assert options.export_font is None
     assert options.letter_spacing_pt is None
     profile = get_layout_profile(None, DocType.INTERNAL)
-    assert profile.font_key == "sarabun_new"
+    assert profile.font_key == "it9"                     # TH SarabunIT๙ ตามแบบที่หน่วยงานใช้
     assert profile.header_style == "dotted"
 
 
@@ -80,7 +80,7 @@ def test_docx_embeds_new_fonts_and_spacing(memo_doc, tmp_path):
         assert "word/fonts/font1.odttf" in names
         assert "word/fonts/font2.odttf" in names
         assert "embedRegular" in font_table and "embedBold" in font_table
-        assert "TH Sarabun New" in font_table
+        assert "TH SarabunIT\u0e59" in font_table
         assert "embedTrueTypeFonts" in settings
         assert 'Extension="odttf"' in content_types
         # 0.4 pt = 8 twips ใน style Normal
@@ -88,7 +88,7 @@ def test_docx_embeds_new_fonts_and_spacing(memo_doc, tmp_path):
         # ขอบบน 1.5 ซม. = 850 twips + เลขหน้าไทย
         assert 'w:top="850"' in document
         assert 'w:pgNumType w:fmt="thaiNumbers"' in document
-        assert 'w:ascii="TH Sarabun New"' in document
+        assert 'w:ascii="TH SarabunIT\u0e59"' in document
 
     # ต้องเปิดกลับด้วย python-docx ได้
     assert len(Document(str(out)).paragraphs) > 5
@@ -96,7 +96,7 @@ def test_docx_embeds_new_fonts_and_spacing(memo_doc, tmp_path):
 
 def test_odttf_is_obfuscated_but_same_length(tmp_path, memo_doc):
     out = _export(memo_doc, tmp_path)
-    regular = Path("assets/fonts/THSarabunNew.ttf").read_bytes()
+    regular = Path("assets/fonts/THSarabunIT9.ttf").read_bytes()
     with zipfile.ZipFile(out) as z:
         embedded = z.read("word/fonts/font1.odttf")
 
@@ -142,3 +142,15 @@ def test_embedding_can_be_disabled(memo_doc, tmp_path):
     out = _export(memo_doc, tmp_path, embed_fonts=False)
     with zipfile.ZipFile(out) as z:
         assert not [n for n in z.namelist() if n.startswith("word/fonts/")]
+
+
+def test_document_font_choice_overrides_profile(memo_doc, tmp_path):
+    doc = memo_doc.model_copy(update={"font_family": "psk"})
+    out = _export(doc, tmp_path)
+    with zipfile.ZipFile(out) as z:
+        assert 'w:ascii="TH SarabunPSK"' in z.read("word/document.xml").decode("utf-8")
+    # ตัวเลือกตอนส่งออกยังมีสิทธิ์เหนือกว่าค่าของเอกสาร
+    out2 = tmp_path / "o2.docx"
+    export_govdoc_to_docx(doc, str(out2), options=ExportOptions(export_font="sarabun_new"))
+    with zipfile.ZipFile(out2) as z:
+        assert 'w:ascii="TH Sarabun New"' in z.read("word/document.xml").decode("utf-8")

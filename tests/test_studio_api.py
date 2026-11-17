@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from core.api import app, uploads_dir
+from server.main import app
 
 client = TestClient(app)
 
@@ -20,7 +20,8 @@ def test_draft_from_prompt_returns_document_and_checks():
     assert doc["urgency"] == "very_urgent"
     # บันทึกข้อความต้องมี memo_* ให้หน้าแก้ไขใช้ชุดเดียวกับ exporter
     assert doc["memo_intro"] and doc["memo_request"]
-    assert [s["key"] for s in body["steps"]] == ["extract", "classify", "draft"]
+    assert [s["key"] for s in body["steps"]] == ["extract", "classify", "ai", "draft"]
+    assert body["ai_provider"] is None                    # เทสต์ไม่มีคีย์ AI → ร่างตามกฎ
     assert "placeholders" in body["check"] and "lint" in body["check"]
     assert "วันที่" not in doc["doc_date"]
 
@@ -37,7 +38,9 @@ def test_draft_requires_prompt_or_file():
     assert client.post("/api/v1/studio/draft", data={"prompt": "   "}).status_code == 400
 
 
-def test_upload_uses_generated_filename(tmp_path):
+def test_upload_uses_generated_filename(test_settings):
+    uploads_dir = test_settings.upload_dir
+    uploads_dir.mkdir(parents=True, exist_ok=True)
     before = set(uploads_dir.iterdir())
     res = client.post(
         "/api/v1/studio/draft",
@@ -65,7 +68,7 @@ def test_blank_and_pdf_export():
         pdf = client.post("/api/v1/export/pdf", json=doc)
         assert pdf.status_code == 200
         assert pdf.content.startswith(b"%PDF-")
-        assert b"SarabunNew" in pdf.content
+        assert b"THSarabunPSK" in pdf.content          # TH SarabunIT๙ (ชื่อภายในไฟล์)
 
 
 def test_templates_list_and_get():
@@ -79,4 +82,4 @@ def test_templates_list_and_get():
 def test_studio_pages_are_served():
     assert client.get("/studio/").status_code == 200
     assert client.get("/studio/editor.html").status_code == 200
-    assert client.get("/assets/garuda.svg").status_code == 200
+    assert client.get("/assets/garuda_krut.png").status_code == 200

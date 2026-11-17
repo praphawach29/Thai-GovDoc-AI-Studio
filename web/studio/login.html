@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html class="h-full bg-slate-50" lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<title>เข้าสู่ระบบ — Thai GovDoc AI Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="tw-config.js"></script>
+<link href="studio.css" rel="stylesheet">
+</head>
+<body class="min-h-full flex items-center justify-center px-4 py-10 text-slate-800 antialiased font-sans">
+
+<main class="w-full max-w-sm">
+  <div class="flex items-center gap-3.5 mb-8 justify-center">
+    <img src="logo.svg" alt="" class="w-11 h-11 shrink-0">
+    <div class="flex flex-col">
+      <span class="font-bold text-slate-900 tracking-tight text-lg">Thai GovDoc AI Studio</span>
+      <span class="text-xs text-slate-500">ระบบร่างหนังสือราชการ</span>
+    </div>
+  </div>
+
+  <form id="login-form" class="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-6 space-y-4" novalidate>
+    <h1 class="text-base font-semibold text-slate-900">เข้าสู่ระบบ</h1>
+    <div>
+      <label for="email" class="block text-xs font-medium text-slate-600 mb-1.5">อีเมล</label>
+      <input id="email" name="email" type="email" autocomplete="username" required
+             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+    </div>
+    <div>
+      <label for="password" class="block text-xs font-medium text-slate-600 mb-1.5">รหัสผ่าน</label>
+      <div class="relative">
+        <input id="password" name="password" type="password" autocomplete="current-password" required
+               class="w-full rounded-lg border border-slate-300 pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+        <button id="toggle-password" type="button" aria-label="แสดงรหัสผ่าน" aria-pressed="false" title="แสดงรหัสผ่าน"
+                class="absolute inset-y-0 right-0 w-10 flex items-center justify-center text-slate-400 hover:text-slate-700 focus:outline-none focus-visible:text-emerald-700">
+          <i class="fa-regular fa-eye" aria-hidden="true"></i>
+        </button>
+      </div>
+      <p id="password-hint" class="mt-1.5 text-[11px] text-amber-700" hidden></p>
+    </div>
+    <p id="login-error" class="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2" role="alert" hidden></p>
+    <button id="login-submit" type="submit"
+            class="w-full flex items-center justify-center gap-2 rounded-lg bg-brand-900 hover:bg-brand-800 text-white text-sm font-medium py-2.5 disabled:opacity-60">
+      <span>เข้าสู่ระบบ</span>
+    </button>
+    <p class="text-[11px] text-slate-400 leading-relaxed">บัญชีสร้างโดยผู้ดูแลระบบเท่านั้น ระบบไม่เปิดให้สมัครเอง</p>
+  </form>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="auth.js"></script>
+<script>
+(async function () {
+  const $ = (id) => document.getElementById(id);
+  // ปลายทางหลังล็อกอิน: เฉพาะหน้าในเว็บนี้เท่านั้น (กันลิงก์ ?next= พาไปเว็บอื่น)
+  const raw = new URLSearchParams(location.search).get('next') || '';
+  const next = raw.startsWith('/') && !raw.startsWith('//') ? raw : './';
+
+  const showError = (msg) => { $('login-error').textContent = msg; $('login-error').hidden = !msg; };
+
+  // ปุ่มรูปตา: สลับแสดง/ซ่อนรหัสผ่าน (ช่องรหัสผ่านยังโฟกัสอยู่ พิมพ์ต่อได้)
+  $('toggle-password').addEventListener('click', () => {
+    const input = $('password'), btn = $('toggle-password');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    const label = show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน';
+    btn.setAttribute('aria-pressed', String(show));
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+    btn.firstElementChild.className = show ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+    input.focus();
+  });
+  // เตือนเมื่อพิมพ์ด้วยแป้นภาษาไทยหรือเปิด Caps Lock อยู่ (สาเหตุรหัสผ่านผิดที่พบบ่อย)
+  const hint = (e) => {
+    const thai = /[\u0e00-\u0e7f]/.test($('password').value);
+    const caps = e && e.getModifierState && e.getModifierState('CapsLock');
+    const msg = thai ? 'รหัสผ่านมีตัวอักษรภาษาไทย — แป้นพิมพ์อาจเป็นภาษาไทยอยู่' : caps ? 'เปิด Caps Lock อยู่' : '';
+    $('password-hint').textContent = msg; $('password-hint').hidden = !msg;
+  };
+  $('password').addEventListener('input', hint);
+  $('password').addEventListener('keyup', hint);
+  try {
+    const cfg = await GovDocAuth.config();
+    if (!cfg.auth_required) { location.replace(next); return; }   // โหมดเครื่องเดียว ไม่ต้องล็อกอิน
+    if (await GovDocAuth.token()) { location.replace(next); return; }
+  } catch (err) { showError(err.message); }
+
+  $('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('email').value.trim(), password = $('password').value;
+    if (!email || !password) { showError('กรอกอีเมลและรหัสผ่าน'); return; }
+    showError('');
+    $('login-submit').disabled = true;
+    try {
+      await GovDocAuth.signIn(email, password);
+      location.replace(next);
+    } catch (err) {
+      showError(err.message);
+      $('login-submit').disabled = false;
+    }
+  });
+  $('email').focus();
+})();
+</script>
+</body>
+</html>

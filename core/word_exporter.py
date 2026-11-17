@@ -11,13 +11,14 @@ from typing import Optional
 
 from docx import Document
 from docx.shared import Cm, Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn, nsdecls
 
-from core.docx_fonts import embed_fonts
+from core.docx_fonts import FONT_FILES, embed_fonts
 from core.layout_profile import LayoutProfile, get_layout_profile
+from core.memo_layout import SALUTATION_GAP_PT
 from core.models import ExportOptions, GovDocumentSchema, DocType, DocumentKind, SectionKind, UrgencyLevel, SecretLevel
 from core.thai_segmenter import insert_zwsp, to_thai_numerals
 
@@ -25,6 +26,14 @@ from core.thai_segmenter import insert_zwsp, to_thai_numerals
 FONT_NAME = "TH Sarabun New"
 DEFAULT_FONT_SIZE = 16
 _ACTIVE_FONT: ContextVar[str] = ContextVar("govdoc_font", default=FONT_NAME)
+# ระยะห่างตัวอักษรของฉบับ (pt ต่อตัวอักษร) — Word บวกเพิ่มทุกตัวอักษร ต้องรวมตอนวัดความกว้าง
+_LETTER_SPACING: ContextVar[float] = ContextVar("govdoc_letter_spacing", default=0.0)
+_BODY_ALIGNMENT: ContextVar[str] = ContextVar("govdoc_body_alignment", default="thai_distribute")
+
+# ระเบียบงานสารบรรณ ข้อ 16: ชั้นความเร็วใช้ตัวอักษรสีแดงขนาดไม่เล็กกว่า 32 พอยท์
+URGENCY_FONT_PT = 32
+SECRET_FONT_PT = 20
+MARK_RED = RGBColor(200, 0, 0)
 
 
 def _font_for_option(font_key: str) -> str:
@@ -35,15 +44,77 @@ def _font_for_option(font_key: str) -> str:
 
 
 def _apply_thai_distributed(paragraph):
-    """กำหนดการจัดแนวเป็น Thai Distributed (กระจายแบบไทย) ในระดับ OpenXML"""
+    """จัดแนวเนื้อความตามตัวเลือกผู้ใช้ (ค่าเริ่มต้น Thai Distributed / กระจายแบบไทย)
+
+    ตัวเลือก "left" ใช้เมื่อไม่อยากให้ Word ยืดตัวอักษรในบรรทัดที่คำยาว
+    (thaigqsoft/thai-doc-skills แนะนำชิดซ้าย; สำนักงานส่วนใหญ่ใช้กระจายแบบไทย)
+    """
     pPr = paragraph._p.get_or_add_pPr()
     # ตรวจสอบว่ามี jc เดิมอยู่หรือไม่ ถ้ามีให้ลบออกก่อน
     for child in list(pPr):
         if child.tag.endswith('jc'):
             pPr.remove(child)
     jc = OxmlElement('w:jc')
-    jc.set(qn('w:val'), 'thaiDistribute')
+    jc.set(qn('w:val'), 'left' if _BODY_ALIGNMENT.get() == "left" else 'thaiDistribute')
     pPr.append(jc)
+
+
+def _set_exact_line(paragraph, line_pt: float) -> None:
+    """ระยะบรรทัดแบบค่าแน่นอน (Exactly) เช่น หัว "บันทึกข้อความ" 35 pt"""
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    paragraph.paragraph_format.line_spacing = Pt(line_pt)
+
+
+def _mark_paragraph(container_paragraph, text: str, size_pt: int, align):
+    container_paragraph.alignment = align
+    run = container_paragraph.add_run(text)
+    _set_run_thai_font(run, size_pt=size_pt, bold=True, color=MARK_RED)
+    return container_paragraph
+
+
+def _apply_classification_marks(doc: Document, data: GovDocumentSchema) -> None:
+    """ใส่ชั้นความเร็วและชั้นความลับให้หนังสือทุกชนิด
+
+    - ชั้นความลับ: กลางหน้ากระดาษทั้งด้านบนและด้านล่างของ**ทุกหน้า** (หัว/ท้ายกระดาษ)
+    - ชั้นความเร็ว: สีแดง 32 pt มุมบนซ้ายของหน้าแรก (ก่อนตราครุฑ)
+    """
+    if data.urgency != UrgencyLevel.NORMAL:
+        body = doc.element.body
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        _mark_paragraph(p, data.urgency.to_thai(), URGENCY_FONT_PT, WD_ALIGN_PARAGRAPH.LEFT)
+        body.remove(p._p)
+        body.insert(0, p._p)
+
+    if data.secret == SecretLevel.NORMAL:
+        return
+    label = data.secret.to_thai()
+    for section in doc.sections:
+        parts = [section.header, section.footer]
+        if section.different_first_page_header_footer:
+            parts += [section.first_page_header, section.first_page_footer]
+        for part in parts:
+            part.is_linked_to_previous = False
+            first = part.paragraphs[0]
+            if first.text.strip() or first.runs:
+                # มีเลขหน้าอยู่แล้ว: ใส่ชั้นความลับเป็นบรรทัดแรกเหนือเลขหน้า
+                mark = first.insert_paragraph_before()
+            else:
+                mark = first
+            _mark_paragraph(mark, label, SECRET_FONT_PT, WD_ALIGN_PARAGRAPH.CENTER)
+
+
+def _set_thai_language(doc: Document) -> None:
+    """ระบุภาษาไทยใน style Normal ให้ Word ตัดคำ/ตรวจตัวสะกดภาษาไทยได้เอง"""
+    rpr = doc.styles["Normal"].element.get_or_add_rPr()
+    for child in list(rpr):
+        if child.tag == qn("w:lang"):
+            rpr.remove(child)
+    lang = OxmlElement("w:lang")
+    lang.set(qn("w:val"), "th-TH")
+    lang.set(qn("w:bidi"), "th-TH")
+    rpr.append(lang)
 
 
 def _set_run_thai_font(run, font_name=None, size_pt=DEFAULT_FONT_SIZE, bold=False, color=None):
@@ -87,13 +158,39 @@ def _set_character_scale(run, percent: int):
         rPr.append(width)
 
 
+_FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+_MEASURE_FONTS: dict = {}
+
+
+def _text_width_cm(text: str, font_size_pt: float = 16.0, bold: bool = False) -> float:
+    """ความกว้างจริงของข้อความด้วยฟอนต์ที่ใช้ส่งออก (Pillow + raqm จัดสระ/วรรณยุกต์ไทยถูกต้อง)
+    ไม่มีไฟล์ฟอนต์ = ประมาณจากจำนวนตัวอักษรที่กินที่ (ไม่นับสระบน-ล่างและวรรณยุกต์)"""
+    if not text:
+        return 0.0
+    files = next((f for f in FONT_FILES.values() if f["family"] == _ACTIVE_FONT.get()), FONT_FILES["sarabun_new"])
+    name = files["bold" if bold else "regular"]
+    font = _MEASURE_FONTS.get(name)
+    if font is None and (_FONT_DIR / name).exists():
+        try:
+            from PIL import ImageFont
+            font = _MEASURE_FONTS[name] = ImageFont.truetype(str(_FONT_DIR / name), 1000)
+        except Exception:  # Pillow ไม่มี / อ่านฟอนต์ไม่ได้ → ใช้ค่าประมาณ
+            font = None
+    extra = len(text) * _LETTER_SPACING.get() / 72 * 2.54   # นับทุกตัวอักษร (รวม ZWSP) เผื่อไว้
+    if font is not None:
+        return font.getlength(text) / 1000 * font_size_pt / 72 * 2.54 + extra
+    spacing = sum(1 for ch in text if not ("\u0e31" <= ch <= "\u0e3a" or "\u0e47" <= ch <= "\u0e4e"))
+    return spacing * font_size_pt * 0.42 / 72 * 2.54 + extra
+
+
 def _fit_run_to_width(run, text: str, available_cm: float, font_size_pt: float = 16.0):
-    """ประมาณความกว้างข้อความไทย แล้วบีบตัวอักษรให้พอดีหนึ่งบรรทัด"""
+    """บีบตัวอักษรแนวนอน (w:w) ให้ข้อความพอดีหนึ่งบรรทัด"""
     if not text or available_cm <= 0:
         return
-    estimated_cm = len(text) * (font_size_pt / 28.35) * 0.52
-    if estimated_cm > available_cm:
-        _set_character_scale(run, int(available_cm / estimated_cm * 100))
+    width_cm = _text_width_cm(text, font_size_pt)
+    if width_cm > available_cm:
+        # ปัดลง 1% เผื่อการปัดเศษของ Word
+        _set_character_scale(run, int(available_cm / width_cm * 100) - 1)
 
 
 def _setup_page_margins(doc: Document, profile: LayoutProfile):
@@ -177,18 +274,18 @@ def _add_header_tab(paragraph, position_cm: float = TEXT_WIDTH_CM, style: str = 
     )
 
 
-def _apply_bottom_border(paragraph):
-    """ขีดเส้นทึบใต้ย่อหน้า (ใช้ทำหัวฟอร์มแบบ solid)"""
+def _apply_bottom_border(paragraph, val: str = "single", sz: int = 6, color: str = "000000", space: int = 1):
+    """ขีดเส้นใต้ย่อหน้า (หัวฟอร์มแบบ solid / เส้นประใต้บรรทัด "เรื่อง") — เส้นเริ่มที่ระยะเยื้องซ้ายของย่อหน้า"""
     pPr = paragraph._p.get_or_add_pPr()
     existing = pPr.find(qn("w:pBdr"))
     if existing is not None:
         pPr.remove(existing)
     pBdr = OxmlElement("w:pBdr")
     bottom = OxmlElement("w:bottom")
-    bottom.set(qn("w:val"), "single")
-    bottom.set(qn("w:sz"), "6")
-    bottom.set(qn("w:space"), "1")
-    bottom.set(qn("w:color"), "000000")
+    bottom.set(qn("w:val"), val)
+    bottom.set(qn("w:sz"), str(sz))
+    bottom.set(qn("w:space"), str(space))
+    bottom.set(qn("w:color"), color)
     pBdr.append(bottom)
     # pBdr ต้องอยู่ก่อน tabs/spacing/ind/jc ตามลำดับ schema
     for tag in ("w:shd", "w:tabs", "w:spacing", "w:ind", "w:jc"):
@@ -253,6 +350,84 @@ def _add_page_number_header(doc: Document, style: str = "thai"):
             _set_run_thai_font(r)
 
 
+
+def _float_picture_left(run, offset_v_pt: float = 0.0) -> None:
+    """เปลี่ยนรูปในบรรทัด (inline) เป็นรูปลอยชิดขอบซ้าย ไม่ตัดข้อความ (wrapNone) อยู่หลังข้อความ"""
+    inline = run._r.find('.//' + qn('wp:inline'))
+    if inline is None:
+        return
+    extent = inline.find(qn('wp:extent'))
+    cx, cy = extent.get('cx'), extent.get('cy')
+    doc_pr = inline.find(qn('wp:docPr'))
+    graphic = inline.find(qn('a:graphic'))
+    anchor = parse_xml(
+        '<wp:anchor %s distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" '
+        'behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">'
+        '<wp:simplePos x="0" y="0"/>'
+        '<wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>%d</wp:posOffset></wp:positionV>'
+        '<wp:extent cx="%s" cy="%s"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+        '<wp:docPr id="%s" name="%s"/><wp:cNvGraphicFramePr/></wp:anchor>'
+        % (nsdecls('wp', 'a', 'pic', 'r'), int(offset_v_pt * 12700), cx, cy,
+           doc_pr.get('id'), doc_pr.get('name'))
+    )
+    anchor.append(graphic)
+    inline.getparent().replace(inline, anchor)
+
+
+def _drop_blank_thumbnail(doc: Document) -> None:
+    """แม่แบบของ python-docx มีภาพตัวอย่าง (docProps/thumbnail.jpeg) เปล่า ๆ ติดมา
+    Windows Explorer จึงแสดงหน้ากระดาษว่างแทนไอคอน Word — ลบออกให้แสดงไอคอนปกติ"""
+    rels = doc.part.package.rels
+    for r_id, rel in list(rels.items()):
+        if rel.reltype.endswith("/metadata/thumbnail"):
+            del rels[r_id]
+
+
+def _split_first_line(text: str, room_cm: float, size_pt: float = 16.0):
+    """แบ่งข้อความเป็น (ส่วนที่พอดีบรรทัดแรก, ส่วนที่เหลือ) ตัดที่ช่องว่าง/ZWSP ระหว่างคำ"""
+    if _text_width_cm(text, size_pt) <= room_cm:
+        return text, ""
+    cut = 0
+    for m in re.finditer(r"[\u200b ]", text):
+        if _text_width_cm(text[:m.start()], size_pt) > room_cm:
+            break
+        cut = m.end()
+    if cut == 0:
+        return text, ""
+    return text[:cut], text[cut:]
+
+
+_VML_NS = ('xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" '
+           'xmlns:w10="urn:schemas-microsoft-com:office:word"')
+
+
+def _header_line_y_pt(label_pt: float = 20.0) -> float:
+    """ระยะจากขอบบนของบรรทัดหัวฟอร์มถึงเส้นประ: เส้นฐานของหัวข้อ 20 pt (ส่วนขึ้นของฟอนต์ ~0.85 em) + 2 pt"""
+    return 0.85 * label_pt + 2.0
+
+
+def _add_fixed_dotted_line(paragraph, x1_cm: float, x2_cm: float, y_pt: Optional[float] = None) -> None:
+    """
+    วางรูปร่างเส้นตรงแบบจุด (VML line) ยึดกับย่อหน้า อยู่หลังข้อความ ล็อกจุดยึด —
+    เหมือนการแทรกรูปร่าง "เส้น" ใน Word แล้วพิมพ์ข้อความบนเส้น: แก้ข้อความแล้วเส้นอยู่ที่เดิม ไม่ยืด/หดตาม
+    พิกัดแนวนอนนับจากขอบซ้ายของพื้นที่พิมพ์ แนวตั้งนับจากขอบบนของย่อหน้า
+    """
+    y = _header_line_y_pt() if y_pt is None else y_pt
+    pt = lambda cm: cm / 2.54 * 72
+    run = paragraph.add_run()
+    run._r.append(parse_xml(
+        '<w:pict %s %s><v:line style="position:absolute;z-index:-1;mso-position-horizontal-relative:margin;'
+        'mso-position-vertical-relative:text" from="%.2fpt,%.2fpt" to="%.2fpt,%.2fpt" '
+        'strokecolor="black" strokeweight=".75pt" o:allowincell="f">'
+        '<v:stroke dashstyle="1 1"/><w10:anchorlock/></v:line></w:pict>'
+        % (nsdecls('w'), _VML_NS, pt(x1_cm), y, pt(x2_cm), y)
+    ))
+
+
+MEMO_SIGN_INDENT_CM = 6.0
+
+
 def _add_memo_blocks(doc: Document, data: GovDocumentSchema, profile: LayoutProfile):
     """เขียนเนื้อความบันทึกข้อความจาก MemoBlock (หัวข้อขีดเส้นใต้/ตัวหนา + ย่อหน้าตามลำดับเลขข้อ)"""
     num = (lambda t: to_thai_numerals(t)) if data.use_thai_numerals else (lambda t: t)
@@ -314,13 +489,15 @@ def export_govdoc_to_docx(
     """
     options = options or ExportOptions()
     profile = get_layout_profile(options.layout_profile, data.doc_type)
-    font_key = options.export_font or profile.font_key
+    font_key = options.export_font or data.font_family or profile.font_key
     letter_spacing = (
         profile.letter_spacing_pt
         if options.letter_spacing_pt is None
         else options.letter_spacing_pt
     )
     token = _ACTIVE_FONT.set(_font_for_option(font_key))
+    align_token = _BODY_ALIGNMENT.set(options.body_alignment)
+    spacing_token = _LETTER_SPACING.set(letter_spacing or 0.0)
     try:
         doc = Document()
         doc.core_properties.comments = (
@@ -334,7 +511,7 @@ def export_govdoc_to_docx(
         if options.letterhead == "none":
             garuda_path = None
         elif not garuda_path:
-            default_garuda = Path(__file__).resolve().parent.parent / "assets" / "garuda.png"
+            default_garuda = Path(__file__).resolve().parent.parent / "assets" / "garuda_krut.png"
             if default_garuda.exists():
                 garuda_path = str(default_garuda)
 
@@ -345,7 +522,11 @@ def export_govdoc_to_docx(
         fmt_details = to_thai_numerals(data.paragraph_details) if (data.paragraph_details and data.use_thai_numerals) else data.paragraph_details
         fmt_purpose = to_thai_numerals(data.paragraph_purpose) if data.use_thai_numerals else data.paragraph_purpose
 
-        if data.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+        if data.is_stamp_letter:
+            _build_stamp_doc(doc, data, garuda_path, profile)
+        elif data.is_formal:
+            _build_formal_doc(doc, data, garuda_path, profile)
+        elif data.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
             _build_special_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
         elif data.sections is not None:
             _build_sections_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
@@ -354,8 +535,12 @@ def export_govdoc_to_docx(
         else:
             _build_internal_doc(doc, data, fmt_date, fmt_number, fmt_reason, fmt_details, fmt_purpose, garuda_path, options, profile)
 
+        _apply_classification_marks(doc, data)
+        _set_thai_language(doc)
+
         # บันทึกไฟล์
         _set_doc_grid(doc, profile.line_pitch_twips)
+        _drop_blank_thumbnail(doc)
         out_file = Path(output_path)
         out_file.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(out_file))
@@ -366,6 +551,8 @@ def export_govdoc_to_docx(
 
         return str(out_file)
     finally:
+        _LETTER_SPACING.reset(spacing_token)
+        _BODY_ALIGNMENT.reset(align_token)
         _ACTIVE_FONT.reset(token)
 
 
@@ -396,7 +583,8 @@ def _build_sections_doc(
         p_title = tbl_top.cell(0, 1).paragraphs[0]
         p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r_title = p_title.add_run("บันทึกข้อความ")
-        _set_run_thai_font(r_title, size_pt=29, bold=True)
+        _set_run_thai_font(r_title, size_pt=profile.memo_title_pt, bold=True)
+        _set_exact_line(p_title, profile.memo_title_line_pt)
     elif garuda_path and os.path.exists(garuda_path):
         p_g = doc.add_paragraph()
         p_g.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -416,7 +604,7 @@ def _build_sections_doc(
             _set_run_thai_font(r_label, size_pt=20, bold=True)
             r_value = p.add_run(insert_zwsp(value))
             _set_run_thai_font(r_value, size_pt=16)
-            _fit_run_to_width(r_value, value, 13.0)
+            _fit_run_to_width(r_value, value, TEXT_WIDTH_CM - _text_width_cm(f"{label}  ", 20, bold=True) - 0.3)
             _add_header_tab(p, TEXT_WIDTH_CM, profile.header_style)
             p.add_run("\t")
         elif kind == SectionKind.SUBJECT:
@@ -537,6 +725,149 @@ def _build_sections_doc(
     _add_page_number_header(doc, profile.page_number_style)
 
 
+def _add_body_lines(doc: Document, lines, space_before_pt: float = 6.0) -> None:
+    """ย่อหน้าเนื้อความ [(indent_cm, text)] — 1 บรรทัด + 6 pt ระหว่างย่อหน้า, กระจายแบบไทย"""
+    for indent, text in lines:
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.space_before = Pt(space_before_pt)
+        pf.space_after = Pt(0)
+        pf.line_spacing = 1.0
+        pf.first_line_indent = Cm(indent)
+        _apply_thai_distributed(p)
+        _set_run_thai_font(p.add_run(insert_zwsp(text)))
+
+
+def _label_paragraph(doc: Document, label: str, value: str, hanging_cm: float, space_before_pt: float = 6.0):
+    """หัวข้อตัวหนา + ข้อความ (บรรทัดถัดไปเยื้องตรงข้อความ)"""
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    pf.space_before = Pt(space_before_pt)
+    pf.space_after = Pt(0)
+    pf.left_indent = Cm(hanging_cm)
+    pf.first_line_indent = Cm(-hanging_cm)
+    pf.tab_stops.add_tab_stop(Cm(hanging_cm))
+    _set_run_thai_font(p.add_run(label), bold=True)
+    _set_run_thai_font(p.add_run("\t" + insert_zwsp(value)))
+    return p
+
+
+def _build_stamp_doc(doc: Document, data: GovDocumentSchema, garuda_path: Optional[str], profile: LayoutProfile):
+    """หนังสือประทับตรา (แบบที่ ๓) — ตำแหน่งตรงกับ templates/typst/stamp.typ
+    ครุฑ 3 ซม. กึ่งกลาง · ที่ (แนวเท้าครุฑ) · ถึง · ข้อความ · ส่วนราชการที่ส่ง/ที่ว่างประทับตรา/วันที่ (เริ่ม 8 ซม.)
+    · ส่วนราชการเจ้าของเรื่อง โทร. โทรสาร ไปรษณีย์อิเล็กทรอนิกส์"""
+    from core.doc_forms import SENDER_INDENT_CM, STAMP_GAP_CM, body_lines, recipient_of
+
+    num = to_thai_numerals if data.use_thai_numerals else (lambda t: t or "")
+    if garuda_path and os.path.exists(garuda_path):
+        p_g = doc.add_paragraph()
+        p_g.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_g.paragraph_format.space_after = Pt(0)
+        p_g.paragraph_format.line_spacing = 1.0
+        p_g.add_run().add_picture(garuda_path, height=Cm(3.0))
+
+    p_num = doc.add_paragraph()
+    p_num.paragraph_format.space_after = Pt(0)
+    p_num.paragraph_format.line_spacing = 1.0
+    _set_run_thai_font(p_num.add_run("ที่"), bold=True)
+    _set_run_thai_font(p_num.add_run("  " + num(data.doc_number)))
+
+    _label_paragraph(doc, "ถึง", recipient_of(data.salutation), hanging_cm=1.0)
+    _add_body_lines(doc, [(i, num(t)) for i, t in
+                          body_lines(data.paragraph_reason, data.paragraph_details, data.paragraph_purpose)])
+
+    def right(text: str, before_pt: float):
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Cm(SENDER_INDENT_CM)
+        p.paragraph_format.space_before = Pt(before_pt)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = 1.0
+        _set_run_thai_font(p.add_run(insert_zwsp(text)))
+        return p
+
+    right(data.dept_name, 6 + 18)                    # 1 บรรทัด + 6 pt จากย่อหน้าสุดท้าย
+    right(num(data.doc_date), STAMP_GAP_CM / 2.54 * 72)
+
+    # ส่วนราชการเจ้าของเรื่อง 16 pt ใต้วันที่ 4 Enter (เหมือนหนังสือภายนอก)
+    contact = [data.contact_dept]
+    if data.contact_tel:
+        contact.append(f"โทร. {num(data.contact_tel)}")
+    if data.contact_fax:
+        contact.append(f"โทรสาร {num(data.contact_fax)}")
+    if data.contact_email:
+        contact.append(f"ไปรษณีย์อิเล็กทรอนิกส์ {data.contact_email}")
+    for index, line in enumerate(contact):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(3 * 18 if index == 0 else 0)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = 1.0
+        _set_run_thai_font(p.add_run(insert_zwsp(line)))
+
+    _add_page_number_header(doc, profile.page_number_style)
+
+
+def _add_center_rule(doc: Document, length_cm: float) -> None:
+    """เส้นคั่นสั้นกึ่งกลาง: ย่อหน้าว่างที่มีเส้นขอบล่าง เยื้องซ้าย-ขวาเท่ากัน"""
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    side = (TEXT_WIDTH_CM - length_cm) / 2
+    pf.left_indent, pf.right_indent = Cm(side), Cm(side)
+    pf.space_before, pf.space_after = Pt(0), Pt(6)
+    pf.line_spacing = Pt(8)
+    _apply_bottom_border(p, sz=4)
+
+
+def _build_formal_doc(doc: Document, data: GovDocumentSchema, garuda_path: Optional[str], profile: LayoutProfile):
+    """คำสั่ง / ระเบียบ / ข้อบังคับ / ประกาศ (แบบที่ ๔–๗) — ตำแหน่งตรงกับ templates/typst/formal.typ"""
+    from core.doc_forms import (FORMAL, FORMAL_DATE_INDENT_CM, FORMAL_RULE_CM, FORMAL_SIGN_LEFT_CM,
+                                body_lines, formal_extra_lines)
+
+    spec = FORMAL[data.kind]
+    num = to_thai_numerals if data.use_thai_numerals else (lambda t: t or "")
+    if garuda_path and os.path.exists(garuda_path):
+        p_g = doc.add_paragraph()
+        p_g.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_g.paragraph_format.space_after = Pt(0)
+        p_g.paragraph_format.line_spacing = 1.0
+        p_g.add_run().add_picture(garuda_path, height=Cm(3.0))
+
+    def center(text: str, bold: bool = False, before: float = 0):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pf = p.paragraph_format
+        pf.space_before, pf.space_after, pf.line_spacing = Pt(before), Pt(0), 1.0
+        _set_run_thai_font(p.add_run(insert_zwsp(text)), bold=bold)
+        return p
+
+    center(data.special_title or spec.prefix, bold=True, before=6)
+    if spec.number:
+        center(f"ที่  {num(data.doc_number)}")
+    center(f"{spec.subject_label}  {num(data.subject)}")
+    for line in formal_extra_lines(data):
+        center(num(line))
+    _add_center_rule(doc, FORMAL_RULE_CM)
+    _add_body_lines(doc, [(i, num(t)) for i, t in
+                          body_lines(data.paragraph_reason, data.paragraph_details, data.paragraph_purpose)])
+
+    p_date = doc.add_paragraph()
+    pf = p_date.paragraph_format
+    pf.left_indent = Cm(FORMAL_DATE_INDENT_CM)
+    pf.space_before, pf.space_after, pf.line_spacing = Pt(18 + 6), Pt(0), 1.0
+    _set_run_thai_font(p_date.add_run(f"{spec.date_label}  {num(data.doc_date)}"))
+
+    name, position = data.signer_lines()[0]
+    for index, line in enumerate([name, *position.split("\n")]):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pf = p.paragraph_format
+        pf.left_indent = Cm(FORMAL_SIGN_LEFT_CM)
+        pf.space_before = Pt(3 * 18 if index == 0 else 0)      # ว่าง 3 บรรทัดสำหรับลายมือชื่อ
+        pf.space_after, pf.line_spacing = Pt(0), 1.0
+        _set_run_thai_font(p.add_run(line))
+
+    _add_page_number_header(doc, profile.page_number_style)
+
+
 def _build_special_doc(
     doc: Document,
     data: GovDocumentSchema,
@@ -608,13 +939,13 @@ def _build_special_doc(
     p_sig = doc.add_paragraph()
     p_sig.paragraph_format.left_indent = Cm(8.0)
     p_sig.paragraph_format.space_after = Pt(2)
-    r_sig = p_sig.add_run(data.signatory_name)
+    r_sig = p_sig.add_run(data.signer_lines()[0][0])
     _set_run_thai_font(r_sig, size_pt=DEFAULT_FONT_SIZE)
 
     p_pos = doc.add_paragraph()
     p_pos.paragraph_format.left_indent = Cm(8.0)
     p_pos.paragraph_format.space_after = Pt(12)
-    r_pos = p_pos.add_run(data.signatory_position)
+    r_pos = p_pos.add_run(data.signer_lines()[0][1])
     _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
 
     if data.contact_dept or data.contact_tel:
@@ -635,20 +966,7 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
                         garuda_path: Optional[str], options: ExportOptions, profile: LayoutProfile):
     """สร้างโครงสร้างหนังสือภายนอก (ครุฑ 3 ซม. กึ่งกลาง)"""
     
-    # 1. ชั้นความลับ / ชั้นความเร็ว (ถ้ามี)
-    if data.secret != SecretLevel.NORMAL:
-        p_sec = doc.add_paragraph()
-        p_sec.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_sec.paragraph_format.space_after = Pt(2)
-        r = p_sec.add_run(data.secret.to_thai())
-        _set_run_thai_font(r, size_pt=20, bold=True, color=RGBColor(200, 0, 0))
-
-    if data.urgency != UrgencyLevel.NORMAL:
-        p_urg = doc.add_paragraph()
-        p_urg.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        p_urg.paragraph_format.space_after = Pt(2)
-        r = p_urg.add_run(data.urgency.to_thai())
-        _set_run_thai_font(r, size_pt=20, bold=True, color=RGBColor(200, 0, 0))
+    # 1. ชั้นความลับ / ชั้นความเร็ว ใส่ทีหลังใน _apply_classification_marks (ทุกชนิดหนังสือ)
 
     # 2. ตราครุฑ 3.0 ซม. กึ่งกลางหน้า
     if garuda_path and os.path.exists(garuda_path):
@@ -775,13 +1093,13 @@ def _build_external_doc(doc: Document, data: GovDocumentSchema,
     p_sig = doc.add_paragraph()
     p_sig.paragraph_format.left_indent = Cm(8.0)
     p_sig.paragraph_format.space_after = Pt(2)
-    r_sig = p_sig.add_run(data.signatory_name)
+    r_sig = p_sig.add_run(data.signer_lines()[0][0])
     _set_run_thai_font(r_sig, size_pt=DEFAULT_FONT_SIZE)
 
     p_pos = doc.add_paragraph()
     p_pos.paragraph_format.left_indent = Cm(8.0)
     p_pos.paragraph_format.space_after = Pt(24)
-    r_pos = p_pos.add_run(data.signatory_position)
+    r_pos = p_pos.add_run(data.signer_lines()[0][1])
     _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
 
     # 8. ส่วนราชการเจ้าของเรื่อง (ชิดขอบล่างซ้าย)
@@ -813,73 +1131,96 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
                         garuda_path: Optional[str], options: ExportOptions, profile: LayoutProfile):
     """สร้างโครงสร้างหนังสือภายใน / บันทึกข้อความ (ครุฑ 1.5 ซม. ด้านซ้าย)"""
 
-    # 1. แถวหัวกระดาษ: ครุฑ 1.5 ซม. ชิดซ้าย + ข้อความ "บันทึกข้อความ" 29 pt หนา กึ่งกลาง
-    tbl_top = doc.add_table(rows=1, cols=2)
-    tbl_top.alignment = WD_TABLE_ALIGNMENT.CENTER
-    tbl_top.autofit = False
-    for cell, width in zip(tbl_top.rows[0].cells, [Cm(2.5), Cm(13.5)]):
-        cell.width = width
-        tcPr = cell._tc.get_or_add_tcPr()
-        borders = parse_xml(r'<w:tcBorders %s><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/></w:tcBorders>' % nsdecls('w'))
-        tcPr.append(borders)
-
-    # เซลล์ซ้าย: ครุฑ 1.5 ซม.
-    if garuda_path and os.path.exists(garuda_path):
-        c_left = tbl_top.cell(0, 0)
-        p_g = c_left.paragraphs[0]
-        r_g = p_g.add_run()
-        r_g.add_picture(garuda_path, height=Cm(1.5))
-
-    # เซลล์ขวา: คำว่า "บันทึกข้อความ" 29 pt ตัวหนา
-    c_right = tbl_top.cell(0, 1)
-    p_title = c_right.paragraphs[0]
+    # 1. หัวกระดาษ: "บันทึกข้อความ" ตัวหนา กึ่งกลางความกว้างข้อความ (ตรงกับ PDF) + ครุฑ 1.5 ซม.
+    #    แบบลอยชิดซ้ายในบรรทัดเดียวกัน (ตามไฟล์ต้นแบบบันทึกข้อความของหน่วยงาน) จึงไม่ดันหัวเรื่องออกจากกึ่งกลาง
+    p_title = doc.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # เว้นบนให้สูงรวมเท่าครุฑ 1.5 ซม. (42.5 pt) เพื่อไม่ให้ครุฑล้นเข้าขอบบน
+    p_title.paragraph_format.space_before = Pt(max(0.0, 1.5 / 2.54 * 72 - profile.memo_title_line_pt))
+    p_title.paragraph_format.space_after = Pt(6)
+    _set_exact_line(p_title, profile.memo_title_line_pt)
+    if garuda_path and os.path.exists(garuda_path):
+        r_g = p_title.add_run()
+        r_g.add_picture(garuda_path, height=Cm(1.5))
+        _float_picture_left(r_g)   # ฐานครุฑตรงกับเส้นล่างของบรรทัดหัวเรื่อง
     r_title = p_title.add_run("บันทึกข้อความ")
-    _set_run_thai_font(r_title, size_pt=29, bold=True)
+    _set_run_thai_font(r_title, size_pt=profile.memo_title_pt, bold=True)
 
-    # 2. รายละเอียดหัวเรื่อง: หัวข้อ ส่วนราชการ / ที่ / วันที่ / เรื่อง ตัวหนา 20 pt พร้อมเส้นจุดไข่ปลาถึงขอบขวา
+    # 2. รายละเอียดหัวเรื่อง: หัวข้อ ส่วนราชการ / ที่ / วันที่ / เรื่อง ตัวหนา 20 pt
+    #    แบบ dotted (ค่าเริ่มต้น): เส้นประเป็น "เส้นตรงที่วางไว้" (รูปร่างเส้น ล็อกกับบรรทัด อยู่หลังข้อความ)
+    #    แบบที่หน่วยงานทำใน Word จริง — แก้/พิมพ์ข้อความทับได้ เส้นไม่ยืด ไม่หด ไม่ตามข้อความ
+    #    มีเฉพาะ ๓ บรรทัด (ส่วนราชการ / ที่-วันที่ / บรรทัดแรกของเรื่อง) บรรทัดที่ ๒ ของเรื่องไม่มีเส้น
+    on_line = profile.header_style == "dotted"
+    label_gap_cm = 0.1    # เส้นเริ่มหลังหัวข้อเล็กน้อย
+
+    def _header_tab(p, pos_cm: float, align=WD_TAB_ALIGNMENT.RIGHT):
+        if on_line:
+            p.paragraph_format.tab_stops.add_tab_stop(Cm(pos_cm), align, WD_TAB_LEADER.SPACES)
+        else:
+            _add_header_tab(p, pos_cm, profile.header_style)
+
     def _memo_field(p, label: str, value: str):
-        r_h = p.add_run(label + "  ")
+        r_h = p.add_run(label)
         _set_run_thai_font(r_h, size_pt=MEMO_LABEL_SIZE, bold=True)
+        _set_run_thai_font(p.add_run("  "), size_pt=DEFAULT_FONT_SIZE)
         r_v = p.add_run(insert_zwsp(value))
         _set_run_thai_font(r_v, size_pt=DEFAULT_FONT_SIZE)
+        return r_v
+
+    def _label_end(label: str, start_cm: float = 0.0) -> float:
+        return start_cm + _text_width_cm(label, MEMO_LABEL_SIZE, bold=True) + label_gap_cm
 
     dept_value = data.dept_name
-    if data.contact_tel and data.contact_tel not in dept_value:
+    if data.contact_tel and data.contact_tel not in dept_value and "โทร" not in dept_value:
         dept_value = f"{dept_value}  โทร. {data.contact_tel}"
     p_dept = doc.add_paragraph()
     p_dept.paragraph_format.space_after = Pt(0)
-    _add_header_tab(p_dept, TEXT_WIDTH_CM, profile.header_style)
-    _memo_field(p_dept, "ส่วนราชการ", to_thai_numerals(dept_value) if data.use_thai_numerals else dept_value)
-    if p_dept.runs:
-        _fit_run_to_width(p_dept.runs[-1], dept_value, 13.0)
-    p_dept.add_run("\t")
-    if profile.header_style == "solid":
-        _apply_bottom_border(p_dept)
+    dept_value = to_thai_numerals(dept_value) if data.use_thai_numerals else dept_value
+    r_dept = _memo_field(p_dept, "ส่วนราชการ", dept_value)
+    # บรรทัดเดียวเสมอ: ความกว้างข้อความ - หัวข้อ 20 pt - ช่องว่าง - เผื่อท้ายเส้น
+    room = TEXT_WIDTH_CM - _text_width_cm("ส่วนราชการ   ", MEMO_LABEL_SIZE, bold=True) - 0.3
+    _fit_run_to_width(r_dept, insert_zwsp(dept_value), room)   # รวม ZWSP: Word เว้นระยะตัวอักษรให้ด้วย
+    if on_line:
+        _add_fixed_dotted_line(p_dept, _label_end("ส่วนราชการ"), TEXT_WIDTH_CM)
+    else:
+        _header_tab(p_dept, TEXT_WIDTH_CM)
+        p_dept.add_run("\t")
+        if profile.header_style == "solid":
+            _apply_bottom_border(p_dept)
 
-    # ที่ ....... วันที่ ....... (บรรทัดเดียวกัน ใช้ Tab ๒ ช่วง)
+    # ที่ ....... วันที่ ....... (บรรทัดเดียวกัน: "วันที่" เริ่มที่ 7.5 ซม.)
     p_meta = doc.add_paragraph()
     p_meta.paragraph_format.space_after = Pt(0)
-    _add_header_tab(p_meta, 7.5, profile.header_style)
-    _add_header_tab(p_meta, TEXT_WIDTH_CM, profile.header_style)
+    _header_tab(p_meta, 7.5, WD_TAB_ALIGNMENT.LEFT if on_line else WD_TAB_ALIGNMENT.RIGHT)
+    if not on_line:
+        _header_tab(p_meta, TEXT_WIDTH_CM)
     _memo_field(p_meta, "ที่", fmt_number)
     p_meta.add_run("\t")
     _memo_field(p_meta, "วันที่", fmt_date)
-    p_meta.add_run("\t")
-    if profile.header_style == "solid":
-        _apply_bottom_border(p_meta)
+    if on_line:
+        _add_fixed_dotted_line(p_meta, _label_end("ที่"), 7.5 - label_gap_cm)
+        _add_fixed_dotted_line(p_meta, _label_end("วันที่", 7.5), TEXT_WIDTH_CM)
+    else:
+        p_meta.add_run("\t")
+        if profile.header_style == "solid":
+            _apply_bottom_border(p_meta)
 
-    # เรื่อง (บรรทัดที่สองเยื้องตรงกับข้อความ — hanging indent)
+    # เรื่อง (บรรทัดที่สองเยื้องตรงกับข้อความ 1.25 ซม.)
     clean_sub = re.sub(r'^เรื่อง\s*', '', data.subject.strip())
+    sub_value = to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub
     p_sub = doc.add_paragraph()
     p_sub.paragraph_format.space_after = Pt(6)
     p_sub.paragraph_format.left_indent = Cm(1.25)
     p_sub.paragraph_format.first_line_indent = Cm(-1.25)
-    _add_header_tab(p_sub, TEXT_WIDTH_CM, profile.header_style)
-    _memo_field(p_sub, "เรื่อง", to_thai_numerals(clean_sub) if data.use_thai_numerals else clean_sub)
-    p_sub.add_run("\t")
-    if profile.header_style == "solid":
-        _apply_bottom_border(p_sub)
+    if on_line:
+        _memo_field(p_sub, "เรื่อง", sub_value)
+        _add_fixed_dotted_line(p_sub, _label_end("เรื่อง"), TEXT_WIDTH_CM)   # เฉพาะบรรทัดแรก
+    else:
+        _header_tab(p_sub, TEXT_WIDTH_CM)
+        _memo_field(p_sub, "เรื่อง", sub_value)
+        p_sub.add_run("\t")
+        if profile.header_style == "solid":
+            _apply_bottom_border(p_sub)
 
     # เรียน (ตัวปกติ 16 pt ตามแบบบันทึกข้อความ)
     sal_text = data.salutation.strip()
@@ -891,7 +1232,8 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         clean_sal = re.sub(r'^เรียน\s*', '', sal_text)
 
     p_sal = doc.add_paragraph()
-    p_sal.paragraph_format.space_after = Pt(4)
+    p_sal.paragraph_format.space_before = Pt(SALUTATION_GAP_PT)
+    p_sal.paragraph_format.space_after = Pt(0)
     r_salh = p_sal.add_run(sal_header)
     _set_run_thai_font(r_salh, size_pt=DEFAULT_FONT_SIZE)
     r_salv = p_sal.add_run(insert_zwsp(clean_sal))
@@ -934,7 +1276,7 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
     # 4. ผู้ลงนาม (บันทึกข้อความไม่มีคำลงท้าย เช่น ขอแสดงความนับถือ)
     if data.signature_image_path and os.path.exists(data.signature_image_path):
         p_sign_img = doc.add_paragraph()
-        p_sign_img.paragraph_format.left_indent = Cm(8.0)
+        p_sign_img.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
         p_sign_img.paragraph_format.space_after = Pt(6)
         r_sign_img = p_sign_img.add_run()
         r_sign_img.add_picture(data.signature_image_path, height=Cm(1.2))
@@ -942,14 +1284,28 @@ def _build_internal_doc(doc: Document, data: GovDocumentSchema,
         p_space = doc.add_paragraph()
         p_space.paragraph_format.space_after = Pt(36)
 
+    # ชื่อและตำแหน่งจัดกึ่งกลางในช่วงจาก 6 ซม. ถึงขอบขวา (ตรงกับ PDF / templates/typst/internal.typ)
     p_sig = doc.add_paragraph()
-    p_sig.paragraph_format.left_indent = Cm(8.0)
+    p_sig.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_sig.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
     p_sig.paragraph_format.space_after = Pt(2)
-    r_sig = p_sig.add_run(data.signatory_name)
+    r_sig = p_sig.add_run(data.signer_lines()[0][0])
     _set_run_thai_font(r_sig, size_pt=DEFAULT_FONT_SIZE)
 
     p_pos = doc.add_paragraph()
-    p_pos.paragraph_format.left_indent = Cm(8.0)
+    p_pos.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_pos.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
     p_pos.paragraph_format.space_after = Pt(4)
-    r_pos = p_pos.add_run(data.signatory_position)
+    r_pos = p_pos.add_run(data.signer_lines()[0][1])
     _set_run_thai_font(r_pos, size_pt=DEFAULT_FONT_SIZE)
+
+    # ผู้ลงนามถัดไป (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอเรื่อง) — เว้นที่ลงลายมือชื่อเท่ากัน
+    for co_name, co_position in data.signer_lines()[1:]:
+        p_gap = doc.add_paragraph()
+        p_gap.paragraph_format.space_after = Pt(36)
+        for text, after in ((co_name, 2), (co_position, 4)):
+            p_co = doc.add_paragraph()
+            p_co.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_co.paragraph_format.left_indent = Cm(MEMO_SIGN_INDENT_CM)
+            p_co.paragraph_format.space_after = Pt(after)
+            _set_run_thai_font(p_co.add_run(text), size_pt=DEFAULT_FONT_SIZE)

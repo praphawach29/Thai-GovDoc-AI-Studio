@@ -3,15 +3,27 @@ ocr_preprocessor.py — ระบบเตรียมภาพและปร�
 อ้างอิงแนวทางและเทคนิคจาก copninixh/TH-National-Document-OCR
 """
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from typing import List, Tuple, Optional
-import numpy as np
+
+from PIL import Image
+
+# OpenCV/numpy ใช้เฉพาะการปรับภาพก่อน OCR บนเครื่อง local (Deskew/Contrast)
+# บนคลาวด์ (Vercel) ไม่ติดตั้งเพราะขนาดใหญ่ ~190 MB จึงต้อง import ได้แม้ไม่มี
 try:
     import cv2
-except Exception:
+    import numpy as np
+except ImportError:  # pragma: no cover - ขึ้นกับสภาพแวดล้อม
     cv2 = None
-from PIL import Image
+    np = None
+
+
+def opencv_available() -> bool:
+    """มี OpenCV ให้ปรับภาพก่อน OCR หรือไม่ (ไม่มี = ส่งภาพต้นฉบับเข้า OCR ตรง)"""
+    return cv2 is not None
 
 
 def deskew_image(image_cv: np.ndarray) -> Tuple[np.ndarray, float]:

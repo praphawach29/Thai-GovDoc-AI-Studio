@@ -5,7 +5,7 @@ models.py — Data Schemas for Thai Official Government Documents
 
 import re
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -16,12 +16,22 @@ from core.thai_segmenter import to_thai_numerals
 DOC_NUMBER_PLACEHOLDER = "[✏️ เลขที่หนังสือ]"
 
 
+# ช่องว่างสำหรับเขียนเลขด้วยลายมือ: ใช้ non-breaking space ซึ่ง Typst/Word/HTML ไม่ยุบรวม
+# (ช่องว่างธรรมดาหลายตัวจะถูกยุบเหลือตัวเดียวเวลาจัดหน้า)
+HANDWRITE_GAP = "\u00a0" * 10
+
+
 def is_blank_doc_number(number: Optional[str]) -> bool:
-    """ตรวจว่าเลขที่ยังเป็นช่องว่างให้เขียนด้วยมือ เช่น '......../2569'"""
-    text = (number or "").strip()
+    """ตรวจว่าเลขที่ยังเป็นช่องว่างให้เขียนด้วยมือ
+
+    เช่น '......../2569', '          /2569' (เว้นว่างไม่มีจุด) หรือ 'กท 1205/' (เว้นเลขลำดับไว้)
+    """
+    text = (number or "").replace("\u00a0", " ").strip()
     if not text:
         return True
     if DOC_NUMBER_PLACEHOLDER in text:
+        return True
+    if text.startswith("/") or text.endswith("/"):
         return True
     return bool(re.match(r"^[.…_\-]+\s*/", text))
 
@@ -40,9 +50,18 @@ class DocumentKind(str, Enum):
     DIRECTIVE = "directive"                  # คำสั่ง/ระเบียบ/ข้อบังคับ (แบบ 4–6)
     PUBLIC_RELATIONS = "public_relations"    # ประกาศ/แถลงการณ์/ข่าว (แบบ 7–9)
     EVIDENCE = "evidence"                    # หนังสือรับรอง/รายงานการประชุม/บันทึก (แบบ 10–11)
+    # หนังสือสั่งการ/ประชาสัมพันธ์แยกตามแบบ (ใช้ในหน้าเว็บ — DIRECTIVE/PUBLIC_RELATIONS เดิมคงไว้ให้ข้อมูลเก่า)
+    ORDER = "order"                          # คำสั่ง (แบบที่ ๔)
+    REGULATION = "regulation"                # ระเบียบ (แบบที่ ๕)
+    BYLAW = "bylaw"                          # ข้อบังคับ (แบบที่ ๖)
+    ANNOUNCEMENT = "announcement"            # ประกาศ (แบบที่ ๗)
 
     def thai_label(self) -> str:
         return {
+            DocumentKind.ORDER: "คำสั่ง (แบบ 4)",
+            DocumentKind.REGULATION: "ระเบียบ (แบบ 5)",
+            DocumentKind.BYLAW: "ข้อบังคับ (แบบ 6)",
+            DocumentKind.ANNOUNCEMENT: "ประกาศ (แบบ 7)",
             DocumentKind.EXTERNAL_LETTER: "หนังสือภายนอก (แบบ 1)",
             DocumentKind.INTERNAL_MEMO: "หนังสือภายใน / บันทึกข้อความ (แบบ 2)",
             DocumentKind.STAMP_LETTER: "หนังสือประทับตรา (แบบ 3)",
@@ -53,6 +72,41 @@ class DocumentKind(str, Enum):
 
     def is_generation_supported(self) -> bool:
         return True
+
+
+# ประเภทที่ผู้ใช้เลือกได้ในหน้าเว็บ (คีย์ใน select ประเภท / ฟอร์ม doc_type ของ API) → (DocType, DocumentKind)
+# DocType ยังเป็น external/internal เท่านั้น (ข้อจำกัดคอลัมน์ documents.doc_type ในฐานข้อมูล) — ชนิดอื่นแยกด้วย kind
+FORM_KEYS: Dict[str, Tuple[DocType, DocumentKind]] = {
+    "internal": (DocType.INTERNAL, DocumentKind.INTERNAL_MEMO),
+    "external": (DocType.EXTERNAL, DocumentKind.EXTERNAL_LETTER),
+    "stamp_letter": (DocType.EXTERNAL, DocumentKind.STAMP_LETTER),
+    "order": (DocType.EXTERNAL, DocumentKind.ORDER),
+    "announcement": (DocType.EXTERNAL, DocumentKind.ANNOUNCEMENT),
+    "regulation": (DocType.EXTERNAL, DocumentKind.REGULATION),
+    "bylaw": (DocType.EXTERNAL, DocumentKind.BYLAW),
+}
+FORM_LABELS: Dict[str, str] = {
+    "internal": "บันทึกข้อความ (หนังสือภายใน)",
+    "external": "หนังสือภายนอก",
+    "stamp_letter": "หนังสือประทับตรา",
+    "order": "คำสั่ง",
+    "announcement": "ประกาศ",
+    "regulation": "ระเบียบ",
+    "bylaw": "ข้อบังคับ",
+}
+# ชนิดที่จัดหน้าแบบ "หัวกลาง" (ครุฑ · ชื่อเอกสาร · ที่ · เรื่อง/ว่าด้วย · เส้นคั่น · ข้อความ · ... ณ วันที่ · ผู้ลงนาม)
+FORMAL_KINDS = frozenset({DocumentKind.ORDER, DocumentKind.REGULATION, DocumentKind.BYLAW, DocumentKind.ANNOUNCEMENT})
+# แบบในระเบียบไม่มีบรรทัด "ที่" (มีเฉพาะคำสั่ง)
+FORMAL_NO_NUMBER = frozenset({DocumentKind.REGULATION, DocumentKind.BYLAW, DocumentKind.ANNOUNCEMENT})
+
+
+def parse_form_key(key: Optional[str]) -> Optional[Tuple[DocType, DocumentKind]]:
+    """คีย์ประเภทจากหน้าเว็บ → (DocType, DocumentKind); ว่าง = None, ไม่รู้จัก = ValueError"""
+    if key is None or str(key).strip() == "":
+        return None
+    if key not in FORM_KEYS:
+        raise ValueError(f"ไม่รู้จักประเภทหนังสือ: {key}")
+    return FORM_KEYS[key]
 
 
 class UrgencyLevel(str, Enum):
@@ -106,6 +160,10 @@ class ExportOptions(BaseModel):
     export_font: Optional[Literal["sarabun_new", "psk", "it9"]] = Field(
         default=None, description="ฟอนต์ที่ใช้ส่งออก; None = ใช้ค่าจาก LayoutProfile"
     )
+    body_alignment: Literal["thai_distribute", "left"] = Field(
+        default="thai_distribute",
+        description="การจัดแนวเนื้อความใน Word: กระจายแบบไทย (ค่าเริ่มต้น) หรือชิดซ้าย",
+    )
     embed_fonts: bool = Field(
         default=True, description="ฝังฟอนต์ลงในไฟล์ .docx (odttf)"
     )
@@ -146,6 +204,97 @@ class MemoHierarchyLevel(str, Enum):
         return "จึงเรียนมาเพื่อโปรดพิจารณา"
 
 
+class Signer(BaseModel):
+    """ผู้ลงนามหนึ่งคนในบันทึกข้อความ (ชื่อในวงเล็บ + ตำแหน่ง)"""
+    name: str = Field(default="", description="ชื่อในวงเล็บ เช่น (นายสมชาย ใจดี); ว่าง = เว้นให้กรอก")
+    position: str = ""
+    is_author: bool = Field(default=False, description="ผู้เสนอเรื่อง: ใช้ชื่อ/ตำแหน่งของผู้ใช้ที่ล็อกอินถ้ามี")
+    stamp: bool = Field(default=False, description="ใช้ตราประทับชื่อ-ตำแหน่ง: เว้นบรรทัดชื่อและตำแหน่งว่างไว้ประทับ")
+
+
+class LegalCitation(BaseModel):
+    """ข้อกฎหมายจากคลังที่ผู้ใช้เลือกใส่ในบันทึก — ใช้แนบหน้าของข้อนั้นจากไฟล์สแกนจริงท้าย PDF"""
+    id: str
+    title: str = ""
+    section: str = ""
+    source_id: Optional[str] = None      # ไฟล์ต้นฉบับในคลัง (ไม่มี = รายการที่เพิ่มเอง ไม่มีหน้าให้แนบ)
+    page_from: Optional[int] = None
+    page_to: Optional[int] = None
+
+
+class IssuingUnit(BaseModel):
+    """หน่วยออกหนังสือ = หนึ่งขั้นในสายการเสนอ (กลุ่มงาน -> กอง -> สำนัก)
+
+    แต่ละหน่วยมีบรรทัดส่วนราชการ รูปแบบเลขที่ ผู้รับ (เรียน) ผู้ลงนาม และชื่อผู้พิจารณา
+    ในย่อหน้า "ข้อพิจารณาและเสนอแนะ" ของตัวเอง; ลำดับในรายการ = ลำดับการเสนอขึ้นไป
+
+    รูปแบบเลขที่ (doc_number_format) ใช้ตัวแทน:
+      {gap}  = ช่องว่างให้เจ้าหน้าที่เขียนเลขด้วยลายมือ (ไม่มีจุด)
+      {year} = ปี พ.ศ. ปัจจุบันตามเวลาประเทศไทย
+    เช่น "{gap}/{year}" -> "          /2569" และ "กท 1205/{gap}" -> "กท 1205/          "
+    เขียนตัวเลขเป็นเลขอารบิก ระบบแปลงเป็นเลขไทยตอนส่งออกตามการตั้งค่าเอกสาร
+    """
+
+    key: str
+    label: str = Field(description="ชื่อที่แสดงให้เลือก เช่น กลุ่มงานส่งเสริมกีฬา")
+    dept_name: str = Field(description="บรรทัด 'ส่วนราชการ' ของบันทึกข้อความ (พิมพ์บรรทัดเดียวเสมอ)")
+    doc_number_format: str = Field(default="{gap}/{year}")
+    contact_dept: str = ""
+    contact_tel: str = ""
+    contact_fax: str = ""
+    blank_day: bool = Field(default=True, description="เว้นเลขวันที่ไว้ให้ลงตอนลงนาม (เช่น '      สิงหาคม ๒๕๖๘')")
+    is_default: bool = False
+    recipient: str = Field(default="", description="ผู้รับ (ต่อจากคำว่า 'เรียน') เช่น หัวหน้ากลุ่มงานส่งเสริมกีฬา")
+    signers: List[Signer] = Field(default_factory=list, description="ผู้ลงนามตามลำดับ (คนแรก = ผู้ลงนามหลัก)")
+    review_party: str = Field(default="", description="ชื่อหน่วยในประโยค '...พิจารณาแล้ว' ของข้อพิจารณาและเสนอแนะ")
+    request_text: str = Field(default="", description="ภาคความประสงค์มาตรฐานของขั้นนี้ (จึงเรียนมาเพื่อ...)")
+
+
+def default_issuing_units() -> List["IssuingUnit"]:
+    """สายการเสนอตั้งต้นของกลุ่มงานส่งเสริมกีฬา กองการกีฬา สำนักวัฒนธรรม กีฬา และการท่องเที่ยว
+    (ตามตัวอย่างบันทึกข้อความจริง: กลุ่มงาน -> ผอ.กอง ลงนามถึง ผอ.สำนัก -> ผอ.สำนัก ลงนามถึงปลัดฯ)"""
+    tel, fax = "๐ ๒๒๔๖ ๘๐๗๙", "๐ ๒๒๔๖ ๐๒๘๒"
+    phone = f"โทร.{tel} โทรสาร {fax}"
+    bureau = "สำนักวัฒนธรรม กีฬา และการท่องเที่ยว"
+    return [
+        IssuingUnit(
+            key="sport-promotion",
+            label="กลุ่มงานส่งเสริมกีฬา",
+            dept_name=f"กลุ่มงานส่งเสริมกีฬา {phone}",
+            doc_number_format="{gap}/{year}",
+            contact_dept="กลุ่มงานส่งเสริมกีฬา", contact_tel=tel, contact_fax=fax, is_default=True,
+            recipient="หัวหน้ากลุ่มงานส่งเสริมกีฬา",
+            signers=[Signer(position="ผู้เสนอเรื่อง", is_author=True),
+                     Signer(position="หัวหน้ากลุ่มงานส่งเสริมกีฬา")],
+            review_party="กลุ่มงานส่งเสริมกีฬา",
+            request_text="จึงเรียนมาเพื่อโปรดพิจารณานำเรียนผู้อำนวยการกองการกีฬาลงนามในหนังสือที่แนบ",
+        ),
+        IssuingUnit(
+            key="sports-division",
+            label="กองการกีฬา",
+            dept_name=f"กองการกีฬา (กลุ่มงานส่งเสริมกีฬา {phone})",
+            doc_number_format="กท 1205/{gap}",
+            contact_dept="กองการกีฬา", contact_tel=tel, contact_fax=fax,
+            recipient=f"ผู้อำนวยการ{bureau}",
+            signers=[Signer(position="ผู้อำนวยการกองการกีฬา")],
+            review_party="กองการกีฬา",
+            request_text="จึงเรียนมาเพื่อโปรดพิจารณาลงนามหนังสือเรียนปลัดกรุงเทพมหานครที่แนบ",
+        ),
+        IssuingUnit(
+            key="culture-sports-bureau",
+            label=bureau,
+            dept_name=f"{bureau} (กองการกีฬา {phone})",
+            doc_number_format="กท 1205/{gap}",
+            contact_dept="กองการกีฬา", contact_tel=tel, contact_fax=fax,
+            recipient="ปลัดกรุงเทพมหานคร",
+            signers=[Signer(position=f"ผู้อำนวยการ{bureau}")],
+            review_party=bureau,
+            request_text=("จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดนำเรียนผู้ว่าราชการกรุงเทพมหานคร"
+                          "เพื่อโปรดพิจารณาตามข้อพิจารณาและเสนอแนะข้างต้น"),
+        ),
+    ]
+
+
 class UserProfileSchema(BaseModel):
     """โปรไฟล์ข้อมูลหน่วยงานและผู้มีอำนาจลงนามของผู้ใช้งาน (User Organization Profile)"""
     dept_name: str = Field(
@@ -183,6 +332,10 @@ class UserProfileSchema(BaseModel):
     contact_tel: str = Field(
         default="๐ ๒๒๔๖ ๘๐๗๙",
         description="เบอร์โทรศัพท์ติดต่อ"
+    )
+    issuing_units: List[IssuingUnit] = Field(
+        default_factory=default_issuing_units,
+        description="หน่วยออกหนังสือที่เลือกได้ (ส่วนราชการ + รูปแบบเลขที่)",
     )
     contact_fax: str = Field(
         default="๐ ๒๒๔๖ ๐๒๘๒",
@@ -337,6 +490,7 @@ class SourceDocumentContext(BaseModel):
     preview_image_path: Optional[str] = Field(None, description="เส้นทางไฟล์รูปภาพพรีวิวหน้าแรก (ถ้ามี)")
     raw_text: str = Field(default="", description="ข้อความที่สกัดได้จากไฟล์ต้นเรื่อง")
     summary: str = Field(default="", description="สรุปสาระสำคัญของเรื่องเดิม")
+    summary_by_ai: bool = Field(default=False, description="True = สรุปโดย AI ตอนร่าง (ไม่ใช่บรรทัดที่ตัดมาจากต้นเรื่อง)")
     core_issues: List[str] = Field(default_factory=list, description="ประเด็นปัญหาหรือข้อเท็จจริง")
     requested_action: Optional[str] = Field(None, description="สิ่งที่ต้นเรื่องประสงค์หรือขอความร่วมมือ")
     extraction_failed: bool = Field(default=False, description="การสกัดข้อความล้มเหลวหรือไม่ (Fail-Safe)")
@@ -405,6 +559,8 @@ class GovDocumentSchema(BaseModel):
     special_preamble: Optional[str] = Field(None, description="ความนำ/อาศัยอำนาจของเอกสารชนิดพิเศษ")
     special_items: List[str] = Field(default_factory=list, description="ข้อความแยกข้อของเอกสารชนิดพิเศษ")
     special_note: Optional[str] = Field(None, description="หมายเหตุ/บทบังคับใช้ท้ายเอกสารชนิดพิเศษ")
+    special_edition: Optional[str] = Field(None, description="ระเบียบ/ข้อบังคับ: ฉบับที่ (ว่าง = ฉบับแรก ไม่แสดงบรรทัด) เช่น '๒'")
+    special_year: Optional[str] = Field(None, description="ระเบียบ/ข้อบังคับ: บรรทัดปีใต้ 'ว่าด้วย' เช่น 'พ.ศ. ๒๕๖๙'")
     sections: Optional[List[DocumentSection]] = Field(
         None, description="ลำดับหัวข้อเอกสารแบบอิสระ (None = ใช้ฟิลด์มาตรฐานเดิม)"
     )
@@ -415,6 +571,10 @@ class GovDocumentSchema(BaseModel):
     urgency: UrgencyLevel = Field(default=UrgencyLevel.NORMAL, description="ชั้นความเร็ว")
     secret: SecretLevel = Field(default=SecretLevel.NORMAL, description="ชั้นความลับ")
     use_thai_numerals: bool = Field(default=False, description="แปลงตัวเลขเป็นเลขไทยหรือไม่")
+    font_family: Optional[Literal["it9", "psk", "sarabun_new"]] = Field(
+        default=None,
+        description="ฟอนต์ของฉบับนี้: it9 = TH SarabunIT๙ (ค่าเริ่มต้น), psk = TH SarabunPSK, sarabun_new = TH Sarabun New; None = ตามโปรไฟล์",
+    )
     
     # ส่วนหัวหนังสือ
     doc_number: str = Field(..., description="ที่ (เลขที่หนังสือ) เช่น กค ๐๔๐๖/๑๒๓")
@@ -449,6 +609,10 @@ class GovDocumentSchema(BaseModel):
         default="bma",
         description="รูปแบบหัวข้อบันทึกข้อความ: 'bma' = หัวข้อขีดเส้นใต้ ลำดับ ต้นเรื่อง-ข้อกฎหมาย-ข้อเท็จจริง-ข้อพิจารณาฯ, 'numbered' = ๑. ต้นเรื่อง ๒. ข้อเท็จจริง ๓. ข้อกฎหมาย ๔. ข้อพิจารณาฯ",
     )
+    memo_headings: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="ชื่อหัวข้อบันทึกข้อความที่ผู้ใช้แก้เอง (intro/law/facts/consideration → ชื่อ); ค่าว่าง = ไม่แสดงหัวข้อ",
+    )
     memo_hierarchy_level: MemoHierarchyLevel = Field(
         default=MemoHierarchyLevel.DEPT_TO_PERM_SEC,
         description="ระดับชั้นการเสนอหนังสือบันทึกข้อความสำหรับกำหนดประโยคลงท้าย",
@@ -458,6 +622,22 @@ class GovDocumentSchema(BaseModel):
     closing: str = Field(default="ขอแสดงความนับถือ", description="คำลงท้าย (เช่น ขอแสดงความนับถือ)")
     signatory_name: str = Field(..., description="ชื่อเต็มผู้ลงนามในวงเล็บ เช่น (นายสมชาย ใจดี)")
     signatory_position: str = Field(..., description="ตำแหน่งผู้ลงนาม")
+    co_signers: Optional[List[Signer]] = Field(
+        default=None,
+        description="ผู้ลงนามเพิ่มเติมของบันทึกข้อความ ต่อจากผู้ลงนามหลัก (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอ)",
+    )
+    legal_refs: Optional[List[LegalCitation]] = Field(
+        default=None,
+        description="ข้อกฎหมายจากคลังที่เลือกใส่ในหัวข้อ ข้อกฎหมาย (ใช้แนบหน้าจากไฟล์ต้นฉบับท้าย PDF)",
+    )
+    attach_legal_pages: bool = Field(
+        default=True,
+        description="แนบหน้าของข้อกฎหมายที่เลือก (จากไฟล์สแกนต้นฉบับในคลัง) ต่อท้าย PDF",
+    )
+    signatory_stamp: bool = Field(
+        default=False,
+        description="ผู้ลงนามหลักใช้ตราประทับชื่อ-ตำแหน่ง: เว้นบรรทัดชื่อและตำแหน่งว่าง (ระยะเท่าเดิม) ไว้ประทับ",
+    )
     
     # ส่วนติดต่อสอบถาม (ท้ายกระดาษสำหรับหนังสือภายนอก)
     contact_dept: str = Field(..., description="กลุ่มงาน/กองเจ้าของเรื่อง")
@@ -493,6 +673,22 @@ class GovDocumentSchema(BaseModel):
         consideration, request = split_consideration_and_request(consideration_src, self.memo_request)
         return intro or "", facts or "", law, consideration or "", request or ""
 
+    @property
+    def form_key(self) -> str:
+        """คีย์ประเภทที่หน้าเว็บใช้ (internal / external / stamp_letter / ...)"""
+        if self.kind.value in FORM_KEYS:
+            return self.kind.value
+        return "internal" if self.doc_type == DocType.INTERNAL else "external"
+
+    @property
+    def is_stamp_letter(self) -> bool:
+        return self.kind == DocumentKind.STAMP_LETTER
+
+    @property
+    def is_formal(self) -> bool:
+        """คำสั่ง / ระเบียบ / ข้อบังคับ / ประกาศ — ไม่มีคำขึ้นต้น คำลงท้าย และส่วนราชการเจ้าของเรื่อง"""
+        return self.kind in FORMAL_KINDS
+
     def get_memo_sections(self) -> List[tuple]:
         """
         ส่งคืนรายการหัวข้อและเนื้อหาของบันทึกข้อความ [(หัวข้อ, เนื้อหา), ...]
@@ -502,7 +698,8 @@ class GovDocumentSchema(BaseModel):
 
         intro, facts, law, consideration, _ = self._memo_parts()
         return [(title, body) for _, title, body in
-                build_memo_sections(intro, facts, law, consideration, self.memo_heading_style)]
+                build_memo_sections(intro, facts, law, consideration, self.memo_heading_style,
+                                    self.memo_headings)]
 
     def get_memo_request(self) -> str:
         """ภาคความประสงค์ (จึงเรียนมาเพื่อ...) ของบันทึกข้อความ"""
@@ -513,7 +710,8 @@ class GovDocumentSchema(BaseModel):
         from core.memo_layout import build_memo_blocks, build_memo_sections
 
         intro, facts, law, consideration, request = self._memo_parts()
-        sections = build_memo_sections(intro, facts, law, consideration, self.memo_heading_style)
+        sections = build_memo_sections(intro, facts, law, consideration, self.memo_heading_style,
+                                       self.memo_headings)
         return build_memo_blocks(sections, request, self.memo_heading_style)
 
     def validate_memo_completeness(self) -> List[str]:
@@ -560,9 +758,9 @@ class GovDocumentSchema(BaseModel):
             ("ข้อกฎหมาย (บันทึกข้อความ)", self.memo_law or ""),
             ("ข้อพิจารณาและเสนอแนะ (บันทึกข้อความ)", self.memo_consideration or ""),
             ("ภาคความประสงค์ (บันทึกข้อความ)", self.memo_request or ""),
-            ("คำลงท้าย", self.closing),
-            ("ชื่อผู้ลงนาม", self.signatory_name),
-            ("ตำแหน่งผู้ลงนาม", self.signatory_position),
+            ("คำลงท้าย", "" if self.is_stamp_letter else self.closing),
+            ("ชื่อผู้ลงนาม", "" if (self.signatory_stamp or self.is_stamp_letter) else self.signatory_name),
+            ("ตำแหน่งผู้ลงนาม", "" if (self.signatory_stamp or self.is_stamp_letter) else self.signatory_position),
             ("กลุ่มงานเจ้าของเรื่อง", self.contact_dept or ""),
             ("โทรศัพท์", self.contact_tel or "")
         ]
@@ -572,7 +770,16 @@ class GovDocumentSchema(BaseModel):
         if self.attachments:
             for idx, att in enumerate(self.attachments, 1):
                 text_fields.append((f"สิ่งที่ส่งมาด้วย ({idx})", att))
-                
+        for idx, co in enumerate(self.co_signers or [], 2):
+            if not co.stamp:
+                text_fields += [(f"ชื่อผู้ลงนาม ({idx})", co.name), (f"ตำแหน่งผู้ลงนาม ({idx})", co.position)]
+        if self.is_formal:
+            # คำสั่ง/ประกาศ/ระเบียบ/ข้อบังคับ ไม่พิมพ์ช่องเหล่านี้ — ไม่นับเป็นจุดต้องระบุ
+            hidden = {"ส่วนราชการ", "คำขึ้นต้น", "คำลงท้าย", "กลุ่มงานเจ้าของเรื่อง", "โทรศัพท์"}
+            if self.kind in FORMAL_NO_NUMBER:
+                hidden.add("เลขที่หนังสือ")
+            text_fields = [("ชื่อเอกสาร", self.special_title or "")] + [f for f in text_fields if f[0] not in hidden]
+
         for label, val in text_fields:
             if not val:
                 continue
@@ -580,6 +787,13 @@ class GovDocumentSchema(BaseModel):
             for m in matches:
                 results.append(f"{label}: {m}")
         return results
+
+    def signer_lines(self) -> List[Tuple[str, str]]:
+        """ชื่อ-ตำแหน่งที่พิมพ์ในไฟล์ส่งออก (ผู้ลงนามหลักก่อน) — ใช้ตราประทับ = บรรทัดว่างระยะเท่าเดิม"""
+        blank = ("\u00a0", "\u00a0")
+        out = [blank if self.signatory_stamp else (self.signatory_name, self.signatory_position)]
+        out += [blank if co.stamp else (co.name, co.position) for co in (self.co_signers or [])]
+        return out
 
     def count_placeholders(self) -> int:
         """นับจำนวนจุดที่ยังมี Smart Placeholder ค้างอยู่"""

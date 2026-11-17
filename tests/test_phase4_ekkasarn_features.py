@@ -18,7 +18,7 @@ from core.ai_drafter import draft_from_context_rule_based, DraftingIntent
 from core.copilot import copilot_refine_paragraph
 from core.word_exporter import export_govdoc_to_docx
 from core.typst_exporter import generate_typst_content
-from core.api import check_placeholders
+from server.routers.drafting import check_placeholders
 
 
 @pytest.fixture

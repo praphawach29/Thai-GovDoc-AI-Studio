@@ -5,6 +5,7 @@ thai_segmenter.py — เครื่องมือตัดคำภาษา�
 """
 
 import os
+import tempfile
 import re
 from pathlib import Path
 from typing import List
@@ -59,12 +60,20 @@ def _configure_pythainlp_data_dir() -> None:
     """
     if os.environ.get("PYTHAINLP_DATA") or os.environ.get("PYTHAINLP_DATA_DIR"):
         return
-    data_dir = Path(__file__).resolve().parent.parent / "data" / "pythainlp"
-    try:
-        data_dir.mkdir(parents=True, exist_ok=True)
-        os.environ["PYTHAINLP_DATA"] = str(data_dir)
-    except OSError:
-        pass
+    # บนคลาวด์ (Vercel) โฟลเดอร์โปรเจกต์อ่านได้อย่างเดียว จึงถอยไปใช้โฟลเดอร์ชั่วคราว
+    # ถ้าสร้างไม่ได้ทั้งคู่ PyThaiNLP จะ import ไม่ผ่านและตกไปใช้ตัวตัดคำสำรองที่แม่นน้อยกว่า
+    candidates = (
+        Path(__file__).resolve().parent.parent / "data" / "pythainlp",
+        Path(tempfile.gettempdir()) / "pythainlp-data",
+    )
+    for data_dir in candidates:
+        try:
+            data_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        if os.access(data_dir, os.W_OK):
+            os.environ["PYTHAINLP_DATA"] = str(data_dir)
+            return
 
 
 def segment_thai_words(text: str) -> List[str]:

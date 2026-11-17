@@ -1,37 +1,38 @@
-# Thai GovDoc AI Studio - Python dependencies (verified on Python 3.12 / Windows)
+# Thai GovDoc AI Studio — dependencies ที่ใช้ตอนรันเซิร์ฟเวอร์ (สิ่งที่ Vercel ติดตั้ง)
+# ทดสอบกับ Python 3.12 (Windows) และ 3.13 (Linux)
 #
-# Install project-local (recommended):
-#   python -m venv .venv --system-site-packages
-#   .venv\Scripts\python -m pip install -r requirements.txt
-#   .venv\Scripts\python -m pytest
+# ใช้พัฒนาบนเครื่อง (มี Streamlit, OpenCV, pytest ด้วย):
+#   python -m venv .venv
+#   .venv\Scripts\python -m pip install -r requirements-dev.txt      (Windows)
+#   .venv/bin/python -m pip install -r requirements-dev.txt          (macOS/Linux)
 #
-# Notes:
-# - `typst` is the Python binding with the compiler embedded; it is used when
-#   the Typst CLI is not on PATH (see core/typst_exporter.py).
-# - `google-genai` / `openai` are only needed when API keys are configured.
-# - Offline OCR requires Docker image `tha-tesseract:latest` (see Dockerfile.tesseract).
+# หมายเหตุ:
+# - ไม่ใส่ Streamlit/OpenCV ที่นี่ เพราะใหญ่ (~460 MB) และไม่ได้ใช้บนคลาวด์
+#   (Vercel จำกัดขนาด function ราว 250 MB)
+# - `typst` คือ Python binding ที่ฝัง compiler ไว้ในตัว ไม่ต้องลง Typst CLI
+# - `anthropic` / `google-genai` ใช้เมื่อตั้ง ANTHROPIC_API_KEY / GEMINI_API_KEY (ร่างด้วย Claude ก่อน แล้ว Gemini)
+# - `openai` ใช้กับ API เดิม /api/v1/draft เท่านั้น
 
-# --- Core / Web ---
-streamlit==1.52.0
+# --- Web API ---
 fastapi==0.138.0
-uvicorn==0.49.0
 python-multipart==0.0.32
 pydantic==2.12.5
+
+# --- Supabase (เรียกผ่าน HTTP; ตรวจ token ด้วย JWKS) ---
+httpx==0.28.1
+PyJWT==2.10.1   # ใช้ cryptography ที่ติดมากับ google-genai อยู่แล้วสำหรับ ES256/RS256
 
 # --- Thai NLP & Documents ---
 pythainlp==5.4.0
 python-docx==1.2.0
 pdfplumber==0.11.10
-pypdfium2>=4.0.0
-opencv-python-headless>=4.8.0
+pypdf==6.17.0   # รวม PDF ชุดเสนอ (pure Python ขนาดเล็ก)
 pillow==12.3.0
 
 # --- Rendering ---
 typst==0.15.2
 
-# --- AI providers (optional) ---
+# --- AI providers ---
 google-genai==2.10.0
 openai==2.48.0
-
-# --- Testing ---
-pytest==9.1.1
+anthropic==2.8.0   # Claude ร่างเนื้อความ (ตัวแรก) — สำรองด้วย Gemini แล้วร่างตามกฎ

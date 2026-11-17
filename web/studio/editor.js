@@ -1,14 +1,19 @@
 // editor.js — หน้าแก้ไขเอกสาร: กระดาษ A4 แก้ไขได้โดยตรง + บทสนทนา/ต้นเรื่อง/ผลตรวจ + ส่งออก
-(function () {
-  const { api, store, esc, toThai, PH_RE, hasPlaceholder, relTime, download, toast, URGENCY, SECRET, DOC_TYPE_LABEL } = window.GovDoc;
+(async function () {
+  const { api, store, esc, toThai, PH_RE, hasPlaceholder, relTime, download, toast, URGENCY, SECRET, DOC_TYPE_LABEL, formKey } = window.GovDoc;
   const $ = (id) => document.getElementById(id);
 
+  await window.GovDoc.auth.ready;
   const id = new URLSearchParams(location.search).get('id');
-  const entry = id && store.get(id);
+  const entry = id && await store.get(id);
   if (!entry) {
-    document.body.innerHTML = `<div class="m-auto text-center p-8"><p class="text-slate-700 mb-3">ไม่พบเอกสารนี้ในเบราว์เซอร์</p><a href="./" class="text-emerald-700 underline">กลับหน้าแรก</a></div>`;
+    document.body.innerHTML = `<div class="m-auto text-center p-8"><p class="text-slate-700 mb-3">ไม่พบเอกสารนี้ หรือไม่มีสิทธิ์เปิด</p><a href="./" class="text-emerald-700 underline">กลับหน้าแรก</a></div>`;
     return;
   }
+  const storeWhere = await store.where();
+  // เก็บจุดบันทึก (เวอร์ชัน) บนเซิร์ฟเวอร์ — โหมดเครื่องเดียวไม่ทำอะไร
+  const snapshot = (note) => store.snapshot(entry.id, st.doc, note)
+    .catch(err => toast('เก็บเวอร์ชันบนเซิร์ฟเวอร์ไม่สำเร็จ: ' + err.message, 'warn'));
 
   const st = {
     doc: entry.doc,
@@ -21,16 +26,26 @@
     refine: null,
   };
   const isMemo = () => st.doc.doc_type === 'internal';
+  // ชนิดตามแบบในระเบียบ (ไม่ใช่หนังสือภายนอก/บันทึกข้อความ) — หน้ากระดาษและช่องต่างกัน
+  const kindKey = () => formKey(st.doc);
+  const isStamp = () => kindKey() === 'stamp_letter';
   const num = (s) => st.doc.use_thai_numerals ? toThai(s) : String(s ?? '');
 
   // ---------- บันทึก ----------
   let saveTimer = null, checkTimer = null;
-  function persist() {
+  // บันทึกทีละครั้ง: ถ้ามีการแก้ระหว่างกำลังบันทึก จะบันทึกซ้ำอีกรอบหลังเสร็จ (เครือข่ายช้าก็ไม่ทับกัน)
+  let saving = false, savePending = false;
+  async function persist() {
+    if (saving) { savePending = true; return; }
+    saving = true;
     entry.doc = st.doc; entry.check = st.check; entry.versions = st.versions.slice(-20);
     entry.title = st.doc.subject;
-    const ok = store.save(entry);
-    st.savedAt = entry.updated;
+    let ok = false;
+    try { ok = await store.save(entry); } catch (err) { st.saveError = err.message; }
+    if (ok) st.savedAt = entry.updated;
+    saving = false;
     renderSaveState(ok ? 'saved' : 'error');
+    if (savePending) { savePending = false; persist(); }
   }
   function scheduleSave() {
     renderSaveState('saving');
@@ -40,8 +55,8 @@
   function renderSaveState(state) {
     const el = $('save-indicator');
     el.innerHTML = state === 'saving' ? '<i class="fa-solid fa-circle-notch fa-spin text-slate-400"></i><span>กำลังบันทึก...</span>'
-      : state === 'error' ? '<i class="fa-solid fa-triangle-exclamation text-rose-600"></i><span>บันทึกไม่สำเร็จ (พื้นที่เต็ม)</span>'
-      : '<i class="fa-solid fa-check text-emerald-600"></i><span>บันทึกอัตโนมัติในเครื่องนี้แล้ว</span>';
+      : state === 'error' ? `<i class="fa-solid fa-triangle-exclamation text-rose-600"></i><span>บันทึกไม่สำเร็จ${st.saveError ? ' — ' + esc(st.saveError) : ' (พื้นที่เต็ม)'}</span>`
+      : `<i class="fa-solid fa-check text-emerald-600"></i><span>บันทึกอัตโนมัติ${storeWhere}แล้ว</span>`;
     $('footer-saved').textContent = st.savedAt ? 'บันทึกล่าสุด' + relTime(st.savedAt) : '';
   }
 
@@ -73,15 +88,18 @@
 
   // ---------- ช่องแก้ไขบนกระดาษ ----------
   // ค่าของแต่ละช่อง: getter/setter ผูกกับฟิลด์ใน GovDocumentSchema
-  const SAL_RE = /^(กราบเรียน|เรียน)\s*/;
+  const SAL_RE = /^(กราบเรียน|เรียน|ถึง)\s*/;
   const FIELDS = {
     doc_number: { get: d => d.doc_number, set: (d, v) => { d.doc_number = v; } },
+    special_edition: { get: d => d.special_edition || '', set: (d, v) => { d.special_edition = v.replace(/^\(?\s*ฉบับที่\s*/, '').replace(/\)$/, '').trim() || null; } },
+    special_year: { get: d => d.special_year || '', set: (d, v) => { d.special_year = v.trim() || null; } },
+    special_title: { get: d => d.special_title || '', set: (d, v) => { d.special_title = v.replace(/\s*\n\s*/g, ' ').trim(); } },
     doc_date: { get: d => d.doc_date, set: (d, v) => { d.doc_date = v.replace(/^วันที่\s*/, ''); } },
     dept_name: { get: d => d.dept_name, set: (d, v) => { d.dept_name = v; } },
     subject: { get: d => d.subject, set: (d, v) => { d.subject = v.replace(/\s*\n\s*/g, ' '); } },
     salutation_to: {
       get: d => (d.salutation || '').replace(SAL_RE, ''),
-      set: (d, v) => { const pre = (d.salutation || '').match(SAL_RE)?.[1] || 'เรียน'; d.salutation = `${pre}  ${v.trim()}`; },
+      set: (d, v) => { const pre = (d.salutation || '').match(SAL_RE)?.[1] || (d.kind === 'stamp_letter' ? 'ถึง' : 'เรียน'); d.salutation = `${pre}  ${v.trim()}`; },
     },
     references: { get: d => (d.references || []).join('\n'), set: (d, v) => { d.references = v.split('\n').map(s => s.trim()).filter(Boolean); } },
     attachments: { get: d => (d.attachments || []).join('\n'), set: (d, v) => { d.attachments = v.split('\n').map(s => s.trim()).filter(Boolean); } },
@@ -101,13 +119,34 @@
     contact_fax: { get: d => d.contact_fax || '', set: (d, v) => { d.contact_fax = v || null; } },
     contact_email: { get: d => d.contact_email || '', set: (d, v) => { d.contact_email = v || null; } },
   };
+  // ผู้ลงนามเพิ่มเติมของบันทึกข้อความ (เช่น หัวหน้ากลุ่มงานลงนามต่อจากผู้เสนอ) — สูงสุด 3 คน
+  for (let i = 0; i < 3; i++) {
+    for (const [suffix, prop] of [['name', 'name'], ['pos', 'position']]) {
+      FIELDS[`co_${suffix}_${i}`] = {
+        get: d => d.co_signers?.[i]?.[prop] || '',
+        set: (d, v) => { if (d.co_signers?.[i]) d.co_signers[i][prop] = v; },
+      };
+    }
+  }
+  // ชื่อหัวข้อบันทึกข้อความแก้ได้อิสระ (ว่าง = ไม่แสดงหัวข้อนั้นในไฟล์ที่ส่งออก)
+  const MEMO_HEADS = { intro: 'ต้นเรื่อง', law: 'ข้อกฎหมาย', facts: 'ข้อเท็จจริง', consideration: 'ข้อพิจารณาและเสนอแนะ' };
+  for (const [k, def] of Object.entries(MEMO_HEADS)) {
+    FIELDS['head_' + k] = {
+      get: d => d.memo_headings?.[k] ?? def,
+      set: (d, v) => { d.memo_headings = { ...(d.memo_headings || {}), [k]: v.trim() }; },
+    };
+  }
   const FIELD_LABEL = {
-    doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'เรียน',
+    doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'ผู้รับ', special_title: 'ชื่อเอกสาร', special_edition: 'ฉบับที่', special_year: 'พ.ศ.',
     references: 'อ้างถึง', attachments: 'สิ่งที่ส่งมาด้วย', paragraph_reason: 'ภาคเหตุ', paragraph_details: 'ภาคข้อเท็จจริง',
     paragraph_purpose: 'ภาคความประสงค์', memo_intro: 'ต้นเรื่อง', memo_law: 'ข้อกฎหมาย', memo_facts: 'ข้อเท็จจริง',
     memo_consideration: 'ข้อพิจารณาและเสนอแนะ', memo_request: 'ภาคความประสงค์', closing: 'คำลงท้าย',
     signatory_name: 'ชื่อผู้ลงนาม', signatory_position: 'ตำแหน่ง', contact_dept: 'ส่วนราชการเจ้าของเรื่อง',
     contact_tel: 'โทร.', contact_fax: 'โทรสาร', contact_email: 'อีเมล',
+    co_name_0: 'ชื่อผู้ลงนามถัดไป', co_pos_0: 'ตำแหน่งผู้ลงนามถัดไป', co_name_1: 'ชื่อผู้ลงนามถัดไป', co_pos_1: 'ตำแหน่งผู้ลงนามถัดไป',
+    co_name_2: 'ชื่อผู้ลงนามถัดไป', co_pos_2: 'ตำแหน่งผู้ลงนามถัดไป',
+    head_intro: 'หัวข้อ (ว่าง = ไม่แสดง)', head_law: 'หัวข้อ (ว่าง = ไม่แสดง)', head_facts: 'หัวข้อ (ว่าง = ไม่แสดง)',
+    head_consideration: 'หัวข้อ (ว่าง = ไม่แสดง)',
   };
   const REFINABLE = new Set(['paragraph_reason', 'paragraph_details', 'paragraph_purpose', 'memo_intro', 'memo_facts', 'memo_consideration', 'memo_request', 'subject']);
 
@@ -122,65 +161,186 @@
     }
     return out + esc(s.slice(last));
   }
-  const field = (key, cls = '', empty = '') =>
-    `<span class="editable ${cls}" data-field="${key}" data-empty="${esc(empty || '[คลิกเพื่อพิมพ์ ' + (FIELD_LABEL[key] || '') + ']')}"></span>`;
+  const field = (key, cls = '', empty = '', tag = 'span') =>
+    `<${tag} class="editable ${cls}" data-field="${key}" data-empty="${esc(empty || '[คลิกเพื่อพิมพ์ ' + (FIELD_LABEL[key] || '') + ']')}"></${tag}>`;
+  // ย่อหน้าเนื้อความ: ทุกบรรทัดเป็นย่อหน้าของตัวเอง ระยะย่อหน้าตามเลขข้อ (๑. 2.5 ซม., ๑.๑ 3.5 ซม., ๑.๑.๑ 4.5 ซม.)
+  // ผู้ใช้ปรับเองได้ด้วย Tab / Shift+Tab (แท็บนำหน้า N ตัว = ระดับ N) — ตรงกับ core/memo_layout.py
   const block = (key, cls = '') =>
-    `<div class="group relative">${field(key, 'block ' + cls)}${REFINABLE.has(key) ? refineBtn(key) : ''}</div>`;
+    `<div class="group relative">${field(key, 'block lines ' + cls, '', 'div')}${REFINABLE.has(key) ? refineBtn(key) : ''}</div>`;
+  const RE_L3 = /^[0-9๐-๙]+\.[0-9๐-๙]+\.[0-9๐-๙]+/, RE_L2 = /^([0-9๐-๙]+\.[0-9๐-๙]+|(มาตรา|ข้อ)\s*[0-9๐-๙]+)/;
+  const MAX_LEVEL = 6;
+  const tabCount = (line) => line.match(/^\t*/)[0].length;
+  // บันทึกข้อความ: "ข้อ ๑"/"มาตรา" ที่ยกมาอยู่ระดับ ๒ (core/memo_layout) — ชนิดอื่นใช้เฉพาะเลข ๑.๑ (core/doc_forms.line_level)
+  const RE_L2_FORM = /^[0-9๐-๙]+\.[0-9๐-๙]+/;
+  const autoLevel = (line) => { const s = line.trim(); return RE_L3.test(s) ? 3 : (isMemo() ? RE_L2 : RE_L2_FORM).test(s) ? 2 : 1; };
+  const lineLevel = (line) => Math.min(tabCount(line), MAX_LEVEL) || autoLevel(line);
+  const indentOf = (line) => `${2.5 + (lineLevel(line) - 1)}cm`;
+  const lineDiv = (line, inner) => `<div class="ln" style="text-indent:${indentOf(line)}">${inner || '<br>'}</div>`;
+  const linesHTML = (text, raw = false) =>
+    String(text ?? '').split('\n').map(ln => lineDiv(ln, raw ? esc(ln) : displayHTML(ln))).join('');
+  function restyleLines(el) {
+    el.querySelectorAll(':scope > div').forEach((div) => { div.style.textIndent = indentOf(div.textContent); });
+  }
+  function caretLine(el) {
+    const sel = getSelection();
+    if (!sel.rangeCount || !el.contains(sel.anchorNode)) return null;
+    let n = sel.anchorNode;
+    while (n && n.parentNode !== el) n = n.parentNode;
+    return n && n.nodeType === 1 ? n : null;
+  }
+  // Tab / Shift+Tab: เลื่อนระดับย่อหน้าของบรรทัดที่เคอร์เซอร์อยู่ (กลับมาเท่าค่าอัตโนมัติ = ลบแท็บออก)
+  function shiftIndent(el, delta) {
+    const div = caretLine(el);
+    if (!div) return;
+    const sel = getSelection(), r = sel.getRangeAt(0).cloneRange();
+    const pre = document.createRange(); pre.selectNodeContents(div); pre.setEnd(r.endContainer, r.endOffset);
+    const caret = pre.toString().length;
+    const text = div.textContent, body = text.replace(/^\t+/, '');
+    const level = Math.max(1, Math.min(MAX_LEVEL, lineLevel(text) + delta));
+    const next = (level === autoLevel(body) ? '' : '\t'.repeat(level)) + body;
+    if (next === text) return;
+    div.textContent = next;
+    const pos = Math.max(0, Math.min(next.length, caret + next.length - text.length));
+    const nr = document.createRange();
+    if (div.firstChild) nr.setStart(div.firstChild, pos); else nr.setStart(div, 0);
+    nr.collapse(true); sel.removeAllRanges(); sel.addRange(nr);
+    restyleLines(el);
+  }
+  let lastLineField = null;
   const refineBtn = (key) => `<button type="button" data-refine="${key}" class="no-print absolute -right-[1.7cm] top-0 w-7 h-7 rounded-full bg-white border border-emerald-200 text-emerald-600 shadow-xs opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-emerald-50 transition font-sans text-xs" title="เกลาสำนวน ${FIELD_LABEL[key]}"><i class="fa-solid fa-wand-magic-sparkles"></i></button>`;
   const labelRow = (label, key, extra = '') =>
     `<div class="flex items-baseline gap-2 ${extra}"><span class="doc-bold shrink-0">${label}</span>${field(key, 'flex-1 dotted-fill')}</div>`;
 
   function stamps() {
     const out = [];
-    if (st.doc.secret !== 'normal') out.push(`<div class="absolute top-[0.9cm] left-0 right-0 text-center text-red-600 font-bold" style="font-size:20pt">${SECRET[st.doc.secret].label}</div>`);
-    if (st.doc.urgency !== 'normal') out.push(`<div class="absolute top-[1.3cm] left-[3cm] text-red-600 font-bold border-2 border-red-600 px-2 leading-tight" style="font-size:22pt">${URGENCY[st.doc.urgency].label}</div>`);
+    // ชั้นความลับ: กลางหน้าทั้งบนและล่าง / ชั้นความเร็ว: แดง 32 pt (ตรงกับไฟล์ที่ส่งออก)
+    if (st.doc.secret !== 'normal') {
+      const label = SECRET[st.doc.secret].label;
+      out.push(`<div class="absolute top-[0.9cm] left-0 right-0 text-center text-red-600 font-bold" style="font-size:20pt">${label}</div>`);
+      out.push(`<div class="absolute bottom-[0.6cm] left-0 right-0 text-center text-red-600 font-bold" style="font-size:20pt">${label}</div>`);
+    }
+    if (st.doc.urgency !== 'normal') out.push(`<div class="absolute top-[1.3cm] left-[3cm] text-red-600 font-bold leading-tight" style="font-size:32pt">${URGENCY[st.doc.urgency].label}</div>`);
     return out.join('');
   }
+  // ผู้ลงนามที่ใช้ตราประทับชื่อ-ตำแหน่ง: กรอบเว้นที่แทนช่องพิมพ์ (ไฟล์ส่งออกเว้นบรรทัดว่างระยะเท่าเดิม)
+  const stampArea = () => '<div class="stamp-area" contenteditable="false"><i class="fa-solid fa-stamp"></i>พื้นที่ประทับตราชื่อ-ตำแหน่ง</div>';
+  // ปุ่มเลือกผู้ลงนามจากรายชื่อของหน่วย (หน้าแรก > ผู้ลงนามของหน่วย) — คลิกชื่อในรายการแล้วเปลี่ยนทันที
+  let rosterEnabled = false;     // โหมด Supabase เท่านั้น (ตั้งค่าในส่วนรายชื่อผู้ลงนามด้านล่าง)
+  const pickBtn = (slot) => !rosterEnabled ? '' : `<button type="button" data-pick-signer="${slot}" class="no-print absolute -right-[1.3cm] top-0 w-7 h-7 rounded-full bg-white border border-slate-200 text-slate-500 shadow-xs opacity-60 group-hover:opacity-100 focus:opacity-100 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 transition font-sans text-xs" title="เลือกผู้ลงนามจากรายชื่อของหน่วย" aria-label="เลือกผู้ลงนามจากรายชื่อของหน่วย"><i class="fa-solid fa-signature"></i></button>`;
+  const signerSlot = (slot, stamp, nameKey, posKey) =>
+    `<div class="relative group">${stamp ? stampArea() : `<div>${field(nameKey)}</div><div>${field(posKey, 'whitespace-pre-line')}</div>`}${pickBtn(slot)}</div>`;
   function signature() {
+    const d = st.doc;
     return `<div class="mt-[1.2cm] ml-auto w-[9cm] text-center space-y-0.5">
       ${isMemo() ? '' : `<div>${field('closing')}</div><div class="h-[1.6cm]"></div>`}
-      <div>${field('signatory_name')}</div>
-      <div>${field('signatory_position')}</div>
+      ${signerSlot('main', d.signatory_stamp, 'signatory_name', 'signatory_position')}
+      ${isMemo() ? (d.co_signers || []).slice(0, 3).map((co, i) =>
+        `<div class="h-[1.2cm]"></div>${signerSlot(String(i), co.stamp, 'co_name_' + i, 'co_pos_' + i)}`).join('') : ''}
     </div>`;
   }
 
+  // ส่วนราชการเจ้าของเรื่อง (ท้ายหนังสือภายนอก/หนังสือประทับตรา)
+  const contactHTML = () => `
+      <div class="mt-[1.2cm] text-[15pt] leading-tight">
+        <div>${field('contact_dept')}</div>
+        <div class="flex gap-1"><span>โทร.</span>${field('contact_tel', 'flex-1')}</div>
+        <div class="flex gap-1"><span>โทรสาร</span>${field('contact_fax', 'flex-1')}</div>
+        <div class="flex gap-1"><span>ไปรษณีย์อิเล็กทรอนิกส์</span>${field('contact_email', 'flex-1')}</div>
+      </div>`;
+  // เรื่อง: ชนิดที่ไม่พิมพ์ "เรื่อง" บนหนังสือ (หนังสือประทับตรา) ยังต้องมีไว้ลงทะเบียนส่ง — แสดงนอกกระดาษเวลาพิมพ์
+  const registerSubject = () => `
+      <div class="no-print -mt-[1.2cm] mb-[0.6cm] flex items-baseline gap-2 text-slate-400 text-[13pt]" title="ไม่พิมพ์ในหนังสือ ใช้ลงทะเบียนส่ง">
+        <span class="shrink-0 font-sans text-[10pt]"><i class="fa-solid fa-book mr-1"></i>เรื่อง (ลงทะเบียน ไม่พิมพ์)</span>${field('subject', 'flex-1 text-slate-600')}
+      </div>`;
+
+  // แบบหัวกลาง (คำสั่ง/ประกาศ/ระเบียบ/ข้อบังคับ) — ค่าเดียวกับ core/doc_forms.FORMAL
+  const FORMAL_UI = {
+    order: { number: true, subjectLabel: 'เรื่อง', dateLabel: 'สั่ง ณ วันที่' },
+    announcement: { number: false, subjectLabel: 'เรื่อง', dateLabel: 'ประกาศ ณ วันที่' },
+    regulation: { number: false, subjectLabel: 'ว่าด้วย', dateLabel: 'ประกาศ ณ วันที่', yearLine: true },
+    bylaw: { number: false, subjectLabel: 'ว่าด้วย', dateLabel: 'ประกาศ ณ วันที่', yearLine: true },
+  };
+  const isFormal = () => !!FORMAL_UI[kindKey()];
+  function formalSheetHTML() {
+    const ui = FORMAL_UI[kindKey()];
+    return `${stamps()}
+      <div class="flex justify-center"><img src="/assets/garuda_krut.png" alt="ตราครุฑ" class="garuda-ext"></div>
+      <div class="mt-[6pt] text-center">
+        <div>${field('special_title', 'doc-bold formal-title')}</div>
+        ${ui.number ? `<div><span>ที่</span> ${field('doc_number', 'formal-center')}</div>` : ''}
+        <div><span>${ui.subjectLabel}</span> ${field('subject', 'formal-center')}</div>
+        ${ui.yearLine ? `<div>(ฉบับที่ ${field('special_edition', 'formal-center', '… ว่าง = ฉบับแรก ไม่พิมพ์บรรทัดนี้')})</div>
+        <div>${field('special_year', 'formal-center')}</div>` : ''}
+      </div>
+      <div class="mx-auto mt-1 mb-2 w-[4cm] border-b border-slate-800" aria-hidden="true"></div>
+      <div class="space-y-2">
+        ${block('paragraph_reason', 'justify-thai')}
+        ${d_details() ? block('paragraph_details', 'justify-thai') : ''}
+        ${block('paragraph_purpose', 'justify-thai')}
+      </div>
+      <div class="ml-[5cm] mt-[0.9cm] flex items-baseline gap-2"><span class="shrink-0">${ui.dateLabel}</span>${field('doc_date', 'flex-1')}</div>
+      <div class="ml-[6cm] mt-[1.9cm] text-center space-y-0.5">${signerSlot('main', st.doc.signatory_stamp, 'signatory_name', 'signatory_position')}</div>`;
+  }
+
+  // หนังสือประทับตรา (แบบที่ ๓): ที่ · ถึง · ข้อความ · ส่วนราชการที่ส่ง · ตรา · วันที่ · ส่วนราชการเจ้าของเรื่อง
+  function stampSheetHTML() {
+    return `${stamps()}
+      ${registerSubject()}
+      <div class="flex justify-center mb-3"><img src="/assets/garuda_krut.png" alt="ตราครุฑ" class="garuda-ext"></div>
+      <div class="flex items-baseline gap-2 w-[6.5cm] -mt-[1.6cm]"><span class="doc-bold">ที่</span>${field('doc_number', 'flex-1')}</div>
+      <div class="mt-3 flex items-baseline gap-2"><span class="doc-bold shrink-0">ถึง</span>${field('salutation_to', 'flex-1')}</div>
+      <div class="mt-2 space-y-2">
+        ${block('paragraph_reason', 'justify-thai')}
+        ${d_details() ? block('paragraph_details', 'justify-thai') : ''}
+        ${block('paragraph_purpose', 'justify-thai')}
+      </div>
+      <div class="ml-[8cm] mt-[0.9cm]">${field('dept_name', 'block')}</div>
+      <div class="ml-[8cm] my-1 h-[2cm] w-[6cm] stamp-area stamp-seal" contenteditable="false"><i class="fa-solid fa-stamp"></i>ตราชื่อส่วนราชการ (หมึกแดง) + ลงชื่อย่อกำกับตรา</div>
+      <div class="ml-[8cm]">${field('doc_date', 'block')}</div>
+      ${contactHTML()}`;
+  }
+  const d_details = () => st.doc.paragraph_details != null;
+
   function sheetHTML() {
     const d = st.doc;
+    if (isStamp()) return stampSheetHTML();
+    if (isFormal()) return formalSheetHTML();
     const refs = d.references != null, atts = d.attachments != null;
     if (isMemo()) {
       const law = d.memo_law != null;
-      const sec = (key, title) => `
-        <div class="mt-3">
-          <div><span class="doc-bold underline underline-offset-4">${title}</span></div>
+      // หัวข้อ: บรรทัดเดี่ยว เริ่มตรงกับเนื้อความ (2.5 ซม.) เว้น 6 pt ทุกหัวข้อรวมต้นเรื่อง — แก้ชื่อได้
+      const sec = (key) => `
+        <div class="gap-6pt">
+          <div class="indent-25">${field('head_' + key.replace('memo_', ''), 'doc-bold underline underline-offset-4 memo-head')}</div>
           ${block(key, 'indent-25 justify-thai')}
         </div>`;
       return `${stamps()}
         <div class="relative flex items-end h-[1.5cm] mb-2">
-          <img src="/assets/garuda.svg" alt="ตราครุฑ" class="garuda-int absolute left-0 bottom-0">
+          <img src="/assets/garuda_krut.png" alt="ตราครุฑ" class="garuda-int absolute left-0 bottom-0">
           <div class="memo-title w-full text-center">บันทึกข้อความ</div>
         </div>
         <div class="space-y-1">
-          ${labelRow('ส่วนราชการ', 'dept_name')}
+          <div class="flex items-baseline gap-2"><span class="doc-bold shrink-0">ส่วนราชการ</span>${field('dept_name', 'flex-1 dotted-fill one-line min-w-0 overflow-hidden whitespace-nowrap')}</div>
           <div class="flex items-baseline gap-4">
             <div class="flex items-baseline gap-2 flex-1 min-w-0"><span class="doc-bold">ที่</span>${field('doc_number', 'flex-1 dotted-fill')}</div>
             <div class="flex items-baseline gap-2 flex-1 min-w-0"><span class="doc-bold">วันที่</span>${field('doc_date', 'flex-1 dotted-fill')}</div>
           </div>
-          <div class="flex items-baseline gap-2"><span class="doc-bold shrink-0">เรื่อง</span><div class="group relative flex-1">${field('subject', 'block dotted-fill')}</div></div>
+          <div class="flex items-baseline gap-2"><span class="doc-bold shrink-0">เรื่อง</span><div class="group relative flex-1">${field('subject', 'block first-line-fill')}</div></div>
         </div>
-        <div class="mt-3 flex items-baseline gap-2"><span class="doc-bold">${esc((d.salutation || '').match(SAL_RE)?.[1] || 'เรียน')}</span>${field('salutation_to', 'flex-1')}</div>
+        <div class="gap-6pt flex items-baseline gap-2"><span class="doc-bold">${esc((d.salutation || '').match(SAL_RE)?.[1] || 'เรียน')}</span>${field('salutation_to', 'flex-1')}</div>
         ${refs ? `<div class="mt-1 flex items-baseline gap-2"><span class="doc-bold shrink-0">อ้างถึง</span>${field('references', 'flex-1')}</div>` : ''}
         ${atts ? `<div class="mt-1 flex items-baseline gap-2"><span class="doc-bold shrink-0">สิ่งที่ส่งมาด้วย</span>${field('attachments', 'flex-1')}</div>` : ''}
-        <div class="mt-1">
-          ${sec('memo_intro', 'ต้นเรื่อง')}
-          ${law ? sec('memo_law', 'ข้อกฎหมาย') : ''}
-          ${sec('memo_facts', 'ข้อเท็จจริง')}
-          ${sec('memo_consideration', 'ข้อพิจารณาและเสนอแนะ')}
-          <div class="mt-3">${block('memo_request', 'indent-25 justify-thai')}</div>
+        <div>
+          ${sec('memo_intro')}
+          ${law ? sec('memo_law') : ''}
+          ${sec('memo_facts')}
+          ${sec('memo_consideration')}
+          <div class="gap-6pt">${block('memo_request', 'indent-25 justify-thai')}</div>
         </div>
         ${signature()}`;
     }
     return `${stamps()}
-      <div class="flex justify-center mb-3"><img src="/assets/garuda.svg" alt="ตราครุฑ" class="garuda-ext"></div>
+      <div class="flex justify-center mb-3"><img src="/assets/garuda_krut.png" alt="ตราครุฑ" class="garuda-ext"></div>
       <div class="flex items-start justify-between gap-6 -mt-[1.6cm]">
         <div class="flex items-baseline gap-2 w-[6.5cm]"><span class="doc-bold">ที่</span>${field('doc_number', 'flex-1')}</div>
         <div class="w-[6.5cm]">${field('dept_name', 'block')}</div>
@@ -196,23 +356,35 @@
         ${block('paragraph_purpose', 'indent-25 justify-thai')}
       </div>
       ${signature()}
-      <div class="mt-[1.2cm] text-[15pt] leading-tight">
-        <div>${field('contact_dept')}</div>
-        <div class="flex gap-1"><span>โทร.</span>${field('contact_tel', 'flex-1')}</div>
-        <div class="flex gap-1"><span>โทรสาร</span>${field('contact_fax', 'flex-1')}</div>
-        <div class="flex gap-1"><span>ไปรษณีย์อิเล็กทรอนิกส์</span>${field('contact_email', 'flex-1')}</div>
-      </div>`;
+      ${contactHTML()}`;
   }
 
   function fillFields() {
     $('sheet').querySelectorAll('[data-field]').forEach((el) => {
       if (el === document.activeElement) return;
-      el.innerHTML = displayHTML(FIELDS[el.dataset.field].get(st.doc));
+      const v = FIELDS[el.dataset.field].get(st.doc);
+      el.innerHTML = el.classList.contains('lines') ? linesHTML(v) : displayHTML(v);
       el.contentEditable = st.editOn ? 'true' : 'false';
       el.spellcheck = false;
       el.setAttribute('role', 'textbox');
       el.setAttribute('aria-label', FIELD_LABEL[el.dataset.field] || el.dataset.field);
       if (el.classList.contains('block')) el.setAttribute('aria-multiline', 'true');
+    });
+    fitOneLine();
+  }
+
+  // "ส่วนราชการ" อยู่บรรทัดเดียวเสมอ: ยาวเกินให้บีบแนวนอนแบบเดียวกับไฟล์ PDF/Word
+  function fitOneLine() {
+    $('sheet').querySelectorAll('.one-line').forEach((el) => {
+      el.style.whiteSpace = 'nowrap'; el.style.overflow = 'hidden'; el.style.minWidth = '0';
+      el.style.transform = ''; el.style.width = ''; el.style.flex = '';
+      const room = el.clientWidth, need = el.scrollWidth;
+      if (need > room + 1) {
+        el.style.flex = 'none';
+        el.style.width = need + 'px';
+        el.style.transformOrigin = 'left';
+        el.style.transform = `scaleX(${room / need})`;
+      }
     });
   }
 
@@ -221,16 +393,27 @@
     const el = e.target.closest('[data-field]');
     if (!el || !st.editOn) return;
     // ระหว่างพิมพ์ แสดงข้อความดิบ (ไม่มีชิป) เพื่อให้แก้ placeholder ได้ตรง ๆ
-    el.textContent = FIELDS[el.dataset.field].get(st.doc);
+    const raw = FIELDS[el.dataset.field].get(st.doc);
+    if (el.classList.contains('lines')) { el.innerHTML = linesHTML(raw, true); lastLineField = el; } else el.textContent = raw;
     // ถ้าทั้งช่องเป็น placeholder ให้เลือกทั้งหมดเพื่อพิมพ์ทับได้ทันที
-    if (hasPlaceholder(el.textContent)) {
+    // (ช่องที่มีข้อความอื่นด้วย ไม่เลือกให้ — กันกดปุ่มแล้ว placeholder กลางย่อหน้าหายโดยไม่ตั้งใจ)
+    const onlyPlaceholder = hasPlaceholder(el.textContent) && !el.textContent.replace(PH_RE, '').replace(/[()\s]/g, '');
+    if (onlyPlaceholder) {
       const m = el.textContent.match(PH_RE);
-      const node = el.firstChild;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node && m && !node.data.includes(m[0])) node = walker.nextNode();
       if (node && m) {
-        const start = el.textContent.indexOf(m[0]);
+        const start = node.data.indexOf(m[0]);
         const r = document.createRange(); r.setStart(node, start); r.setEnd(node, start + m[0].length);
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
       }
+    }
+    // คลิกโดนชิป placeholder กลางย่อหน้า: เคอร์เซอร์ยังค้างที่ช่องเดิม (เขียนข้อความใหม่แทนชิปแล้ว) — วางไว้ท้ายช่องนี้
+    const sel = getSelection();
+    if (!sel.rangeCount || !el.contains(sel.anchorNode)) {
+      const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
     }
   });
   sheet.addEventListener('focusout', (e) => {
@@ -241,37 +424,54 @@
     if (value !== FIELDS[key].get(st.doc)) {
       commit(d => FIELDS[key].set(d, value), { rerender: false });
     }
-    el.innerHTML = displayHTML(FIELDS[key].get(st.doc));
+    const shown = FIELDS[key].get(st.doc);
+    el.innerHTML = el.classList.contains('lines') ? linesHTML(shown) : displayHTML(shown);
+    if (el.classList.contains('one-line')) fitOneLine();
+    renderTodo();
   });
   sheet.addEventListener('keydown', (e) => {
     const el = e.target.closest('[data-field]');
     if (!el) return;
-    if (e.key === 'Enter' && !el.classList.contains('block') && !['references', 'attachments'].includes(el.dataset.field)) { e.preventDefault(); el.blur(); }
+    const multiLine = ['references', 'attachments', 'signatory_position'].includes(el.dataset.field) || /^co_pos_/.test(el.dataset.field);
+    if (e.key === 'Enter' && !el.classList.contains('block') && !multiLine) { e.preventDefault(); el.blur(); }
     if (e.key === 'Escape') { el.blur(); }
+    if (e.key === 'Tab' && el.classList.contains('lines')) { e.preventDefault(); shiftIndent(el, e.shiftKey ? -1 : 1); }
   });
+  sheet.addEventListener('input', (e) => {
+    const el = e.target.closest('.lines');
+    if (el) restyleLines(el);
+  });
+  for (const [id, delta] of [['btn-indent', 1], ['btn-outdent', -1]]) {
+    $(id).addEventListener('mousedown', (e) => e.preventDefault());   // คงเคอร์เซอร์ไว้ในย่อหน้า
+    $(id).addEventListener('click', () => {
+      if (lastLineField && document.activeElement === lastLineField) shiftIndent(lastLineField, delta);
+      else toast('คลิกในย่อหน้าที่ต้องการก่อน แล้วกดปุ่มนี้ (หรือกด Tab / Shift+Tab)');
+    });
+  }
   // วางข้อความเป็น plain text เท่านั้น
   sheet.addEventListener('paste', (e) => {
     if (!e.target.closest('[data-field]')) return;
     e.preventDefault();
-    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+    const text = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
+    if (!e.target.closest('.lines')) { document.execCommand('insertText', false, text); return; }
+    text.split('\n').forEach((part, i) => {
+      if (i) document.execCommand('insertParagraph');
+      if (part) document.execCommand('insertText', false, part);
+    });
   });
   sheet.addEventListener('click', (e) => {
     const b = e.target.closest('[data-refine]');
     if (b) openRefine(b.dataset.refine, b);
   });
 
-  // ---------- โหมดแก้ไข ----------
-  function renderEditMode() {
-    const b = $('btn-edit-mode');
-    b.setAttribute('aria-pressed', String(st.editOn));
-    b.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition ' +
-      (st.editOn ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50');
-    b.innerHTML = st.editOn
-      ? '<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span></span><i class="fa-solid fa-pen"></i><span class="hidden md:inline">โหมดพิมพ์บนกระดาษ (เปิด)</span>'
-      : '<i class="fa-regular fa-eye"></i><span class="hidden md:inline">โหมดอ่านอย่างเดียว</span>';
-    sheet.classList.toggle('edit-on', st.editOn);
+  // ---------- ตั้งค่าเอกสาร (ฟอนต์ / เลขไทย / หัวข้อเสริม) ----------
+  // กระดาษแก้ไขได้เสมอ (ไม่มีโหมดอ่านอย่างเดียวแล้ว) — ช่องพิมพ์ทั้งหมดอยู่บนกระดาษ
+  function toggleSettings(open = $('settings-menu').hidden) {
+    $('settings-menu').hidden = !open;
+    $('btn-settings').setAttribute('aria-expanded', String(open));
   }
-  $('btn-edit-mode').addEventListener('click', () => { st.editOn = !st.editOn; renderEditMode(); fillFields(); });
+  $('btn-settings').addEventListener('click', (e) => { e.stopPropagation(); toggleSettings(); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#settings-menu, #btn-settings')) toggleSettings(false); });
 
   // ---------- หัวข้อเสริม ----------
   const OPTIONAL = [
@@ -280,16 +480,33 @@
     { key: 'memo_law', label: 'ข้อกฎหมาย', memoOnly: true, placeholder: '[✏️ ระบุข้อกฎหมายจากคลังที่ยืนยันแล้ว]' },
   ];
   function renderToggles() {
-    const items = OPTIONAL.filter(o => !o.memoOnly || isMemo());
-    $('section-toggles').innerHTML = items.map((o, i) => `
-      ${i ? '<span class="text-slate-300">|</span>' : ''}
-      <label class="inline-flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-slate-900">
+    // หนังสือประทับตราไม่มีอ้างถึง/สิ่งที่ส่งมาด้วยในแบบ — อ้างในข้อความแทน
+    const items = isStamp() || isFormal() ? [] : OPTIONAL.filter(o => !o.memoOnly || isMemo());
+    $('section-toggles').innerHTML = items.map((o) => `
+      <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
         <input type="checkbox" data-opt="${o.key}" ${st.doc[o.key] != null ? 'checked' : ''} class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">
-        <span class="text-[11px] font-medium">${o.label}</span>
+        <span>${o.label}</span>
       </label>`).join('');
     const on = items.filter(o => st.doc[o.key] != null).length;
-    $('section-count').textContent = `${toThai(on)}/${toThai(items.length)} หัวข้อเปิดใช้งาน`;
+    $('section-count').textContent = `เปิด ${toThai(on)}/${toThai(items.length)}`;
+    // ผู้ลงนามแต่ละคน: ใช้ตราประทับชื่อ-ตำแหน่งหรือไม่ (ชื่อที่แสดง = ตำแหน่ง ถ้ายังไม่มีใช้ลำดับ)
+    const signers = isStamp() ? [] : [{ key: 'main', position: st.doc.signatory_position, stamp: !!st.doc.signatory_stamp },
+      ...(isMemo() ? (st.doc.co_signers || []).slice(0, 3).map((c, i) => ({ key: String(i), position: c.position, stamp: !!c.stamp })) : [])];
+    $('signer-toggles').innerHTML = signers.map((sg, i) => `
+      <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
+        <input type="checkbox" data-stamp="${sg.key}" ${sg.stamp ? 'checked' : ''} class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">
+        <span class="truncate">${esc(String(sg.position || '').replace(PH_RE, '').trim() || 'ผู้ลงนามคนที่ ' + toThai(i + 1))}</span>
+      </label>`).join('');
   }
+  $('signer-toggles').addEventListener('change', (e) => {
+    const key = e.target.dataset.stamp; if (!key) return;
+    const on = e.target.checked;
+    commit((d) => {
+      if (key === 'main') d.signatory_stamp = on;
+      else if (d.co_signers?.[+key]) d.co_signers[+key].stamp = on;
+    });
+    runCheck();
+  });
   $('section-toggles').addEventListener('change', (e) => {
     const key = e.target.dataset.opt; if (!key) return;
     const opt = OPTIONAL.find(o => o.key === key);
@@ -299,49 +516,201 @@
     });
   });
   $('toggle-thai-num').addEventListener('change', (e) => commit(d => { d.use_thai_numerals = e.target.checked; }));
+  $('font-select').addEventListener('change', (e) => commit(d => { d.font_family = e.target.value; }));
+  const FONT_LABEL = { it9: 'TH SarabunIT๙', psk: 'TH SarabunPSK', sarabun_new: 'TH Sarabun New' };
+
+  // ---------- หน่วยออกหนังสือ / สายการเสนอ (บันทึกข้อความ) ----------
+  // ค่าที่เปลี่ยนตามหน่วย: ส่วนราชการ เลขที่ วันที่ ผู้ประสาน ผู้รับ ผู้ลงนาม ผู้พิจารณา และภาคความประสงค์มาตรฐาน
+  const UNIT_FIELDS = ['dept_name', 'doc_number', 'doc_date', 'contact_dept', 'contact_tel', 'contact_fax',
+    'salutation', 'signatory_name', 'signatory_position', 'co_signers', 'memo_consideration', 'memo_request', 'paragraph_purpose'];
+  let units = [];
+  const unitIndex = (key) => units.findIndex(u => u.key === key);
+  const currentUnitKey = () => entry.unitKey || units.find(u => u.is_default)?.key || units[0]?.key;
+  // ทุกฉบับในสายการเสนอเดียวกัน (เรียงจากขั้นแรก) — ฉบับเดี่ยวคือสายที่มีฉบับเดียว
+  const chainIds = () => entry.chainIds?.length ? entry.chainIds : [entry.id];
+  function renderChainButtons() {
+    const memo = isMemo() && units.length > 0;
+    const next = memo ? units[unitIndex(currentUnitKey()) + 1] : null;
+    $('btn-next-level').hidden = !next;
+    if (next) {
+      $('next-level-label').textContent = 'เสนอขั้นถัดไป';
+      $('btn-next-level').title = `สร้างบันทึกฉบับเสนอ${next.label}จากฉบับนี้ (แก้ไขแยกได้)`;
+      $('btn-next-level').setAttribute('aria-label', 'เสนอขั้นถัดไป: ' + next.label);
+    }
+    $('btn-chain-pdf').hidden = !(memo && chainIds().length > 1);
+    fitToolbar();
+  }
+  // ---------- รายชื่อผู้ลงนามของหน่วย (ใช้ร่วมกันทั้งหน่วยงาน) ----------
+  let roster = null;      // null = ยังไม่โหลด / โหมดเครื่องเดียว
+  rosterEnabled = (await window.GovDoc.auth.serverMode()) === true;
+  const signerMenu = document.createElement('div');
+  signerMenu.id = 'signer-menu';
+  signerMenu.hidden = true;
+  signerMenu.setAttribute('role', 'menu');
+  signerMenu.className = 'fixed z-50 w-72 max-h-80 overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg p-1.5 text-xs font-sans';
+  document.body.appendChild(signerMenu);
+  async function loadRoster() {
+    if (roster) return roster;
+    roster = await api.signers.list();
+    return roster;
+  }
+  function slotOf(d, slot) {
+    return slot === 'main' ? { name: d.signatory_name, position: d.signatory_position } : d.co_signers?.[+slot];
+  }
+  async function openSignerMenu(btn) {
+    const slot = btn.dataset.pickSigner;
+    const r = btn.getBoundingClientRect();
+    signerMenu.style.top = Math.min(r.bottom + 4, innerHeight - 330) + 'px';
+    signerMenu.style.left = Math.max(8, Math.min(r.right - 288, innerWidth - 296)) + 'px';
+    signerMenu.dataset.slot = slot;
+    signerMenu.innerHTML = '<p class="px-2 py-1.5 text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลด...</p>';
+    signerMenu.hidden = false;
+    let list;
+    try { list = await loadRoster(); }
+    catch (err) { signerMenu.innerHTML = `<p class="px-2 py-1.5 text-rose-700">${esc(err.message)}</p>`; return; }
+    const cur = slotOf(st.doc, slot) || {};
+    const curName = String(cur.name || '').replace(/[()]/g, '').trim();
+    signerMenu.innerHTML = `<div class="px-2 pt-1 pb-1.5 text-[11px] font-semibold text-slate-400">เลือกผู้ลงนาม</div>` + (list.length ? list.map((p, i) => `
+      <button type="button" role="menuitem" data-signer-index="${i}" class="w-full text-left flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-emerald-50 ${p.full_name === curName ? 'bg-emerald-50/70' : ''}">
+        <i class="fa-solid ${p.full_name === curName ? 'fa-check text-emerald-600' : 'fa-user text-slate-300'} mt-0.5 w-3"></i>
+        <span class="min-w-0 flex-1"><span class="block font-medium text-slate-800 font-body text-sm">${esc(p.full_name)}${p.is_default ? ' <span class="text-[10px] text-emerald-700 font-sans">(เริ่มต้น)</span>' : ''}</span>
+          <span class="block whitespace-pre-line text-slate-500 font-body leading-snug">${esc(p.position || '')}</span>
+          ${p.stamp ? '<span class="text-[10px] text-indigo-700"><i class="fa-solid fa-stamp mr-0.5"></i>ใช้ตราประทับ</span>' : ''}</span>
+      </button>`).join('') : '<p class="px-2 py-1.5 text-slate-500 leading-relaxed">ยังไม่มีรายชื่อผู้ลงนามของหน่วย — เพิ่มได้ที่หน้าแรก เมนู <b>ผู้ลงนามของหน่วย</b></p>');
+    signerMenu.querySelector('[data-signer-index]')?.focus();
+  }
+  function applySigner(slot, p) {
+    commit((d) => {
+      const name = `(${p.full_name})`, position = p.position || '';
+      if (slot === 'main') { d.signatory_name = name; d.signatory_position = position; d.signatory_stamp = !!p.stamp; }
+      else if (d.co_signers?.[+slot]) Object.assign(d.co_signers[+slot], { name, position, stamp: !!p.stamp });
+    });
+    runCheck();
+    toast('เปลี่ยนผู้ลงนามเป็น ' + p.full_name);
+  }
+  sheet.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pick-signer]');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!signerMenu.hidden && signerMenu.dataset.slot === b.dataset.pickSigner) { signerMenu.hidden = true; return; }
+    openSignerMenu(b);
+  });
+  signerMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-signer-index]');
+    if (!b || !roster) return;
+    signerMenu.hidden = true;
+    applySigner(signerMenu.dataset.slot, roster[+b.dataset.signerIndex]);
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#signer-menu, [data-pick-signer]')) signerMenu.hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') signerMenu.hidden = true; });
+  $('doc-viewport').addEventListener('scroll', () => { signerMenu.hidden = true; }, { passive: true });
+
+  api.units().then((list) => {
+    units = list;
+    const current = currentUnitKey();
+    $('unit-select').innerHTML = units.map(u =>
+      `<option value="${esc(u.key)}" ${u.key === current ? 'selected' : ''}>${esc(u.label)}</option>`).join('');
+    renderChainButtons();
+  }).catch(() => { $('unit-wrap').hidden = true; });
+  $('unit-select').addEventListener('change', async (e) => {
+    const key = e.target.value;
+    try {
+      const updated = await api.applyUnit(st.doc, key);
+      commit(d => { UNIT_FIELDS.forEach(f => { d[f] = updated[f]; }); });
+      entry.unitKey = key;
+      renderChainButtons();
+      toast('เปลี่ยนส่วนราชการ เลขที่ ผู้รับ และผู้ลงนามตามหน่วยแล้ว');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // สร้างฉบับเสนอขั้นถัดไป: คัดลอกเนื้อหา แล้วเปลี่ยนหัวหนังสือ ผู้รับ ผู้ลงนาม ตามหน่วยขั้นถัดไป
+  $('btn-next-level').addEventListener('click', async (e) => {
+    const next = units[unitIndex(currentUnitKey()) + 1];
+    if (!next) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await persist();
+      const doc = await api.applyUnit(st.doc, next.key);
+      doc.edit_status = 'editing';
+      const ids = chainIds();
+      const child = { title: doc.subject, doc, unitKey: next.key, context: entry.context, prompt: entry.prompt, chainIds: ids,
+        sourceName: entry.sourceName || null, sourceFileId: entry.sourceFileId || null };
+      const newId = await store.create(child);
+      child.chainIds = [...ids, newId];
+      await store.save(child);
+      entry.chainIds = child.chainIds;
+      await persist();
+      // ฉบับก่อนหน้าในสายรู้จักฉบับใหม่ด้วย (กดชุดเสนอจากฉบับไหนก็ได้ครบ)
+      for (const cid of ids.filter(x => x !== entry.id)) {
+        const m = await store.get(cid);
+        if (m) { m.chainIds = child.chainIds; await store.save(m); }
+      }
+      location.href = `editor.html?id=${encodeURIComponent(newId)}`;
+    } catch (err) { toast('สร้างฉบับขั้นถัดไปไม่สำเร็จ: ' + err.message, 'error'); btn.disabled = false; }
+  });
+
+  // ชุดเสนอ PDF: ฉบับขั้นสูงสุดอยู่หน้าแรก ไล่ลงไปถึงฉบับต้นเรื่อง (แบบแฟ้มเสนอจริง)
+  $('btn-chain-pdf').addEventListener('click', async (e) => {
+    const btn = e.currentTarget, html = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>กำลังรวม...</span>';
+    try {
+      await persist();
+      const members = [];
+      for (const cid of chainIds()) {
+        const m = cid === entry.id ? { ...entry, doc: st.doc } : await store.get(cid);
+        if (m?.doc) members.push(m);
+      }
+      members.sort((a, b) => unitIndex(b.unitKey) - unitIndex(a.unitKey));
+      const blob = await api.exportPdfBundle(members.map(m => m.doc));
+      download(blob, `ชุดเสนอ_${safeName()}.pdf`);
+    } catch (err) { toast('รวม PDF ไม่สำเร็จ: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = html; }
+  });
 
   // ---------- สถานะ / ผลตรวจ ----------
   async function runCheck() {
     try {
-      st.check = await api.check(st.doc);
-      renderChrome(); renderChecks();
+      const source = sourceText();
+      const [check, facts] = await Promise.all([
+        api.check(st.doc),
+        source ? api.factCheck(st.doc, source).catch(() => null) : null,
+      ]);
+      check.facts = facts ? visibleFacts(facts.issues) : (st.check?.facts || []);
+      st.check = check;
+      renderChrome(); renderChecks(); renderTodo();
       persist();
     } catch (err) { /* ตรวจไม่สำเร็จ: คงผลเดิม */ }
   }
+  // ต้นเรื่องสำหรับตรวจข้อเท็จจริง: ข้อความที่อ่านจากไฟล์ + คำสั่งที่ผู้ใช้พิมพ์ (ผู้ใช้ให้ข้อมูลเพิ่มเองได้)
+  const sourceText = () => [entry.context?.raw_text, entry.prompt].filter(Boolean).join('\n');
+  // ข้อเท็จจริงที่ผู้ใช้กด "ถูกต้องแล้ว" ไม่ต้องเตือนซ้ำ (เก็บกับเอกสาร)
+  const factKey = (f) => `${f.field}|${f.kind}|${f.text}`;
+  const visibleFacts = (list) => (list || []).filter(f => !(entry.factOk || []).includes(factKey(f)));
   function counts() {
     const ph = st.check?.placeholders?.length ?? 0;
     const issues = st.check?.lint?.issues || [];
     return { ph, errors: issues.filter(i => i.severity === 'error').length, warnings: issues.filter(i => i.severity !== 'error').length };
   }
   function renderChrome() {
-    const d = st.doc, c = counts();
-    $('type-label').textContent = DOC_TYPE_LABEL[d.doc_type] || 'เอกสาร';
+    const d = st.doc;
+    $('type-label').textContent = DOC_TYPE_LABEL[kindKey()] || 'เอกสาร';
+    $('type-select').value = kindKey();
     $('doc-title').textContent = d.subject || 'ไม่มีชื่อเรื่อง';
     $('doc-title').title = d.subject || '';
-    document.title = `${d.subject || 'เอกสาร'} — GovDoc Studio`;
-    const chip = $('status-chip');
-    if (c.ph === 0 && c.errors === 0) {
-      chip.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border text-emerald-700 bg-emerald-50 border-emerald-300';
-      chip.innerHTML = '<i class="fa-solid fa-check text-[9px]"></i>ร่างสมบูรณ์';
-    } else {
-      chip.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border text-amber-800 bg-amber-50 border-amber-300';
-      chip.innerHTML = `<i class="fa-solid fa-pen text-[9px]"></i>ต้องระบุ ${toThai(c.ph)} จุด`;
-    }
-    $('left-status').textContent = c.ph ? `เหลือ ${toThai(c.ph)} จุดที่ต้องระบุ` : 'เอกสารพร้อมตรวจ';
-    $('left-status').className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs border ' + (c.ph ? 'text-amber-800 bg-amber-50 border-amber-300' : 'text-emerald-700 bg-emerald-50 border-emerald-300');
-    const lint = $('btn-lint');
-    const n = c.errors + c.warnings;
-    lint.innerHTML = n === 0
-      ? '<i class="fa-solid fa-circle-check text-brand-600"></i><span class="font-medium text-emerald-800">ตรวจระเบียบผ่าน</span>'
-      : `<i class="fa-solid fa-triangle-exclamation ${c.errors ? 'text-rose-600' : 'text-amber-600'}"></i><span class="font-medium ${c.errors ? 'text-rose-700' : 'text-amber-800'}">พบข้อควรแก้ ${toThai(n)} จุด</span>`;
-    $('checks-count').textContent = toThai(c.ph + n);
+    document.title = `${d.subject || 'เอกสาร'} — Thai GovDoc AI Studio`;
     $('btn-undo').disabled = !st.undo.length; $('btn-redo').disabled = !st.redo.length;
     $('toggle-thai-num').checked = !!d.use_thai_numerals;
+    $('font-select').value = d.font_family || 'it9';
+    $('sheet').dataset.font = d.font_family || 'it9';
+    $('sheet').dataset.type = isMemo() ? 'internal' : 'external';
+    $('unit-wrap').hidden = !isMemo();
     $('version-count').textContent = toThai(st.versions.length + 1);
     const words = [d.subject, d.paragraph_reason, d.paragraph_details, d.paragraph_purpose, d.memo_law].filter(Boolean).join(' ');
     $('footer-words').textContent = `ความยาว ${toThai(words.replace(/\s+/g, '').length)} ตัวอักษร`;
-    $('footer-format').textContent = `A4 · TH Sarabun New ๑๖ pt · ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`;
+    $('footer-format').textContent = `${DOC_TYPE_LABEL[kindKey()]} · A4 · ${FONT_LABEL[d.font_family || 'it9']} ๑๖ pt · ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`;
     renderSaveState('saved');
+    fitToolbar();
   }
 
   function renderChecks() {
@@ -358,20 +727,648 @@
         <i class="fa-solid ${i.severity === 'error' ? 'fa-circle-xmark text-rose-600' : 'fa-circle-exclamation text-amber-600'} text-xs mt-0.5"></i>
         <span class="text-xs"><span class="font-medium text-slate-800">${esc(i.message)}</span><span class="block text-slate-500 mt-0.5">${esc(i.suggestion)}</span></span>
       </div>`);
-    $('tab-checks').innerHTML = (phItems.length ? `<h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">จุดที่ต้องระบุ (${toThai(ph.length)})</h3>${phItems.join('')}` : '')
+    const facts = visibleFacts(st.check?.facts);
+    const factItems = facts.map((f, i) => `
+      <div class="p-3 rounded-xl bg-white border border-amber-200 text-xs space-y-2">
+        <div class="flex items-start gap-2.5"><i class="fa-solid fa-magnifying-glass-chart text-amber-600 mt-0.5"></i>
+          <span><span class="font-medium text-slate-800">${esc(FIELD_LABEL[f.field] || f.field)}: <span class="font-body">${esc(num(f.text))}</span></span>
+          <span class="block text-slate-500 mt-0.5">${esc(f.message)}</span></span></div>
+        <div class="flex gap-2 pl-6">
+          <button type="button" data-fact-source="${i}" class="px-2 py-1 rounded-md border border-slate-300 hover:bg-slate-50">ดูในต้นเรื่อง</button>
+          <button type="button" data-fact-ok="${i}" class="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white">ถูกต้องแล้ว</button>
+        </div>
+      </div>`);
+    $('tab-checks').innerHTML = (factItems.length ? `<h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">ตรวจกับต้นเรื่อง (${toThai(facts.length)})</h3>${factItems.join('')}` : '')
+      + (phItems.length ? `<h3 class="text-[11px] font-semibold text-slate-400 tracking-wider">จุดที่ต้องระบุ (${toThai(ph.length)})</h3>${phItems.join('')}` : '')
       + (lintItems.length ? `<h3 class="text-[11px] font-semibold text-slate-400 tracking-wider pt-2">ระเบียบงานสารบรรณ (${toThai(issues.length)})</h3>${lintItems.join('')}` : '')
       || '<p class="text-xs text-emerald-700"><i class="fa-solid fa-circle-check mr-1"></i>ไม่พบจุดที่ต้องแก้ไข</p>';
   }
-  $('tab-checks').addEventListener('click', (e) => { const b = e.target.closest('[data-jump]'); if (b) jumpToPlaceholder(b.dataset.jump); });
+  $('tab-checks').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-jump]');
+    if (b) { jumpToPlaceholder(b.dataset.jump); return; }
+    const facts = visibleFacts(st.check?.facts);
+    const s = e.target.closest('[data-fact-source]'), k = e.target.closest('[data-fact-ok]');
+    if (s) showFactInSource(facts[+s.dataset.factSource]);
+    if (k) confirmFact(facts[+k.dataset.factOk]);
+  });
 
-  function jumpToPlaceholder(text) {
-    const chips = [...sheet.querySelectorAll('.ph-chip')];
-    const chip = chips.find(c => !text || c.textContent === text || c.textContent === num(text)) || chips[0];
-    if (!chip) { toast('ไม่มีจุดที่ต้องระบุแล้ว'); return; }
-    const el = chip.closest('[data-field]');
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    if (st.editOn) setTimeout(() => el.focus(), 250);
+  // ---------- ป้ายเดียว "ต้องแก้": จุดที่ต้องระบุ + ข้อควรแก้ตามระเบียบ ไล่ทีละจุดตามลำดับบนกระดาษ ----------
+  // ข้อควรแก้ของ linter อ้างชื่อฟิลด์ในสคีมา — แปลงเป็นช่องบนกระดาษ (บันทึกข้อความใช้ช่อง memo_*)
+  const LINT_FIELD = (f) => {
+    if (f === 'salutation') return 'salutation_to';
+    if (isMemo()) return { paragraph_reason: 'memo_intro', paragraph_details: 'memo_facts', paragraph_purpose: 'memo_request' }[f] || f;
+    return f;
+  };
+  // จุดทั้งหมดเรียงตามตำแหน่งบนกระดาษ: { field: ช่อง, ord: ลำดับในช่อง, text, issue? }
+  function todoPoints() {
+    const pts = [];
+    sheet.querySelectorAll('[data-field]').forEach((el) => {
+      el.querySelectorAll('.ph-chip').forEach((chip, ord) => pts.push({ field: el, ord, text: chip.textContent }));
+    });
+    (st.check?.lint?.issues || []).forEach((issue, i) => {
+      const el = sheet.querySelector(`[data-field="${LINT_FIELD(issue.field)}"]`);
+      pts.push({ field: el, ord: 1000 + i, text: issue.message, issue });
+    });
+    visibleFacts(st.check?.facts).forEach((fact, i) => {
+      const el = sheet.querySelector(`[data-field="${fact.field}"]`);
+      pts.push({ field: el, ord: 2000 + i, text: factKey(fact), fact });
+    });
+    return pts.sort((a, b) => {
+      if (a.field === b.field) return a.ord - b.ord;
+      if (!a.field) return 1;
+      if (!b.field) return -1;
+      return a.field.compareDocumentPosition(b.field) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
   }
+  const todo = { last: null };
+  function renderTodo() {
+    const pts = todoPoints();
+    const ph = pts.filter(p => !p.issue && !p.fact).length, facts = pts.filter(p => p.fact).length;
+    const issues = pts.length - ph - facts;
+    const errors = pts.some(p => p.issue?.severity === 'error');
+    const b = $('todo-badge');
+    const base = 'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition ';
+    if (!pts.length) {
+      b.className = base + 'text-emerald-700 bg-emerald-50 border-emerald-300 hover:bg-emerald-100';
+      b.innerHTML = '<i class="fa-solid fa-check text-[10px]"></i><span class="tb-h4">พร้อมส่งออก</span>';
+      b.title = 'ไม่มีจุดที่ต้องระบุ และผ่านการตรวจระเบียบงานสารบรรณ';
+      todo.last = null;
+    } else {
+      b.className = base + (errors ? 'text-rose-700 bg-rose-50 border-rose-300 hover:bg-rose-100' : 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100');
+      b.innerHTML = `<i class="fa-solid ${errors ? 'fa-triangle-exclamation' : 'fa-pen'} text-[10px]"></i><span><span class="tb-h4">ต้องแก้ </span>${toThai(pts.length)}<span class="tb-h4"> จุด</span></span><span class="tb-h3 opacity-70">· ถัดไป</span><i class="fa-solid fa-chevron-right text-[9px] opacity-70"></i>`;
+      b.title = [ph && `ต้องระบุ ${toThai(ph)} จุด`, issues && `ข้อควรแก้ตามระเบียบ ${toThai(issues)} จุด`,
+        facts && `ตรวจกับต้นเรื่อง ${toThai(facts)} จุด`].filter(Boolean).join(' · ') + ' — กดเพื่อไปทีละจุด';
+    }
+    b.setAttribute('aria-label', b.title);
+    fitToolbar();
+  }
+  // จุดถัดจากจุดที่ไปล่าสุด (กรอกจุดนั้นแล้ว จุดถัดไปในช่องเดียวกันจะเลื่อนมาอยู่ลำดับเดิม)
+  function nextTodo() {
+    const pts = todoPoints();
+    if (!pts.length) { toast('ไม่มีจุดที่ต้องแก้แล้ว — พร้อมส่งออก'); return; }
+    const last = todo.last;
+    let idx = 0;
+    if (last && last.field?.isConnected) {
+      const after = pts.findIndex((p) => {
+        if (p.field === last.field) return p.ord > last.ord || (p.ord === last.ord && p.text !== last.text);
+        if (!p.field) return true;
+        return !!(last.field.compareDocumentPosition(p.field) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      idx = after < 0 ? 0 : after;
+    }
+    const p = pts[idx];
+    todo.last = { field: p.field, ord: p.ord, text: p.text };
+    goToPoint(p);
+  }
+  function goToPoint(p) {
+    closeFact();
+    if (p.fact) { openFact(p); return; }
+    if (p.issue) {
+      toast(`${p.issue.message} — ${p.issue.suggestion}`, p.issue.severity === 'error' ? 'error' : 'warn');
+      if (!p.field) return;
+      p.field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      p.field.classList.remove('flash-warn'); void p.field.offsetWidth; p.field.classList.add('flash-warn');
+      return;
+    }
+    p.field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => { p.field.focus(); selectPlaceholder(p.field, p.ord); }, 250);
+  }
+  // เลือก placeholder ลำดับที่ ord ในช่อง (หลังโฟกัส ช่องแสดงข้อความดิบ) ให้พิมพ์ทับได้ทันที
+  function selectPlaceholder(el, ord) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let n = 0;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (const m of node.data.matchAll(PH_RE)) {
+        if (n++ !== ord) continue;
+        const r = document.createRange(); r.setStart(node, m.index); r.setEnd(node, m.index + m[0].length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        return;
+      }
+    }
+  }
+  $('todo-badge').addEventListener('mousedown', (e) => e.preventDefault());
+  $('todo-badge').addEventListener('click', () => {
+    // ช่องที่กำลังพิมพ์บันทึกก่อน แล้วค่อยไปจุดถัดไป
+    if (document.activeElement?.closest?.('[data-field]')) document.activeElement.blur();
+    nextTodo();
+  });
+  // ---------- ข้อเท็จจริงที่ไม่พบในต้นเรื่อง ----------
+  let factOpen = null;
+  function openFact(p) {
+    factOpen = p;
+    const pop = $('fact-pop');
+    $('fact-value').textContent = num(p.fact.text);
+    $('fact-message').textContent = p.fact.message;
+    if (p.field) {
+      p.field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      p.field.classList.remove('flash-warn'); void p.field.offsetWidth; p.field.classList.add('flash-warn');
+    }
+    pop.hidden = false;
+    setTimeout(() => {                       // รอเลื่อนเสร็จแล้ววางข้างช่อง
+      const host = pop.offsetParent.getBoundingClientRect();
+      const a = (p.field || sheet).getBoundingClientRect();
+      pop.style.left = Math.max(16, Math.min(a.left - host.left, host.width - pop.offsetWidth - 16)) + 'px';
+      const below = a.bottom - host.top + 8;
+      pop.style.top = (below + pop.offsetHeight < host.height - 40 ? below : Math.max(16, a.top - host.top - pop.offsetHeight - 8)) + 'px';
+      pop.querySelector('[data-fact="source"]').focus();
+    }, 320);
+  }
+  function closeFact() { $('fact-pop').hidden = true; factOpen = null; }
+  // คำค้นในต้นเรื่อง: ข้อความตามร่างก่อน แล้วค่อยกว้างขึ้น (ต้นเรื่องอาจใช้เลขไทย/อารบิก หรือเขียนเดือนย่อ)
+  const MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const toArabic = (t) => String(t).replace(/[๐-๙]/g, d => '๐๑๒๓๔๕๖๗๘๙'.indexOf(d));
+  function factProbes(f) {
+    const a = toArabic(f.text).replace(/^เวลา\s*/, '').replace(/\s*(น\.|นาฬิกา)$/, '').trim();
+    const out = [a, toThai(a)];
+    if (f.kind === 'date') {
+      const month = MONTHS.find(m => a.includes(m));
+      const day = a.match(/^\d{1,2}/)?.[0];
+      if (month && day) out.push(`${day} ${month}`, `${toThai(day)} ${month}`);
+      if (month) out.push(month);
+    }
+    if (f.kind === 'number') out.push(a.replace(/,/g, ''), toThai(a.replace(/,/g, '')));
+    if (f.kind === 'time') { const hh = a.split(/[.:]/)[0]; out.push(hh + '.', toThai(hh) + '.'); }
+    return [...new Set(out.filter(Boolean))];
+  }
+  async function showFactInSource(f) {
+    showLeft(); selectTab('source');
+    for (const q of factProbes(f)) {
+      $('source-search').value = q;
+      if ((await runSourceSearch()) > 0) return;
+      // ไฟล์สแกนไม่มีชั้นข้อความ: ค้นในข้อความที่อ่านได้
+      if (src.view === 'file' && src.viewer && !src.viewer.hasText) {
+        setSourceView('text');
+        if ((await runSourceSearch()) > 0) return;
+      }
+    }
+    toast('ไม่พบคำใกล้เคียงในต้นเรื่อง — เปิดไฟล์จริงแล้วตรวจด้วยตา', 'warn');
+  }
+  function confirmFact(f) {
+    entry.factOk = [...new Set([...(entry.factOk || []), factKey(f)])];
+    if (st.check) st.check.facts = visibleFacts(st.check.facts);
+    renderChecks(); renderTodo(); persist();
+    toast('บันทึกว่าถูกต้องแล้ว — ไม่เตือนจุดนี้อีก');
+  }
+  $('fact-pop').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-fact]');
+    if (!b || !factOpen) return;
+    const f = factOpen.fact;
+    if (b.dataset.fact === 'close') closeFact();
+    if (b.dataset.fact === 'source') showFactInSource(f);
+    if (b.dataset.fact === 'ok') { closeFact(); confirmFact(f); }
+    if (b.dataset.fact === 'next') { closeFact(); nextTodo(); }
+  });
+  $('fact-pop').addEventListener('mousedown', (e) => e.preventDefault());
+  function jumpToPlaceholder(text) {
+    const pts = todoPoints().filter(p => !p.issue && !p.fact);
+    const p = pts.find(q => !text || q.text === text || q.text === num(text)) || pts[0];
+    if (!p) { toast('ไม่มีจุดที่ต้องระบุแล้ว'); return; }
+    todo.last = { field: p.field, ord: p.ord, text: p.text };
+    goToPoint(p);
+  }
+
+  // ---------- ข้อกฎหมายจากคลัง (ยืนยันแล้วเท่านั้น) ----------
+  // เลือกแล้วเก็บใน doc.legal_refs (ใช้แนบหน้าจากไฟล์ต้นฉบับท้าย PDF) และเขียนหัวข้อ "ข้อกฎหมาย" ให้
+  // ถ้าผู้ใช้แก้ข้อความหัวข้อเองแล้ว ถามก่อนเขียนทับ
+  const law = { lib: null, loading: null, suggestions: [] };
+  async function lawLibrary() {
+    if (law.lib) return law.lib;
+    law.loading = law.loading || api.legal().then(({ references }) => {
+      law.lib = new Map(references.filter(r => r.verified).map(r => [String(r.id), r]));
+      return law.lib;
+    }).finally(() => { law.loading = null; });
+    return law.loading;
+  }
+  const citeOf = (r) => ({ id: String(r.id), title: r.title || '', section: r.section || '', source_id: r.source_id || null,
+    page_from: r.page_from || null, page_to: r.page_to || null });
+  const pagesOf = (r) => r.page_from ? ` · หน้า ${toThai(r.page_from)}${r.page_to && r.page_to !== r.page_from ? '–' + toThai(r.page_to) : ''}` : '';
+  // ข้อความในหัวข้อ "ข้อกฎหมาย" = เนื้อหาที่ผู้ใช้เขียน/แก้ไว้ในคลังเท่านั้น (ไม่เติมชื่อฉบับ หัวข้อ หรือ "กำหนดว่า")
+  // บรรทัดที่ขึ้นใหม่เพราะการตัดบรรทัดของไฟล์สแกนต่อเป็นย่อหน้าเดียว; คงการขึ้นบรรทัดหน้า มาตรา / ข้อ / (๑) / ๑.
+  const LAW_BREAK = /^(มาตรา|ข้อ|หมวด|ส่วนที่|\([0-9๐-๙]+\)|[0-9๐-๙]+(\.[0-9๐-๙]+)*\.?\s)/;
+  function lawBody(quote) {
+    const out = [];
+    for (const raw of String(quote || '').split('\n')) {
+      const line = raw.replace(/\s+/g, ' ').trim();
+      if (!line) continue;
+      if (out.length && !LAW_BREAK.test(line)) out[out.length - 1] += ' ' + line;
+      else out.push(line);
+    }
+    return out.join('\n');
+  }
+  function lawText(refs) {
+    // รายการที่หาเนื้อหาไม่เจอ (เช่น ถูกลบจากคลัง) ใช้ชื่อแทน เพื่อไม่ให้หายไปเงียบ ๆ
+    return refs.map(c => lawBody(law.lib?.get(c.id)?.quote) || `${c.title} ${c.section}`.trim()).join('\n');
+  }
+  // ไม่เขียนหัวข้อ "ข้อกฎหมาย" ใหม่ทั้งหมด — ข้อความที่ผู้ใช้พิมพ์เอง (เช่น "๑. พระราชบัญญัติ... (เอกสาร ๑)") ต้องอยู่ครบ
+  //   เพิ่มข้อ = ต่อเนื้อหาของข้อนั้นท้ายข้อความเดิม
+  //   เอาข้อออก = ลบเฉพาะเนื้อหาของข้อนั้นถ้ายังเหมือนเดิม (ถ้าแก้แล้ว ปล่อยไว้และบอกให้ลบเอง)
+  // หัวเรื่องของแต่ละฉบับ: "๑. <ชื่อฉบับ> (เอกสาร ๑)" — เลขเอกสารเรียงเหมือนหน้าที่แนบท้าย PDF (เฉพาะฉบับที่มีไฟล์)
+  const lawGroupKey = (c) => c.source_id || 'manual:' + (c.title || '');
+  function lawHeadings(refs) {
+    const out = new Map();
+    let doc = 0;
+    for (const c of refs) {
+      const key = lawGroupKey(c);
+      if (out.has(key)) continue;
+      const n = out.size + 1;
+      const suffix = c.source_id && c.page_from ? ` (เอกสาร ${toThai(++doc)})` : '';
+      out.set(key, `${toThai(n)}. ${(c.title || '').trim()}${suffix}`.trim());
+    }
+    return out;
+  }
+  const findBlock = (lines, parts) => lines.findIndex((_, i) => parts.length && parts.every((p, k) => lines[i + k] === p));
+  function setLawRefs(next) {
+    const prev = st.doc.legal_refs || [];
+    const prevIds = new Set(prev.map(c => c.id)), nextIds = new Set(next.map(c => c.id));
+    const added = next.filter(c => !prevIds.has(c.id)), removed = prev.filter(c => !nextIds.has(c.id));
+    let text = st.doc.memo_law;
+    if (text != null && (!text.trim() || hasPlaceholder(text) && !text.replace(PH_RE, '').trim())) text = '';   // ว่าง / มีแต่ช่องให้กรอก
+    let leftover = 0;
+    if (isMemo()) {
+      let lines = (text || '').split('\n').filter((l, i, a) => l.trim() || i < a.length - 1);
+      const oldHeads = lawHeadings(prev), newHeads = lawHeadings(next);
+      // ๑) เอาเนื้อหาของข้อที่ถูกเอาออก (เฉพาะที่ยังไม่ถูกแก้)
+      const keptText = new Set();       // ฉบับที่ยังมีข้อความที่ผู้ใช้แก้ค้างอยู่ — คงหัวเรื่องไว้
+      for (const c of removed) {
+        const parts = lawText([c]).split('\n');
+        const at = findBlock(lines, parts);
+        if (at >= 0) lines.splice(at, parts.length); else { leftover++; keptText.add(lawGroupKey(c)); }
+      }
+      // ๒) ฉบับที่ไม่เหลือข้อใดแล้ว: เอาหัวเรื่องออก (ถ้ายังเป็นข้อความเดิม และไม่มีข้อความที่แก้ค้างอยู่)
+      for (const [key, head] of oldHeads) {
+        if (newHeads.has(key) || keptText.has(key)) continue;
+        const at = lines.indexOf(head);
+        if (at >= 0) lines.splice(at, 1);
+      }
+      // ๓) เลขลำดับ/เลขเอกสารของฉบับที่เหลือเปลี่ยน: แก้หัวเรื่องเดิมให้ตรง (เฉพาะที่ยังไม่ถูกแก้เอง)
+      for (const [key, head] of newHeads) {
+        const old = oldHeads.get(key);
+        if (old && old !== head) { const at = lines.indexOf(old); if (at >= 0) lines[at] = head; }
+      }
+      // ๔) เพิ่มข้อ: ฉบับใหม่ = หัวเรื่อง + เนื้อหาต่อท้าย; ฉบับที่มีอยู่แล้ว = แทรกก่อนหัวเรื่องของฉบับถัดไป
+      const order = [...newHeads.keys()];
+      const present = new Set(prev.filter(p => nextIds.has(p.id)).map(lawGroupKey));   // ฉบับที่มีอยู่ในบันทึกแล้ว
+      for (const c of added) {
+        const key = lawGroupKey(c), body = lawText([c]).split('\n');
+        // ตำแหน่ง = ก่อนหัวเรื่องของฉบับถัดไปที่มีในข้อความ (คงการจัดกลุ่มตามฉบับ) ไม่งั้นต่อท้าย
+        const at = order.slice(order.indexOf(key) + 1).map(k => lines.indexOf(newHeads.get(k))).find(i => i >= 0) ?? lines.length;
+        if (present.has(key)) lines.splice(at, 0, ...body);                  // ฉบับเดิม (หัวเรื่องอาจถูกแก้เอง — ไม่เพิ่มซ้ำ)
+        else { lines.splice(at, 0, newHeads.get(key), ...body); present.add(key); }
+      }
+      text = lines.join('\n').replace(/\n+$/, '');
+    }
+    commit(d => {
+      d.legal_refs = next.length ? next : null;
+      if (isMemo()) d.memo_law = (text || '').trim() ? text : (next.length ? text : null);
+    });
+    if (leftover) toast('ข้อความของข้อที่เอาออกถูกแก้ไว้แล้ว — ลบในหัวข้อ "ข้อกฎหมาย" เองได้', 'warn');
+    renderLaw();
+  }
+  function lawItem(r, action, extra = '') {
+    return `<li class="p-3 rounded-xl bg-white border border-slate-200 space-y-1.5" data-law-id="${esc(r.id)}">
+      <div class="flex items-start gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-slate-800">${esc(r.section || '')}<span class="font-normal text-slate-400">${pagesOf(r)}</span></div>
+          <div class="text-[11px] text-slate-500 truncate" title="${esc(r.title || '')}">${esc(r.title || '')}</div>
+        </div>
+        ${action}
+      </div>
+      ${extra}
+    </li>`;
+  }
+  // หน้าที่จะแนบท้าย PDF (นับแบบเดียวกับเซิร์ฟเวอร์: หน้าซ้ำในไฟล์เดียวกันนับครั้งเดียว)
+  function lawPageCount(refs) {
+    const seen = new Set();
+    for (const c of refs) {
+      if (!c.source_id || !c.page_from) continue;
+      for (let p = c.page_from; p <= Math.max(c.page_from, c.page_to || c.page_from); p++) seen.add(c.source_id + ':' + p);
+    }
+    return seen.size;
+  }
+  function renderLaw() {
+    const refs = st.doc.legal_refs || [];
+    $('law-count').textContent = toThai(refs.length);
+    const pages = lawPageCount(refs);
+    $('law-attach-wrap').hidden = !refs.length;
+    $('law-attach').checked = st.doc.attach_legal_pages !== false;
+    $('law-attach-info').textContent = pages
+      ? `${toThai(pages)} หน้า จากไฟล์สแกนในคลัง (Word ไม่แนบหน้าสแกน — ใช้ PDF)`
+      : 'ข้อที่เลือกไม่มีไฟล์ต้นฉบับในคลัง จึงไม่มีหน้าให้แนบ';
+    $('law-external-note').classList.toggle('hidden', isMemo());
+    $('law-selected').innerHTML = refs.length ? refs.map(c => lawItem(c,
+      `<button type="button" data-law-remove="${esc(c.id)}" class="shrink-0 px-2 py-0.5 rounded-md border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-600">เอาออก</button>`)).join('')
+      : '<li class="text-slate-400">ยังไม่ได้เลือกข้อกฎหมาย</li>';
+    const chosen = new Set(refs.map(c => c.id));
+    const addBtn = (r) => chosen.has(String(r.id))
+      ? '<span class="shrink-0 text-emerald-700"><i class="fa-solid fa-check"></i> ใส่แล้ว</span>'
+      : `<button type="button" data-law-add="${esc(r.id)}" class="shrink-0 px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white">ใส่ในบันทึก</button>`;
+    $('law-suggestions').innerHTML = law.suggestions.map(s => lawItem(s.reference, addBtn(s.reference),
+      `<p class="text-slate-600"><i class="fa-solid ${s.by === 'ai' ? 'fa-wand-magic-sparkles text-emerald-600' : 'fa-magnifying-glass text-slate-400'} mr-1"></i>${esc(s.reason)}</p>`)).join('');
+    const q = $('law-search').value.trim();
+    const hits = q && law.lib ? [...law.lib.values()].filter(r => [r.title, r.section, r.chapter, r.quote].join(' ').includes(q)).slice(0, 15) : [];
+    $('law-results').innerHTML = !q ? '' : hits.length ? hits.map(r => lawItem(r, addBtn(r),
+      `<p class="text-slate-500 font-body line-clamp-2">${esc(String(r.quote || '').replace(/\s+/g, ' ').slice(0, 200))}</p>`)).join('')
+      : '<li class="text-slate-400">ไม่พบในคลังที่ยืนยันแล้ว</li>';
+  }
+  async function openLawTab() {
+    renderLaw();
+    try { await lawLibrary(); renderLaw(); } catch (err) { $('law-results').innerHTML = `<li class="text-rose-600">${esc(err.message)}</li>`; }
+  }
+  $('law-search').addEventListener('input', renderLaw);
+  $('law-attach').addEventListener('change', (e) => commit(d => { d.attach_legal_pages = e.target.checked; }));
+  $('law-suggest').addEventListener('click', async (e) => {
+    const btn = e.currentTarget, html = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>กำลังหา...</span>';
+    try {
+      await lawLibrary();
+      const d = st.doc;
+      const text = [d.subject, d.memo_intro, d.memo_facts, d.memo_consideration, d.paragraph_reason, d.paragraph_details,
+        aiSummary()].filter(Boolean).join('\n').replace(PH_RE, ' ');
+      law.suggestions = (await api.legalSuggest(text)).suggestions;
+      if (!law.suggestions.length) toast(law.lib?.size ? 'ไม่พบข้อที่เกี่ยวข้องในคลังที่ยืนยันแล้ว' : 'คลังกฎหมายยังไม่มีรายการที่ยืนยันแล้ว — นำเข้าได้ที่หน้าแรก > คลังกฎหมาย', 'warn');
+      renderLaw();
+    } catch (err) { toast('เสนอข้อกฎหมายไม่สำเร็จ: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = html; }
+  });
+  $('tab-law').addEventListener('click', async (e) => {
+    const add = e.target.closest('[data-law-add]'), rm = e.target.closest('[data-law-remove]');
+    if (!add && !rm) return;
+    const refs = st.doc.legal_refs || [];
+    if (rm) { setLawRefs(refs.filter(c => c.id !== rm.dataset.lawRemove)); return; }
+    const lib = await lawLibrary();
+    const r = lib.get(add.dataset.lawAdd) || law.suggestions.map(s => s.reference).find(x => String(x.id) === add.dataset.lawAdd);
+    if (r) setLawRefs([...refs, citeOf(r)]);
+  });
+
+  // ---------- ฉบับจริง (ไฟล์ Word/PDF ที่แก้เสร็จแล้วอัปโหลดกลับ) ----------
+  const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  const plainText = (s) => String(s || '').replace(/[​\s]+/g, '');
+  const fmtTime = (iso) => { try { return num(new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })); } catch (_) { return iso; } };
+  const finalsEnabled = (await window.GovDoc.auth.serverMode()) === true;
+  async function loadFinals() {
+    if (!finalsEnabled) {
+      $('finals-local').classList.remove('hidden');
+      $('finals-form').querySelectorAll('input,button').forEach(el => { el.disabled = true; });
+      return;
+    }
+    try {
+      const rows = await api.finals.list(entry.id);
+      $('finals-count').textContent = toThai(rows.length);
+      $('finals-list').innerHTML = rows.length ? rows.map((r) => {
+        const subjectDiffers = r.subject && plainText(r.subject) !== plainText(st.doc.subject);
+        return `<li class="bg-white border border-slate-200 rounded-xl p-3 space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium shrink-0">ฉบับที่ ${toThai(r.revision)}</span>
+            <span class="truncate font-medium text-slate-800" title="${esc(r.filename)}">${esc(r.filename)}</span>
+            <button type="button" data-final="${esc(r.id)}" class="ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-300 hover:bg-slate-50 text-slate-700"><i class="fa-solid fa-download"></i>ดาวน์โหลด</button>
+          </div>
+          <div class="text-slate-500">${fmtTime(r.created_at)} · ${fmtSize(r.size_bytes)} · SHA-256 <code title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</code></div>
+          ${r.doc_number || r.subject ? `<div class="text-slate-600">${r.doc_number ? `ที่ ${esc(r.doc_number)}` : ''}${r.doc_number && r.subject ? ' · ' : ''}${r.subject ? `เรื่อง ${esc(r.subject)}` : ''}</div>` : ''}
+          ${subjectDiffers ? '<div class="text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> เรื่องในไฟล์ไม่ตรงกับร่างในระบบ — ตรวจว่าอัปโหลดถูกไฟล์</div>' : ''}
+          ${r.note ? `<div class="text-slate-600">หมายเหตุ: ${esc(r.note)}</div>` : ''}
+        </li>`;
+      }).join('') : '<li class="text-slate-400 text-center py-4">ยังไม่มีฉบับจริง</li>';
+    } catch (err) { $('finals-list').innerHTML = `<li class="text-rose-600">${esc(err.message)}</li>`; }
+  }
+  $('finals-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = $('finals-file').files[0];
+    if (!file) { toast('เลือกไฟล์ Word หรือ PDF ก่อน', 'warn'); return; }
+    if (!/\.(docx|pdf)$/i.test(file.name)) { toast('รับเฉพาะไฟล์ .docx หรือ .pdf (ไฟล์ .doc รุ่นเก่าให้บันทึกเป็น .docx ก่อน)', 'error'); return; }
+    if (file.size > 50 * 1024 * 1024) { toast('ไฟล์ใหญ่เกิน 50 MB', 'error'); return; }
+    const btn = $('finals-submit'), html = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>กำลังอัปโหลด...</span>';
+    try {
+      await persist();
+      const row = await api.finals.upload(entry.id, file, $('finals-note').value.trim());
+      $('finals-file').value = ''; $('finals-note').value = '';
+      toast(`เก็บเป็นฉบับจริงฉบับที่ ${toThai(row.revision)} แล้ว`);
+      loadFinals();
+    } catch (err) { toast('อัปโหลดไม่สำเร็จ: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = html; }
+  });
+  $('finals-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-final]');
+    if (!b) return;
+    try { location.href = await api.finals.downloadUrl(entry.id, b.dataset.final); }
+    catch (err) { toast('ดาวน์โหลดไม่สำเร็จ: ' + err.message, 'error'); }
+  });
+  loadFinals();
+
+  // ---------- ทะเบียนส่ง: ปุ่ม "ออกเลข" (เลขมาจากฐานข้อมูลเท่านั้น) ----------
+  const reg = window.GovDocRegistry;
+  const regEnabled = finalsEnabled && !!reg;
+  const GAP = ' '.repeat(10);                    // ช่องว่างเขียนมือ (เหมือน core.models.HANDWRITE_GAP)
+  const issue = { info: null, error: '' };
+  const fmtReg = (r) => r ? `${num(r.reg_no)}/${num(r.year_be)}` : '';
+  function renderIssueButton() {
+    if (!regEnabled) return;
+    const active = issue.info?.active;
+    const btn = $('btn-issue');
+    btn.hidden = false;
+    btn.className = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-medium text-xs ' +
+      (active ? 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900' : 'border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900');
+    $('issue-label').textContent = active ? 'ที่ ' + num(active.doc_number) : 'ออกเลข';
+    btn.title = active ? 'ออกเลขแล้ว — ดูรายละเอียด/ยกเลิกเลข' : 'ออกเลขที่หนังสือจากทะเบียนส่ง แล้วเติมลงช่อง "ที่"';
+  }
+  async function loadIssue() {
+    if (!regEnabled) return;
+    try { issue.info = await reg.forDocument(entry.id); issue.error = ''; }
+    catch (err) { issue.info = null; issue.error = err.message; }
+    renderIssueButton();
+  }
+  const regField = (id, label, value, hint = '') => `<label class="block space-y-1"><span class="font-medium text-slate-700">${label}</span>
+    <input id="${id}" type="text" value="${esc(value || '')}" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 font-body text-sm">
+    ${hint ? `<span class="block text-[11px] text-slate-500">${hint}</span>` : ''}</label>`;
+  function renderIssueBody() {
+    const info = issue.info;
+    const body = $('issue-body');
+    if (!info) {
+      body.innerHTML = `<p class="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3">${esc(issue.error || 'โหลดข้อมูลทะเบียนไม่สำเร็จ')}</p>`;
+      return;
+    }
+    const cancelled = info.entries.filter(e => e.status === 'cancelled');
+    const history = cancelled.length ? `<div class="pt-2 border-t border-slate-100 space-y-1"><div class="font-medium text-slate-600">เลขที่ยกเลิกของเอกสารนี้ (ยังอยู่ในทะเบียน)</div>
+      ${cancelled.map(e => `<div class="text-slate-500"><s>ที่ ${esc(num(e.doc_number))}</s> — ${esc(e.cancel_reason || '')}${e.cancelled_by_name ? ` · ${esc(e.cancelled_by_name)}` : ''}${e.cancelled_at ? ` · ${fmtTime(e.cancelled_at)}` : ''}</div>`).join('')}</div>` : '';
+    const incoming = info.incoming ? `<p class="bg-sky-50 border border-sky-200 text-sky-900 rounded-lg p-2"><i class="fa-solid fa-link mr-1"></i>เชื่อมกับหนังสือรับ เลขรับ ${fmtReg(info.incoming)} — ${esc(info.incoming.subject || '')}</p>` : '';
+    const a = info.active;
+    if (a) {
+      const differs = (st.doc.doc_number || '').trim() !== a.doc_number;
+      body.innerHTML = `
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-1">
+          <div class="text-base font-semibold text-emerald-900 font-body">ที่ ${esc(num(a.doc_number))}</div>
+          <div class="text-emerald-800">ทะเบียนส่งเลข ${fmtReg(a)} · ${a.status === 'reserved' ? 'จองไว้' : 'ออกเลขแล้ว'}${a.issued_by_name ? ` โดย ${esc(a.issued_by_name)}` : ''}${a.issued_at ? ` · ${fmtTime(a.issued_at)}` : ''}</div>
+          <div class="text-slate-600">ลงวันที่ ${esc(num(a.doc_date || '–'))} · ถึง ${esc(a.to_recipient || '–')}</div>
+          <div class="text-slate-600">เรื่อง ${esc(a.subject || '–')}</div>
+        </div>
+        ${differs ? `<button type="button" id="issue-fill" class="w-full px-3 py-1.5 rounded-lg border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-medium"><i class="fa-solid fa-arrow-down mr-1"></i>ใส่เลขนี้ลงช่อง "ที่" (ตอนนี้ในเอกสารไม่ตรง)</button>` : ''}
+        ${incoming}
+        <div class="pt-2 border-t border-slate-100 space-y-2">
+          <div class="font-medium text-rose-700"><i class="fa-solid fa-ban mr-1"></i>ยกเลิกเลขนี้</div>
+          <p class="text-slate-500">เลขที่ยกเลิกยังอยู่ในทะเบียนพร้อมเหตุผล และจะไม่ถูกนำกลับมาใช้ — ออกเลขใหม่ได้เลขถัดไป</p>
+          <textarea id="issue-cancel-reason" rows="2" maxlength="500" placeholder="เหตุผล เช่น พิมพ์ผู้รับผิด / เรื่องยกเลิก" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500"></textarea>
+          <button type="button" id="issue-cancel" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-medium">ยกเลิกเลข</button>
+        </div>${history}`;
+      return;
+    }
+    const d = info.draft || {};
+    const t = d.template;
+    const reserved = info.reserved || [];
+    body.innerHTML = `
+      ${!t && d.current_number ? `<p class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">ช่อง "ที่" มีเลข ${esc(num(d.current_number))} ที่พิมพ์เองอยู่ (ยังไม่อยู่ในทะเบียน) — ระบุรหัสด้านล่างเพื่อออกเลขจากทะเบียนแทน</p>` : ''}
+      <div class="grid grid-cols-[1fr,auto,1fr] gap-2 items-end">
+        ${regField('issue-prefix', 'รหัสหนังสือ', t ? t.prefix : '', 'เช่น กท 1205/')}
+        <span class="pb-2 text-slate-400 font-body text-sm">${t?.is_circular ? 'ว ' : ''}เลข</span>
+        ${regField('issue-suffix', 'ส่วนท้าย (ถ้ามี)', t ? t.suffix : '', 'เช่น /2569')}
+      </div>
+      ${reserved.length ? `<fieldset class="space-y-1"><legend class="font-medium text-slate-700 mb-1">เลขที่จะใช้</legend>
+        <label class="flex items-center gap-2"><input type="radio" name="issue-use" value="" checked> ออกเลขใหม่ (ลำดับถัดไปจากทะเบียน)</label>
+        ${reserved.map(r => `<label class="flex items-center gap-2"><input type="radio" name="issue-use" value="${esc(r.id)}"> ใช้เลขที่จองไว้ <b>${esc(num(r.doc_number))}</b> <span class="text-slate-500 truncate">${esc(r.subject || '')}</span></label>`).join('')}
+      </fieldset>` : ''}
+      ${regField('issue-subject', 'เรื่อง', d.subject)}
+      ${regField('issue-to', 'ถึง (ผู้รับ)', d.to_recipient)}
+      ${regField('issue-date', 'ลงวันที่ (ในทะเบียน)', d.doc_date, 'ช่องวันที่ในหนังสือไม่ถูกเปลี่ยน')}
+      ${regField('issue-from', 'จาก', d.from_unit)}
+      ${incoming}
+      <p class="text-slate-500">เลขลำดับออกจากฐานข้อมูลของหน่วยงาน ไม่ซ้ำแม้ออกพร้อมกันหลายคน และบันทึกผู้ออกเลข/เวลาไว้ในทะเบียน</p>
+      <button type="button" id="issue-submit" class="w-full px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white font-semibold text-sm"><i class="fa-solid fa-hashtag mr-1"></i>ออกเลขและลงทะเบียนส่ง</button>
+      ${history}`;
+  }
+  async function openIssue() {
+    $('modal-issue').hidden = false;
+    $('issue-body').innerHTML = '<p class="text-slate-500"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลดทะเบียน...</p>';
+    await persist();                                   // เซิร์ฟเวอร์อ่านเรื่อง/ผู้รับ/ช่อง "ที่" จากฉบับที่บันทึกล่าสุด
+    await loadIssue();
+    renderIssueBody();
+  }
+  const closeIssue = () => { $('modal-issue').hidden = true; };
+  $('btn-issue').addEventListener('click', openIssue);
+  $('modal-issue').addEventListener('click', (e) => { if (e.target === $('modal-issue') || e.target.closest('[data-close]')) closeIssue(); });
+  $('issue-body').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.id === 'issue-fill') {
+      commit(d => { d.doc_number = issue.info.active.doc_number; });
+      await persist(); renderIssueBody();
+      return;
+    }
+    if (btn.id === 'issue-submit') {
+      const val = (id) => $(id).value.trim();
+      const t = issue.info.draft?.template;
+      const body = { subject: val('issue-subject'), to_recipient: val('issue-to'), doc_date: val('issue-date'), from_unit: val('issue-from') };
+      const used = document.querySelector('input[name="issue-use"]:checked')?.value;
+      if (used) body.reserved_id = Number(used);
+      else if (!t || val('issue-prefix') !== t.prefix || val('issue-suffix') !== t.suffix) {
+        Object.assign(body, { prefix: val('issue-prefix'), suffix: val('issue-suffix'), is_circular: !!t?.is_circular });
+      }
+      if (!body.subject) { toast('ใส่เรื่องก่อนออกเลข', 'warn'); return; }
+      btn.disabled = true;
+      try {
+        const res = await reg.issueForDocument(entry.id, body);
+        commit(d => { d.doc_number = res.doc_number; });
+        await persist();
+        toast(`ออกเลขแล้ว: ที่ ${num(res.doc_number)}`);
+        await loadIssue(); renderIssueBody();
+      } catch (err) { toast('ออกเลขไม่สำเร็จ: ' + err.message, 'error'); btn.disabled = false; }
+      return;
+    }
+    if (btn.id === 'issue-cancel') {
+      const reason = $('issue-cancel-reason').value.trim();
+      if (!reason) { toast('ต้องระบุเหตุผลการยกเลิกเลข', 'warn'); $('issue-cancel-reason').focus(); return; }
+      const a = issue.info.active;
+      if (!confirm(`ยกเลิกเลข ${num(a.doc_number)}?\nเลขนี้จะยังอยู่ในทะเบียนพร้อมเหตุผล และจะไม่ถูกนำกลับมาใช้`)) return;
+      btn.disabled = true;
+      try {
+        await reg.cancel(a.id, reason);
+        // คืนช่อง "ที่" เป็นรหัส + ช่องว่าง — รหัส/ส่วนท้ายเอาจากเล่มทะเบียน ('outgoing:<รหัส>[ว][|<ส่วนท้าย>]')
+        const [head, tail = ''] = String(a.book || '').replace(/^outgoing:/, '').split('|');
+        const circ = head.endsWith('ว') && a.doc_number.startsWith(head.slice(0, -1) + 'ว ');
+        const prefix = circ ? head.slice(0, -1) + 'ว ' : head;
+        if (a.book && st.doc.doc_number === a.doc_number) commit(d => { d.doc_number = prefix + GAP + tail; });
+        await persist();
+        toast('ยกเลิกเลขแล้ว — ออกเลขใหม่ได้');
+        await loadIssue(); renderIssueBody();
+      } catch (err) { toast('ยกเลิกไม่สำเร็จ: ' + err.message, 'error'); btn.disabled = false; }
+    }
+  });
+  loadIssue();
+
+  // ---------- ทะเบียนรับ: ลงรับต้นเรื่องที่แนบ ----------
+  async function renderReceive() {
+    const box = $('receive-box');
+    if (!regEnabled || !entry.sourceFileId) return;
+    box.hidden = false;
+    let found = null;
+    try { found = (await reg.incomingBySource(entry.sourceFileId)).entry; }
+    catch (err) { box.innerHTML = `<span class="text-rose-700">${esc(err.message)}</span>`; return; }
+    if (found) {
+      const replies = (found.replies || []).filter(r => r.status !== 'cancelled');
+      box.innerHTML = `<div class="flex items-center gap-2 flex-wrap text-sky-900">
+        <i class="fa-solid fa-inbox"></i><b>ลงรับแล้ว เลขรับ ${fmtReg(found)}</b>
+        <span class="text-slate-600">${fmtTime(found.received_at)}${found.created_by_name ? ` · ${esc(found.created_by_name)}` : ''}</span>
+        ${replies.length ? `<span class="text-emerald-800">· ตอบแล้ว ${replies.map(r => 'ที่ ' + esc(num(r.doc_number))).join(', ')}</span>` : ''}
+        <a href="registry.html?tab=incoming" class="ml-auto text-sky-700 underline">ทะเบียนรับ</a></div>`;
+      return;
+    }
+    const c = entry.context || {};
+    const clean = (s) => (s && !hasPlaceholder(s)) ? s : '';
+    box.innerHTML = `<details id="receive-details">
+      <summary class="cursor-pointer select-none flex items-center gap-2 text-sky-900"><i class="fa-solid fa-inbox"></i><b>ยังไม่ลงทะเบียนรับ</b><span class="text-slate-600">— ลงรับเพื่อออกเลขรับและเวลารับ</span><i class="fa-solid fa-chevron-down ml-auto text-[10px]"></i></summary>
+      <div class="mt-2 grid grid-cols-2 gap-2">
+        ${regField('recv-no', 'ที่ (ของหนังสือที่รับ)', clean(c.source_doc_no))}
+        ${regField('recv-date', 'ลงวันที่', clean(c.source_date))}
+        ${regField('recv-from', 'จาก', clean(c.source_dept))}
+        ${regField('recv-to', 'ถึง', '')}
+      </div>
+      <div class="mt-2">${regField('recv-subject', 'เรื่อง', clean(c.source_subject) || clean(st.doc.subject))}</div>
+      <button type="button" id="recv-submit" class="mt-2 px-3 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-800 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-inbox mr-1"></i>ลงรับ</button>
+      <span class="ml-2 text-slate-500">เลขรับและเวลารับออกจากฐานข้อมูล</span>
+    </details>`;
+  }
+  $('receive-box').addEventListener('click', async (e) => {
+    const btn = e.target.closest('#recv-submit');
+    if (!btn) return;
+    const val = (id) => $(id).value.trim();
+    if (!val('recv-subject')) { toast('ใส่เรื่องของหนังสือที่รับก่อน', 'warn'); return; }
+    btn.disabled = true;
+    try {
+      const res = await reg.receive({ source_doc_number: val('recv-no'), source_doc_date: val('recv-date'), from_org: val('recv-from'),
+        to_unit: val('recv-to'), subject: val('recv-subject'), source_file_id: entry.sourceFileId, document_id: entry.id });
+      toast(`ลงรับแล้ว เลขรับ ${fmtReg(res.entry)}`);
+      renderReceive(); loadIssue();
+    } catch (err) { toast('ลงรับไม่สำเร็จ: ' + err.message, 'error'); btn.disabled = false; }
+  });
+  renderReceive();
+
+  // ---------- นี่คือฉบับจริง → ตัวอย่างสำนวนของหน่วย ----------
+  function markExampleState(row) {
+    $('mark-example').querySelector('span').textContent = row ? 'อัปเดตตัวอย่าง' : 'นี่คือฉบับจริง';
+    const when = row ? relTime(row.updated_at || row.created_at) : '';
+    $('mark-example-note').textContent = row
+      ? `เก็บเป็นตัวอย่างแล้ว${when ? ` (${when})` : ''} — แก้ร่างแล้วกดอีกครั้งเพื่ออัปเดต`
+      : '';
+  }
+  async function loadMarkExample() {
+    if (!finalsEnabled) {
+      $('mark-example').disabled = true;
+      $('mark-example-note').textContent = 'ใช้ได้เมื่อเข้าสู่ระบบ';
+      return;
+    }
+    try { markExampleState((await api.examples.list(entry.id))[0]); }
+    catch (err) { $('mark-example-note').textContent = err.message; }
+  }
+  $('mark-example').addEventListener('click', async () => {
+    const btn = $('mark-example');
+    btn.disabled = true;
+    try {
+      await persist();
+      const res = await api.examples.fromDocument(entry.id);
+      markExampleState(res.example);
+      toast(res.created ? 'เก็บเป็นตัวอย่างของหน่วยแล้ว — AI จะใช้สำนวนนี้กับเรื่องคล้ายกัน' : 'อัปเดตตัวอย่างแล้ว');
+    } catch (err) { toast('เก็บเป็นตัวอย่างไม่สำเร็จ: ' + err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+  loadMarkExample();
 
   // ---------- แท็บซ้าย ----------
   function selectTab(name) {
@@ -380,10 +1377,10 @@
       t.setAttribute('aria-selected', String(on));
       t.className = 'pb-2 border-b-2 ' + (on ? 'border-brand-600 text-slate-900 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800');
     });
-    ['chat', 'source', 'checks'].forEach(n => { $('tab-' + n).hidden = n !== name; });
+    ['chat', 'source', 'checks', 'law', 'finals'].forEach(n => { $('tab-' + n).hidden = n !== name; });
+    if (name === 'law') openLawTab();
   }
   document.querySelectorAll('[data-tab]').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
-  $('btn-lint').addEventListener('click', () => { showLeft(); selectTab('checks'); });
   $('rail-source').addEventListener('click', () => { showLeft(); selectTab('source'); });
   function showLeft() { $('left-pane').classList.remove('max-lg:hidden'); }
   $('btn-left-toggle').addEventListener('click', () => $('left-pane').classList.toggle('max-lg:hidden'));
@@ -391,7 +1388,6 @@
   // บทสนทนา: สร้างจากขั้นตอนที่ระบบทำจริง (ไม่ใช่ข้อความจำลอง)
   const avatar = '<div class="w-6 h-6 rounded bg-brand-600 text-white flex items-center justify-center shrink-0 mt-0.5 text-[10px]"><i class="fa-solid fa-file"></i></div>';
   function renderChat() {
-    const c = counts();
     const steps = entry.steps || [];
     const user = entry.prompt ? `
       <div class="flex justify-end"><div class="max-w-[85%] bg-white border border-slate-200 rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-slate-800 font-body leading-relaxed whitespace-pre-wrap">${esc(entry.prompt)}</div></div>` : '';
@@ -410,31 +1406,117 @@
       <div class="flex items-start gap-2.5">${avatar}
         <div class="flex-1 space-y-3 min-w-0">
           <div class="text-xs font-medium text-slate-500">GovDoc AI</div>
-          <div><p class="font-medium text-slate-900">${c.ph ? 'ร่างเอกสารแล้ว เหลือจุดที่ต้องระบุ' : 'ร่างเอกสารเสร็จแล้ว'}</p>
-          <p class="text-slate-600 text-xs mt-0.5">${c.ph ? `มี ${toThai(c.ph)} จุดที่ระบบไม่มีข้อมูล จึงเว้นไว้ให้กรอก — คลิกที่ช่องสีเหลืองบนกระดาษเพื่อพิมพ์ทับ` : 'ตรวจทานข้อเท็จจริงอีกครั้งก่อนส่งออก'}</p></div>
+          <div><p class="font-medium text-slate-900">ร่างเอกสารแล้ว</p>
+          <p class="text-slate-600 text-xs mt-0.5">ข้อมูลที่ต้นเรื่องไม่มี ระบบเว้นเป็นช่องสีเหลืองให้กรอก — กดป้าย "ต้องแก้" มุมขวาบนเพื่อไปทีละจุด แล้วตรวจทานข้อเท็จจริงก่อนส่งออก</p></div>
           <button type="button" id="card-open" class="w-full bg-white border-2 border-emerald-500/70 rounded-xl p-3 shadow-sm hover:border-emerald-600 transition flex items-center justify-between gap-2 text-left group">
             <span class="flex items-center gap-3 min-w-0">
               <span class="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0"><i class="fa-regular fa-file-lines"></i></span>
-              <span class="text-xs min-w-0"><span class="text-emerald-700 font-medium">กำลังเปิดอยู่</span><span class="text-slate-400 mx-1">·</span><span class="text-slate-500 font-medium">${DOC_TYPE_LABEL[st.doc.doc_type]}</span>
+              <span class="text-xs min-w-0"><span class="text-emerald-700 font-medium">กำลังเปิดอยู่</span><span class="text-slate-400 mx-1">·</span><span class="text-slate-500 font-medium">${DOC_TYPE_LABEL[kindKey()]}</span>
               <span class="block text-slate-800 font-medium mt-0.5 truncate">${esc(st.doc.subject)}</span></span>
             </span>
             <i class="fa-solid fa-chevron-right text-slate-400 text-xs group-hover:translate-x-0.5 transition"></i>
           </button>
-          ${c.ph ? `<button type="button" id="card-jump" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-3 py-1.5 rounded-lg"><i class="fa-solid fa-location-crosshairs mr-1"></i>ไปยังจุดที่ต้องระบุ</button>` : ''}
         </div>
       </div>`;
-    const summary = entry.context?.summary ? `
+    // แสดงเฉพาะสรุปที่ AI เขียน (สรุปแบบเดิมเป็นแค่บรรทัดที่ตัดมาจากต้นเรื่อง อ่านแล้วไม่ช่วย)
+    const summary = aiSummary() ? `
       <div class="flex items-start gap-2.5">${avatar}
-        <div class="flex-1 space-y-1 min-w-0"><div class="text-xs font-medium text-slate-500">สรุปต้นเรื่อง</div>
-          <p class="text-xs text-slate-700 leading-relaxed bg-white border border-slate-200/80 p-3 rounded-lg font-body">${esc(entry.context.summary)}</p></div>
+        <div class="flex-1 space-y-1 min-w-0"><div class="text-xs font-medium text-slate-500">สรุปต้นเรื่อง <span class="font-normal text-slate-400">· ตรวจกับต้นฉบับเสมอ</span></div>
+          <p id="chat-summary" class="text-xs text-slate-700 leading-relaxed bg-white border border-slate-200/80 p-3 rounded-lg font-body whitespace-pre-line">${esc(aiSummary())}</p></div>
       </div>` : '';
-    $('tab-chat').innerHTML = user + file + tools + ready + summary;
+    const refs = entry.styleExamples || [];
+    const style = refs.length ? `
+      <div class="flex items-start gap-2.5">${avatar}
+        <div id="chat-style" class="flex-1 space-y-1 min-w-0"><div class="text-xs font-medium text-slate-500">อ้างสำนวนจากตัวอย่างของหน่วย <span class="font-normal text-slate-400">· ใช้เฉพาะสำนวน ข้อเท็จจริงมาจากต้นเรื่องนี้</span></div>
+          <ul class="text-xs text-slate-700 bg-indigo-50/60 border border-indigo-100 p-2.5 rounded-lg space-y-0.5">${refs.map(r =>
+            `<li class="truncate"><i class="fa-solid fa-stamp text-indigo-500 text-[10px] mr-1"></i>${DOC_TYPE_LABEL[r.doc_type] || ''} เรื่อง${esc(r.subject || '-')}</li>`).join('')}</ul></div>
+      </div>` : '';
+    $('tab-chat').innerHTML = user + file + summary + tools + style + ready;
     $('card-open')?.addEventListener('click', () => $('doc-viewport').scrollTo({ top: 0, behavior: 'smooth' }));
-    $('card-jump')?.addEventListener('click', () => jumpToPlaceholder());
   }
 
-  // ต้นเรื่อง + ค้นหา/ไฮไลต์
+  // ---------- ต้นเรื่อง: ไฟล์จริง (PDF/ภาพ) + ข้อความที่อ่านได้ + ค้นคำ ----------
+  const src = { view: 'text', viewer: null, textHits: [], textCur: -1, timer: null };
+  function setSourceView(view) {
+    src.view = view;
+    document.querySelectorAll('[data-sview]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.sview === view)));
+    $('source-file').hidden = view !== 'file';
+    $('source-pagebar').hidden = view !== 'file';
+    $('source-textview').hidden = view !== 'text';
+    runSourceSearch();
+  }
+  document.querySelectorAll('[data-sview]').forEach(b => b.addEventListener('click', () => setSourceView(b.dataset.sview)));
+  function sourceNote(text) { $('source-note').textContent = text || ''; $('source-note').hidden = !text; }
+  async function loadSourceFile() {
+    if (!entry.sourceFileId || !finalsEnabled || !window.GovDocSourceViewer) return false;
+    try {
+      const info = await api.sourceViewUrl(entry.sourceFileId);
+      if (!info.url) return false;                     // Word/ข้อความ: แสดงข้อความที่อ่านได้อย่างเดียว
+      $('source-views').hidden = false;
+      $('source-open').href = info.url;
+      setSourceView('file');
+      src.viewer = await window.GovDocSourceViewer.open($('source-file'), info, {
+        onPage: (n, total) => { $('source-page').textContent = toThai(n); $('source-pages').textContent = toThai(total); },
+      });
+      if (!(await src.viewer.probeText())) {
+        sourceNote(info.kind === 'pdf' ? 'ไฟล์สแกนไม่มีชั้นข้อความ — ค้นคำได้ในแท็บ "ข้อความที่อ่านได้"' : 'ไฟล์ภาพ — ค้นคำได้ในแท็บ "ข้อความที่อ่านได้"');
+      }
+      runSourceSearch();
+      return true;
+    } catch (err) {
+      $('source-views').hidden = true;
+      setSourceView('text');
+      sourceNote('เปิดไฟล์ต้นเรื่องไม่ได้ (' + err.message + ') — แสดงข้อความที่อ่านได้แทน');
+      return false;
+    }
+  }
+  $('source-page-prev').addEventListener('click', () => src.viewer?.goPage(src.viewer.page - 1));
+  $('source-page-next').addEventListener('click', () => src.viewer?.goPage(src.viewer.page + 1));
+  for (const [id, d] of [['source-zoom-in', 1], ['source-zoom-out', -1]]) {
+    $(id).addEventListener('click', () => {
+      if (!src.viewer) return;
+      $('source-zoom').textContent = toThai(Math.round(src.viewer.setZoom(d) * 100)) + '%';   // ไฮไลต์เดิมทาใหม่ตอนเรนเดอร์
+    });
+  }
+  function showHits(cur, total) {
+    $('source-hits').textContent = total ? `${toThai(cur + 1)}/${toThai(total)}` : ($('source-search').value.trim() ? 'ไม่พบ' : '');
+    $('source-prev').disabled = $('source-next').disabled = total < 2;
+  }
+  async function runSourceSearch() {
+    const q = $('source-search').value.trim();
+    if (src.view === 'file' && src.viewer) {
+      const n = await src.viewer.search(q);
+      showHits(src.viewer.cur, n);
+      return n;
+    }
+    highlightSource();
+    return src.textHits.length;
+  }
+  function stepHit(delta) {
+    if (src.view === 'file' && src.viewer) {
+      src.viewer.goto(src.viewer.cur + delta).then(() => showHits(src.viewer.cur, src.viewer.hits.length));
+      return;
+    }
+    if (!src.textHits.length) return;
+    src.textHits[src.textCur]?.classList.remove('cur');
+    src.textCur = (src.textCur + delta + src.textHits.length) % src.textHits.length;
+    const m = src.textHits[src.textCur];
+    m.classList.add('cur'); m.scrollIntoView({ block: 'center' });
+    showHits(src.textCur, src.textHits.length);
+  }
+  $('source-search').addEventListener('input', () => { clearTimeout(src.timer); src.timer = setTimeout(runSourceSearch, 250); });
+  $('source-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); stepHit(e.shiftKey ? -1 : 1); } });
+  $('source-next').addEventListener('click', () => stepHit(1));
+  $('source-prev').addEventListener('click', () => stepHit(-1));
+
+  const aiSummary = () => (entry.context?.summary_by_ai && entry.context.summary) || '';
   function renderSource() {
+    $('source-summary').hidden = !aiSummary();
+    $('source-summary-text').textContent = aiSummary();
+    const refs = entry.styleExamples || [];
+    $('style-refs').hidden = !refs.length;
+    $('style-refs').innerHTML = refs.length ? `<i class="fa-solid fa-stamp mr-1"></i>ร่างนี้อ้างสำนวนจาก${toThai(refs.length)} ตัวอย่างของหน่วย: `
+      + refs.map(r => `<span class="font-medium">เรื่อง${esc(r.subject || '-')}</span>`).join(' · ') : '';
     const ctx = entry.context;
     if (!ctx) {
       $('source-meta').innerHTML = '';
@@ -449,13 +1531,13 @@
   function highlightSource() {
     const text = entry.context?.raw_text || '';
     const q = $('source-search').value.trim();
-    if (!q) { $('source-text').textContent = text || '(ไม่มีข้อความ)'; $('source-hits').textContent = ''; return; }
+    src.textHits = []; src.textCur = -1;
+    if (!q) { $('source-text').textContent = text || '(ไม่มีข้อความ)'; showHits(0, 0); return; }
     const parts = text.split(q);
     $('source-text').innerHTML = parts.map(esc).join(`<mark class="bg-amber-200 text-slate-900 rounded px-0.5">${esc(q)}</mark>`);
-    $('source-hits').textContent = `${toThai(parts.length - 1)} แห่ง`;
-    $('source-text').querySelector('mark')?.scrollIntoView({ block: 'center' });
+    src.textHits = [...$('source-text').querySelectorAll('mark')];
+    if (src.textHits.length) stepHit(1); else showHits(0, 0);
   }
-  $('source-search').addEventListener('input', highlightSource);
 
   // ---------- เกลาสำนวน ----------
   function openRefine(key, anchor) {
@@ -498,7 +1580,7 @@
     const el = sheet.querySelector(`[data-field="${key}"]`);
     el?.classList.add('flash-ok'); setTimeout(() => el?.classList.remove('flash-ok'), 2300);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeRefine(); $('quick-menu').hidden = true; } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeRefine(); closeFact(); $('quick-menu').hidden = true; toggleSettings(false); } });
 
   // ---------- ปุ่มลัด ----------
   $('btn-quick').addEventListener('click', (e) => {
@@ -511,7 +1593,7 @@
     const b = e.target.closest('[data-quick]'); if (!b) return;
     $('quick-menu').hidden = true;
     const act = b.dataset.quick;
-    if (act === 'jump') jumpToPlaceholder();
+    if (act === 'jump') nextTodo();
     if (act === 'lint') { showLeft(); selectTab('checks'); runCheck(); }
     if (act === 'print') window.print();
     if (act === 'formal') {
@@ -536,7 +1618,11 @@
     try {
       const blob = kind === 'pdf' ? await api.exportPdf(st.doc) : await api.exportDocx(st.doc);
       download(blob, `${safeName()}.${kind}`);
+      const expected = kind === 'pdf' && st.doc.attach_legal_pages !== false ? lawPageCount(st.doc.legal_refs || []) : 0;
+      if (expected && blob.legalPages >= expected) toast(`แนบหน้าข้อกฎหมาย ${toThai(blob.legalPages)} หน้าท้าย PDF แล้ว`);
+      else if (expected) toast(`แนบหน้าข้อกฎหมายได้ ${toThai(blob.legalPages || 0)} จาก ${toThai(expected)} หน้า — ไฟล์ต้นฉบับบางไฟล์ไม่พบในคลัง`, 'warn');
       st.doc.edit_status = 'saved'; persist();
+      snapshot(kind === 'pdf' ? 'ส่งออก PDF' : 'ส่งออก Word');
     } catch (err) { toast('ส่งออกไม่สำเร็จ: ' + err.message, 'error'); }
     finally { btn.disabled = false; btn.innerHTML = html; }
   }
@@ -544,31 +1630,64 @@
   $('btn-pdf').addEventListener('click', (e) => exportAs('pdf', e.currentTarget));
 
   // ---------- ร่างใหม่จากข้อมูลเพิ่มเติม ----------
+  // ร่างใหม่ทั้งฉบับด้วย AI จากต้นเรื่องเดิม (ข้อความที่อ่านจากไฟล์แล้ว ไม่ต้องอ่านไฟล์ซ้ำ)
+  // ใช้ทั้งตอนเพิ่มข้อมูล และตอนเปลี่ยนประเภทหนังสือ
+  async function redraft({ extra = '', docType = kindKey(), note = 'ก่อนร่างใหม่' } = {}) {
+    const source = entry.context?.raw_text || '';
+    const parts = [entry.prompt, source !== entry.prompt ? source : '', extra].filter(Boolean);
+    if (!parts.length) throw new Error('ไม่มีต้นเรื่องเดิมให้ร่างใหม่ — พิมพ์ข้อมูลเพิ่มในช่องด้านล่าง');
+    const fd = new FormData();
+    fd.append('prompt', parts.join('\n\n'));
+    fd.append('doc_type', docType);
+    fd.append('urgency', st.doc.urgency);
+    fd.append('secret', st.doc.secret);
+    if (docType === 'internal' && entry.unitKey) fd.append('unit_key', entry.unitKey);
+    const res = await api.draft(fd);
+    if (!res.document) throw new Error(res.steps.find(s => !s.ok)?.detail || 'ร่างไม่สำเร็จ');
+    st.versions.push({ at: new Date().toISOString(), doc: st.doc, note });
+    snapshot(note);
+    st.undo = []; st.redo = [];
+    st.doc = res.document; st.check = res.check;
+    // ต้นเรื่องเดิมยังเป็นข้อความที่อ่านจากไฟล์ (คงไว้ ไม่แทนด้วยข้อความที่ส่งไปร่างใหม่)
+    entry.steps = res.steps;
+    entry.styleExamples = res.style_examples || [];
+    if (!entry.context) entry.context = res.context;
+    else if (res.context?.summary_by_ai) entry.context = { ...entry.context, summary: res.context.summary, summary_by_ai: true };
+    if (extra) entry.prompt = [entry.prompt, extra].filter(Boolean).join('\n\n');
+    renderAll(); renderSource(); renderChat(); persist();
+  }
+
   $('redraft-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const extra = $('redraft-input').value.trim();
     if (!extra) { $('redraft-input').focus(); return; }
-    const base = entry.context?.raw_text || entry.prompt || '';
     if (!confirm('ร่างใหม่ทั้งฉบับจากต้นเรื่องเดิมรวมกับข้อมูลที่เพิ่ม? (ฉบับปัจจุบันจะเก็บไว้ในประวัติเวอร์ชัน)')) return;
     $('redraft-btn').disabled = true;
-    const fd = new FormData();
-    fd.append('prompt', [base, extra].filter(Boolean).join('\n\n'));
-    fd.append('doc_type', st.doc.doc_type);
-    fd.append('urgency', st.doc.urgency);
-    fd.append('secret', st.doc.secret);
     try {
-      const res = await api.draft(fd);
-      if (!res.document) throw new Error(res.steps.find(s => !s.ok)?.detail || 'ร่างไม่สำเร็จ');
-      st.versions.push({ at: new Date().toISOString(), doc: st.doc, note: 'ก่อนร่างใหม่' });
-      st.undo = []; st.redo = [];
-      st.doc = res.document; st.check = res.check;
-      entry.steps = res.steps; entry.context = res.context;
-      entry.prompt = [entry.prompt, extra].filter(Boolean).join('\n\n');
+      await redraft({ extra });
       $('redraft-input').value = '';
-      renderAll(); renderSource(); persist();
       toast('ร่างใหม่แล้ว');
     } catch (err) { toast(err.message, 'error'); }
     finally { $('redraft-btn').disabled = false; }
+  });
+
+  // เปลี่ยนประเภทหนังสือ → AI ร่างใหม่เป็นประเภทนั้น (โครงสร้างต่างกันมาก แปลงช่องตรง ๆ ไม่ได้ผลดี)
+  $('type-select').addEventListener('change', async (e) => {
+    const target = e.target.value;
+    if (target === kindKey()) return;
+    const label = DOC_TYPE_LABEL[target];
+    if (!confirm(`ร่างใหม่เป็น${label}ด้วย AI จากต้นเรื่องเดิม? (ฉบับปัจจุบันเก็บไว้ในประวัติเวอร์ชัน กลับไปใช้ได้)`)) {
+      e.target.value = kindKey(); return;
+    }
+    e.target.disabled = true;
+    toast(`กำลังร่างใหม่เป็น${label}... อาจใช้เวลาราว ๑ นาที`);
+    try {
+      await redraft({ docType: target, note: `ก่อนเปลี่ยนเป็น${label}` });
+      toast(`เปลี่ยนเป็น${label}แล้ว`);
+    } catch (err) {
+      e.target.value = kindKey();
+      toast(err.message, 'error');
+    } finally { e.target.disabled = false; }
   });
 
   // ---------- ประวัติเวอร์ชัน ----------
@@ -592,6 +1711,7 @@
     const v = st.versions[idx];
     st.versions.splice(idx, 1);
     st.versions.push({ at: new Date().toISOString(), doc: st.doc, note: 'ก่อนกู้คืน' });
+    snapshot('ก่อนกู้คืน');
     commit(d => Object.assign(d, JSON.parse(JSON.stringify(v.doc))));
     vModal.hidden = true;
     toast('กู้คืนเวอร์ชันแล้ว');
@@ -610,6 +1730,18 @@
   }
   new ResizeObserver(fitSheet).observe($('doc-viewport'));
 
+  // แถบเครื่องมือแถวเดียว: ไม่พอที่ก็ย่อเป็นขั้น
+  // ๑ ปุ่มย่อหน้า/สถานะบันทึก + ช่องหน่วยแคบลง → ๒ เลิกทำ/ทำซ้ำ (ยังใช้ Ctrl+Z/Y ได้) → ๓ ข้อความในป้ายสถานะ
+  // → ๔ ป้ายปุ่ม (เสนอขั้นถัดไป ตั้งค่าเอกสาร ชุดเสนอ) → ๕ คำว่า Word/PDF
+  function fitToolbar() {
+    const bar = $('toolbar');
+    for (const level of ['0', '1', '2', '3', '4', '5']) {
+      bar.dataset.compact = level;
+      if (bar.scrollWidth <= bar.clientWidth + 1) return;
+    }
+  }
+  new ResizeObserver(fitToolbar).observe($('toolbar'));
+
   // ---------- เรนเดอร์ทั้งหมด ----------
   function renderAll() {
     sheet.innerHTML = sheetHTML();
@@ -618,6 +1750,8 @@
     renderChrome();
     renderChecks();
     renderChat();
+    renderTodo();
+    renderLaw();
     fitSheet();
   }
 
@@ -627,8 +1761,11 @@
     $('rail-avatar').title = p.signatory_name || '';
   }).catch(() => {});
 
-  renderEditMode();
   renderAll();
   renderSource();
-  if (!st.check) runCheck();
+  setSourceView('text');
+  // มีไฟล์ต้นเรื่องเก็บไว้: เปิดแท็บต้นเรื่องให้อ่านเทียบกับร่างทันที
+  if (entry.sourceFileId && finalsEnabled) { selectTab('source'); loadSourceFile(); }
+  // เอกสารเก่าที่ยังไม่เคยตรวจข้อเท็จจริง ตรวจครั้งแรกตอนเปิด
+  if (!st.check || (!st.check.facts && sourceText())) runCheck();
 })();

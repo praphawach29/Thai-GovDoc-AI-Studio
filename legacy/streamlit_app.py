@@ -1,7 +1,7 @@
 """
 app.py — หน้าจอใช้งานหลัก (Interactive Workspace) สำหรับ Thai GovDoc AI Studio
 พัฒนาตามโมเดล Modern GovDoc Studio (Split-Screen Workspace, Compact Modern Typography, Smart Placeholders & A4 Canvas)
-รันด้วย Streamlit: streamlit run web/app.py
+รันด้วย Streamlit: streamlit run legacy/streamlit_app.py (ใช้บนเครื่อง local เท่านั้น)
 """
 
 import os
@@ -27,7 +27,7 @@ if "pytest" not in sys.modules:
         "core.models", "core.entity_extractor", "core.profile_manager",
         "core.extractor", "core.classifier", "core.templates_library",
         "core.linter", "core.memo_layout", "core.security",
-        "core.ai_drafter", "core.word_exporter", "core.pdf_exporter",
+        "core.ai_drafter", "core.word_exporter", "legacy.pdf_exporter",
         "core.sections", "core.intake", "core.legal_sources",
     ]:
         if mod in sys.modules:
@@ -48,7 +48,7 @@ from core.profile_manager import get_user_profile, save_user_profile, reset_to_d
 from core.extractor import extract_source_document, extract_from_raw_text
 from core.ai_drafter import draft_from_context_rule_based, draft_from_context_llm, DraftingIntent
 from core.templates_library import PRESET_TEMPLATES
-from core.pdf_exporter import get_pdf_bytes, export_govdoc_to_pdf
+from legacy.pdf_exporter import get_pdf_bytes, export_govdoc_to_pdf
 from core.copilot import (
     make_formal_tone,
     make_concise,

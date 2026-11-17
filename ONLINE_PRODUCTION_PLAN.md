@@ -30,8 +30,8 @@
 
 | ด้าน | ปัจจุบัน | ต้องมีก่อนใช้จริง |
 |---|---|---|
-| Frontend | Streamlit `web/app.py` | Next.js/React หรือ Streamlit หลัง SSO (pilot) |
-| Backend | FastAPI `core/api.py` + core modules | API Gateway, rate limit, versioning |
+| Frontend | `web/studio` (HTML/JS) + Streamlit เดิมใน `legacy/` | Next.js/React หรือ Streamlit หลัง SSO (pilot) |
+| Backend | FastAPI `server/` + core modules | API Gateway, rate limit, versioning |
 | ฐานข้อมูล | SQLite ไฟล์ lokal (`data/`) | PostgreSQL + backup + PITR |
 | ไฟล์แนบ | `uploads/` บนเครื่อง | Object Storage (MinIO/S3) + encryption |
 | ประมวลผล OCR | ทำใน request | Worker queue + progress + retry |
@@ -376,5 +376,5 @@
 | Security | `core/security.py` | AI Gateway + DLP |
 | Audit | `core/audit.py` | PostgreSQL + hash chain |
 | Registry | `core/registry.py` | Transaction + API |
-| UI | `web/app.py` | Next.js production |
-| API | `core/api.py` | Auth, rate limit, idempotency |
+| UI | `web/studio/` | Next.js production |
+| API | `server/` | Auth, rate limit, idempotency |

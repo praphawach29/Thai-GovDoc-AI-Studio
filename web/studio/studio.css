@@ -1,4 +1,8 @@
-/* ฟอนต์เอกสารราชการจริง (TH Sarabun New) จาก assets/fonts — ใช้บนกระดาษ A4 เท่านั้น */
+/* ฟอนต์เอกสารราชการจริงจาก assets/fonts — ใช้บนกระดาษ A4 เท่านั้น (ค่าเริ่มต้น TH SarabunIT๙) */
+@font-face { font-family: 'TH SarabunIT๙'; src: url('/assets/fonts/THSarabunIT9.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TH SarabunIT๙'; src: url('/assets/fonts/THSarabunIT9-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TH SarabunPSK'; src: url('/assets/fonts/THSarabunPSK.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TH SarabunPSK'; src: url('/assets/fonts/THSarabunPSK-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: 'TH Sarabun New'; src: url('/assets/fonts/THSarabunNew.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: 'TH Sarabun New'; src: url('/assets/fonts/THSarabunNew-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: 'TH Sarabun New'; src: url('/assets/fonts/THSarabunNew-Italic.ttf') format('truetype'); font-weight: 400; font-style: italic; font-display: swap; }
@@ -21,16 +25,26 @@
   width: 21cm;
   min-height: 29.7cm;
   padding: 2.5cm 2cm 2cm 3cm;
-  font-family: 'TH Sarabun New', 'Sarabun', serif;
+  font-family: 'TH SarabunIT๙', 'TH Sarabun New', 'Sarabun', serif;
   font-size: 16pt;
   line-height: 1.3;
   color: #0f172a;
   background: #fff;
   box-sizing: border-box;
 }
+/* บันทึกข้อความ (แบบกรุงเทพมหานคร): ขอบบน 1.5 ซม. */
+.a4-sheet[data-type="internal"] { padding-top: 1.5cm; }
+.a4-sheet[data-font="psk"] { font-family: 'TH SarabunPSK', 'TH Sarabun New', serif; }
+.a4-sheet[data-font="sarabun_new"] { font-family: 'TH Sarabun New', 'Sarabun', serif; }
+/* ระยะก่อนย่อหน้าตามแบบจริง: 'เรียน' และทุกหัวข้อ (รวมต้นเรื่อง) 6 pt */
+.a4-sheet .gap-6pt { margin-top: 6pt; }
 .a4-sheet .doc-bold { font-weight: 700; }
 .a4-sheet .memo-title { font-size: 29pt; font-weight: 700; line-height: 1; }
 .a4-sheet .indent-25 { text-indent: 2.5cm; }
+/* แต่ละบรรทัดของเนื้อความคือย่อหน้า; แท็บนำหน้าใช้กำหนดระดับ ไม่แสดงเป็นช่องว่าง */
+.a4-sheet .lines { tab-size: 0; -moz-tab-size: 0; }
+.a4-sheet .lines > .ln { min-height: 1em; }
+.a4-sheet .memo-head:empty::before { font-weight: 400; text-decoration: none; }
 .a4-sheet .justify-thai { text-align: justify; text-justify: inter-character; }
 .a4-sheet .garuda-ext { height: 3cm; width: auto; }
 .a4-sheet .garuda-int { height: 1.5cm; width: auto; }
@@ -41,6 +55,12 @@
 .edit-on .editable:focus { background: #ecfdf5; box-shadow: 0 0 0 2px #34d399; }
 .editable:empty::before { content: attr(data-empty); color: #94a3b8; font-style: italic; }
 .dotted-fill { border-bottom: 1px dotted #cbd5e1; }
+/* "เรื่อง": เส้นประเฉพาะบรรทัดแรก (ยาวถึงขอบขวา) บรรทัดที่ ๒ ไม่มีเส้น — ตรงกับ Word / PDF */
+.first-line-fill {
+  background-image: linear-gradient(to right, #cbd5e1 50%, transparent 0);
+  background-size: 2px 1px; background-repeat: repeat-x;
+  background-position: 0 calc(1lh - 2px);
+}
 
 /* Placeholder [✏️ ระบุ...] */
 .ph-chip {
@@ -50,6 +70,55 @@
 }
 .flash-ok { animation: flashOk 2.2s ease-out; }
 @keyframes flashOk { 0% { background: #d1fae5; } 100% { background: transparent; } }
+.flash-warn { animation: flashWarn 2.4s ease-out; }
+@keyframes flashWarn { 0%, 40% { background: #fef3c7; box-shadow: 0 0 0 2px #f59e0b; } 100% { background: transparent; box-shadow: none; } }
+
+/* ไฟล์ต้นเรื่องจริง (pdf.js): หน้า + ชั้นข้อความโปร่งใสสำหรับค้นคำ */
+.pdf-page { position: relative; margin: 0 auto; background: #fff; box-shadow: 0 1px 3px rgb(15 23 42 / .15); }
+.pdf-page canvas { display: block; }
+.textLayer { position: absolute; inset: 0; overflow: hidden; line-height: 1; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; z-index: 2; }
+.textLayer span, .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer ::selection { background: rgb(16 185 129 / .3); }
+.textLayer .hl { background: rgb(251 191 36 / .45); border-radius: 2px; }
+.textLayer .hl-cur { background: rgb(234 88 12 / .55); }
+#source-text mark.cur { background: #fb923c; }
+[data-sview][aria-pressed="true"] { background: #fff; color: #0f172a; font-weight: 500; box-shadow: 0 1px 2px rgb(15 23 42 / .1); }
+[data-sview][aria-pressed="false"] { color: #64748b; }
+
+/* แถบเครื่องมือแถวเดียว: ที่ไม่พอก็ย่อเป็นขั้น — .tb-hN ซ่อนเมื่อ data-compact >= N (ไอคอนคงอยู่ มี title) */
+#toolbar[data-compact="1"] .tb-h1, #toolbar[data-compact="2"] .tb-h1, #toolbar[data-compact="3"] .tb-h1, #toolbar[data-compact="4"] .tb-h1, #toolbar[data-compact="5"] .tb-h1 { display: none; }
+#toolbar[data-compact="2"] .tb-h2, #toolbar[data-compact="3"] .tb-h2, #toolbar[data-compact="4"] .tb-h2, #toolbar[data-compact="5"] .tb-h2 { display: none; }
+#toolbar[data-compact="3"] .tb-h3, #toolbar[data-compact="4"] .tb-h3, #toolbar[data-compact="5"] .tb-h3 { display: none; }
+#toolbar[data-compact="4"] .tb-h4, #toolbar[data-compact="5"] .tb-h4 { display: none; }
+#toolbar[data-compact="5"] .tb-h5 { display: none; }
+#toolbar[data-compact="1"] #unit-select, #toolbar[data-compact="2"] #unit-select, #toolbar[data-compact="3"] #unit-select, #toolbar[data-compact="4"] #unit-select, #toolbar[data-compact="5"] #unit-select { max-width: 9.5rem; }
+
+/* หน้าแรก: กระดาษ A4 ย่อส่วนที่ค่อย ๆ มีบรรทัดข้อความ ระหว่างรอ AI ร่าง */
+.draft-sheet { width: 76px; height: 106px; padding: 10px 9px; flex-direction: column; gap: 6px; background: #fff;
+  border: 1px solid #e2e8f0; border-radius: 4px; box-shadow: 0 6px 16px -8px rgb(15 23 42 / .25); }
+.draft-sheet .ds-crest { width: 12px; height: 12px; border-radius: 9999px; background: #d1fae5; margin: 0 auto 2px; }
+.draft-sheet i { display: block; height: 3px; border-radius: 2px; background: #e2e8f0; position: relative; overflow: hidden; }
+.draft-sheet i::after { content: ""; position: absolute; inset: 0; background: #10b981; transform: scaleX(0); transform-origin: left;
+  animation: dsWrite 3.6s ease-in-out infinite; }
+.draft-sheet i.ds-gap { margin-top: 3px; }
+.draft-sheet i.ds-short { width: 55%; }
+.draft-sheet i:nth-of-type(2)::after { animation-delay: .35s; } .draft-sheet i:nth-of-type(3)::after { animation-delay: .7s; }
+.draft-sheet i:nth-of-type(4)::after { animation-delay: 1.05s; } .draft-sheet i:nth-of-type(5)::after { animation-delay: 1.4s; }
+.draft-sheet i:nth-of-type(6)::after { animation-delay: 1.75s; } .draft-sheet i:nth-of-type(7)::after { animation-delay: 2.1s; }
+@keyframes dsWrite { 0% { transform: scaleX(0); opacity: 1; } 30%, 80% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+/* ผู้ใช้ตั้ง "ลดการเคลื่อนไหว": ไม่มีแอนิเมชัน เหลือข้อความและตัวเลข */
+@media (prefers-reduced-motion: reduce) {
+  .draft-sheet i::after { animation: none; transform: scaleX(.6); opacity: .5; }
+  #progress .fa-spin { animation: none; }
+  .animate-fadeIn { animation: none; }
+}
+
+/* ผู้ลงนามใช้ตราประทับ: กรอบเว้นที่ (สูงเท่าชื่อ + ตำแหน่ง ๒ บรรทัด) — ตอนพิมพ์จากเบราว์เซอร์เหลือที่ว่าง */
+.stamp-area { height: 2.6em; display: flex; align-items: center; justify-content: center; gap: .4em;
+  border: 1px dashed #cbd5e1; border-radius: 4px; color: #94a3b8; font-family: 'Prompt', sans-serif; font-size: 10pt; }
+@media print { .stamp-area { visibility: hidden; } }
+/* หนังสือประทับตรา: ที่ว่างประทับตราชื่อส่วนราชการ (หมึกแดง) */
+.stamp-seal { border-color: #fca5a5; color: #f87171; font-size: 9pt; text-align: center; padding: 0 .5em; }
 
 /* ย่อกระดาษให้พอดีจอแคบโดยยังคงสัดส่วนจริง */
 .sheet-scale { transform-origin: top center; }

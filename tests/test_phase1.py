@@ -129,7 +129,9 @@ def test_word_export_internal(sample_internal_doc, tmp_path):
     # ตรวจสอบขอบกระดาษหนังสือภายใน (บน 1.5 ซม. ตามแบบ กทม./ช่วง 1.5–2.0 ซม.)
     assert round(section.top_margin.cm, 1) == 1.5
 
-    full_text = "\n".join([p.text for p in doc.paragraphs])
+    # "เรื่อง" ของบันทึกข้อความอยู่ในตาราง ๒ ช่อง (เส้นประเฉพาะบรรทัดแรก) — รวมข้อความในตารางด้วย
+    cell_text = [p.text for t in doc.tables for c in t._cells for p in c.paragraphs]
+    full_text = "\n".join([p.text for p in doc.paragraphs] + cell_text)
     assert "\u200b" in full_text
     clean_text = full_text.replace("\u200b", "")
     assert "ขออนุมัติจัดโครงการสัมมนาเชิงปฏิบัติการ" in clean_text

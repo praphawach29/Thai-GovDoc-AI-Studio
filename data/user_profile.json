@@ -8,6 +8,76 @@
   "signatory_position": "ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว",
   "contact_dept": "กองการกีฬา (กลุ่มงานส่งเสริมกีฬา)",
   "contact_tel": "๐ ๒๒๔๖ ๘๐๗๙",
+  "issuing_units": [
+    {
+      "key": "sport-promotion",
+      "label": "กลุ่มงานส่งเสริมกีฬา",
+      "dept_name": "กลุ่มงานส่งเสริมกีฬา โทร.๐ ๒๒๔๖ ๘๐๗๙ โทรสาร ๐ ๒๒๔๖ ๐๒๘๒",
+      "doc_number_format": "{gap}/{year}",
+      "contact_dept": "กลุ่มงานส่งเสริมกีฬา",
+      "contact_tel": "๐ ๒๒๔๖ ๘๐๗๙",
+      "contact_fax": "๐ ๒๒๔๖ ๐๒๘๒",
+      "blank_day": true,
+      "is_default": true,
+      "recipient": "หัวหน้ากลุ่มงานส่งเสริมกีฬา",
+      "signers": [
+        {
+          "name": "",
+          "position": "ผู้เสนอเรื่อง",
+          "is_author": true
+        },
+        {
+          "name": "",
+          "position": "หัวหน้ากลุ่มงานส่งเสริมกีฬา",
+          "is_author": false
+        }
+      ],
+      "review_party": "กลุ่มงานส่งเสริมกีฬา",
+      "request_text": "จึงเรียนมาเพื่อโปรดพิจารณานำเรียนผู้อำนวยการกองการกีฬาลงนามในหนังสือที่แนบ"
+    },
+    {
+      "key": "sports-division",
+      "label": "กองการกีฬา",
+      "dept_name": "กองการกีฬา (กลุ่มงานส่งเสริมกีฬา โทร.๐ ๒๒๔๖ ๘๐๗๙ โทรสาร ๐ ๒๒๔๖ ๐๒๘๒)",
+      "doc_number_format": "กท 1205/{gap}",
+      "contact_dept": "กองการกีฬา",
+      "contact_tel": "๐ ๒๒๔๖ ๘๐๗๙",
+      "contact_fax": "๐ ๒๒๔๖ ๐๒๘๒",
+      "blank_day": true,
+      "is_default": false,
+      "recipient": "ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว",
+      "signers": [
+        {
+          "name": "",
+          "position": "ผู้อำนวยการกองการกีฬา",
+          "is_author": false
+        }
+      ],
+      "review_party": "กองการกีฬา",
+      "request_text": "จึงเรียนมาเพื่อโปรดพิจารณาลงนามหนังสือเรียนปลัดกรุงเทพมหานครที่แนบ"
+    },
+    {
+      "key": "culture-sports-bureau",
+      "label": "สำนักวัฒนธรรม กีฬา และการท่องเที่ยว",
+      "dept_name": "สำนักวัฒนธรรม กีฬา และการท่องเที่ยว (กองการกีฬา โทร.๐ ๒๒๔๖ ๘๐๗๙ โทรสาร ๐ ๒๒๔๖ ๐๒๘๒)",
+      "doc_number_format": "กท 1205/{gap}",
+      "contact_dept": "กองการกีฬา",
+      "contact_tel": "๐ ๒๒๔๖ ๘๐๗๙",
+      "contact_fax": "๐ ๒๒๔๖ ๐๒๘๒",
+      "blank_day": true,
+      "is_default": false,
+      "recipient": "ปลัดกรุงเทพมหานคร",
+      "signers": [
+        {
+          "name": "",
+          "position": "ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว",
+          "is_author": false
+        }
+      ],
+      "review_party": "สำนักวัฒนธรรม กีฬา และการท่องเที่ยว",
+      "request_text": "จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดนำเรียนผู้ว่าราชการกรุงเทพมหานครเพื่อโปรดพิจารณาตามข้อพิจารณาและเสนอแนะข้างต้น"
+    }
+  ],
   "contact_fax": "๐ ๒๒๔๖ ๐๒๘๒",
   "contact_email": "sports.bma@bangkok.go.th",
   "hierarchy_default": "dept_to_perm_sec"

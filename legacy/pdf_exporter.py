@@ -4,6 +4,7 @@ pdf_exporter.py — ตัวสร้างไฟล์ PDF เวกเตอ�
 เพื่อสร้างไฟล์ PDF คมชัดระดับ Vector พร้อมฝังฟอนต์ Sarabun และตราครุฑจริง
 """
 
+import html
 import os
 import shutil
 import base64
@@ -17,15 +18,38 @@ from core.thai_segmenter import to_thai_numerals
 from core.memo_layout import render_memo_blocks_html
 
 
+def _find_headless_shell() -> list:
+    """หา chrome-headless-shell (Playwright) ซึ่งเหมาะกับเซิร์ฟเวอร์/คลาวด์
+
+    Chrome/Chromium ตัวเต็มอาจค้างตอนสร้าง profile ใหม่ (--user-data-dir) บนเครื่อง
+    ที่ไม่มี dbus หรือออกอินเทอร์เน็ตไม่ได้ ส่วน headless shell ไม่มีปัญหานี้
+    """
+    found = [shutil.which("chrome-headless-shell")]
+    roots = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH"), str(Path.home() / ".cache" / "ms-playwright")]
+    for root in roots:
+        if root and os.path.isdir(root):
+            found.extend(sorted(
+                (str(p) for p in Path(root).glob("chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell")),
+                reverse=True,
+            ))
+    return found
+
+
 def _find_browser_executable() -> Optional[str]:
-    """ค้นหา Browser Executable สำหรับใช้ในการเรนเดอร์ PDF แบบ Headless"""
+    """ค้นหา Browser Executable สำหรับใช้ในการเรนเดอร์ PDF แบบ Headless
+
+    ลำดับ: ตัวแปร GOVDOC_PDF_BROWSER → Edge/Chrome บน Windows → chrome-headless-shell
+    → Edge/Chrome/Chromium บน Linux/Mac
+    """
     candidates = [
+        os.environ.get("GOVDOC_PDF_BROWSER"),
         # Microsoft Edge บน Windows
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
         r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
         # Google Chrome บน Windows
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        *_find_headless_shell(),
         # Linux / Mac fallbacks
         shutil.which("msedge"),
         shutil.which("google-chrome"),
@@ -36,6 +60,47 @@ def _find_browser_executable() -> Optional[str]:
         if c and os.path.exists(c):
             return c
     return None
+
+
+_FONT_FACES = [
+    ("THSarabunNew.ttf", "normal", "normal"),
+    ("THSarabunNew-Bold.ttf", "bold", "normal"),
+    ("THSarabunNew-Italic.ttf", "normal", "italic"),
+    ("THSarabunNew-BoldItalic.ttf", "bold", "italic"),
+]
+
+
+def _local_font_faces_css() -> str:
+    """ประกาศ @font-face ของ TH Sarabun New จาก assets/fonts (ไม่พึ่งอินเทอร์เน็ต)
+
+    เดิมใช้ Google Fonts ซึ่งทำให้ headless browser ค้างเมื่อเครื่องไม่มีอินเทอร์เน็ต
+    (on-prem / cloud sandbox) และเป็นฟอนต์ Sarabun ไม่ใช่ TH Sarabun New ตามระเบียบ
+    """
+    fonts_dir = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+    rules = []
+    for filename, weight, style in _FONT_FACES:
+        font_path = fonts_dir / filename
+        if font_path.exists():
+            rules.append(
+                "@font-face { font-family: 'TH Sarabun New'; "
+                f"src: url('{font_path.as_uri()}') format('truetype'); "
+                f"font-weight: {weight}; font-style: {style}; }}"
+            )
+    return "\n".join(rules)
+
+
+def _html_escaped_copy(data: GovDocumentSchema) -> GovDocumentSchema:
+    """สำเนาเอกสารที่ escape ข้อความทุกช่อง (str และ list ของ str) สำหรับใส่ใน HTML"""
+    updates = {}
+    for name in type(data).model_fields:
+        if name == "signature_image_path":
+            continue
+        value = getattr(data, name)
+        if isinstance(value, str):
+            updates[name] = html.escape(value, quote=True)
+        elif isinstance(value, list) and all(isinstance(v, str) for v in value):
+            updates[name] = [html.escape(v, quote=True) for v in value]
+    return data.model_copy(update=updates)
 
 
 def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = None) -> str:
@@ -64,6 +129,11 @@ def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = N
         with open(data.signature_image_path, "rb") as f:
             sig_b64 = base64.b64encode(f.read()).decode("utf-8")
         sig_html = f'<div style="text-align: center; margin: 4px 0;"><img src="data:image/png;base64,{sig_b64}" style="height: 38px; width: auto;" alt="ลายมือชื่อ" /></div>'
+
+    # ข้อความทุกช่องมาจากผู้ใช้/AI ต้อง escape ก่อนใส่ใน HTML
+    # มิฉะนั้นข้อความอย่าง <iframe src="file:///etc/passwd"> จะถูก Chrome เรนเดอร์ลง PDF
+    raw = data
+    data = _html_escaped_copy(data)
 
     fmt_date = to_thai_numerals(data.doc_date) if data.use_thai_numerals else data.doc_date
     fmt_number = to_thai_numerals(data.doc_number) if data.use_thai_numerals else data.doc_number
@@ -133,7 +203,8 @@ def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = N
     else:
         # บันทึกข้อความ (หนังสือภายใน) — โครงสร้างตาม core.memo_layout
         num = (lambda t: to_thai_numerals(t)) if data.use_thai_numerals else (lambda t: t)
-        memo_sections_rendered = render_memo_blocks_html(data.get_memo_blocks(), transform=num)
+        # memo_layout escape ข้อความเองแล้ว จึงส่งข้อมูลดิบ (กันการ escape ซ้ำ)
+        memo_sections_rendered = render_memo_blocks_html(raw.get_memo_blocks(), transform=num)
 
         dept_value = data.dept_name
         if data.contact_tel and data.contact_tel not in dept_value:
@@ -176,7 +247,7 @@ def generate_govdoc_html(data: GovDocumentSchema, garuda_path: Optional[str] = N
 <head>
 <meta charset="utf-8">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+{_local_font_faces_css()}
 @page {{
     size: A4 portrait;
     margin: 25mm 20mm 20mm 30mm; /* บน 2.5 ซม. ขวา 2 ซม. ล่าง 2 ซม. ซ้าย 3 ซม. */

@@ -18,7 +18,8 @@ from core.entity_extractor import extract_entities, find_unclear_spans
 from core.ocr_preprocessor import (
     render_pdf_to_images,
     deskew_image,
-    enhance_document_contrast
+    enhance_document_contrast,
+    opencv_available,
 )
 
 
@@ -131,7 +132,7 @@ def try_extract_ocr_multi_engine(
 
 
 def extract_text_from_pdf(
-    pdf_path: str, api_key: Optional[str] = None, allow_cloud: bool = True
+    pdf_path: str, api_key: Optional[str] = None, allow_cloud: bool = True, ocr_fn=None
 ) -> Tuple[str, bool, int, Optional[str], bool, Optional[str], Optional[str]]:
     """
     สกัดข้อความจากไฟล์ PDF:
@@ -200,9 +201,18 @@ def extract_text_from_pdf(
             extraction_error = "ไม่สามารถแปลงไฟล์ PDF เป็นภาพเพื่อประมวลผล OCR ได้"
             return "", True, page_count, preview_path, extraction_failed, extraction_error, None
 
+        # AI อ่านทุกหน้าในคำขอเดียว (Gemini → Claude) — เร็วกว่าส่งทีละหน้ามาก
+        if ocr_fn is not None and allow_cloud:
+            ai_text, ai_engine = ocr_fn(images)
+            if ai_text:
+                if page_count > len(images):
+                    ai_engine = f"{ai_engine} · อ่าน {len(images)} จาก {page_count} หน้าแรก"
+                return ai_text, True, page_count, preview_path, False, None, ai_engine
+
         ocr_pages = []
         for idx, img in enumerate(images):
-            txt, eng_name = try_extract_ocr_multi_engine(img, api_key=api_key, allow_cloud=allow_cloud)
+            txt, eng_name = try_extract_ocr_multi_engine(
+                img, api_key=api_key, allow_cloud=allow_cloud and ocr_fn is None)
             if txt:
                 ocr_pages.append(f"--- หน้าที่ {idx + 1} ---\n{txt}")
                 if not ocr_engine_used and eng_name:
@@ -217,7 +227,8 @@ def extract_text_from_pdf(
             extraction_failed = True
             extraction_error = (
                 "เอกสารนี้เป็นไฟล์สแกน/ภาพถ่าย แต่ระบบไม่สามารถถอดข้อความได้ "
-                "(กรุณาระบุ GEMINI_API_KEY หรือเปิดใช้งาน Local Docker OCR หรือกรอกข้อความด้วยตนเอง)"
+                "(ผู้ดูแลต้องตั้ง GEMINI_API_KEY หรือ ANTHROPIC_API_KEY ให้ AI อ่านไฟล์สแกน "
+                "หรือคัดลอกข้อความต้นเรื่องมาวางในช่องคำสั่งแทน)"
             )
     else:
         raw_text = digital_text
@@ -258,7 +269,7 @@ def extract_text_from_docx(docx_path: str) -> str:
 
 
 def extract_text_from_image_file(
-    image_path: str, api_key: Optional[str] = None, allow_cloud: bool = True
+    image_path: str, api_key: Optional[str] = None, allow_cloud: bool = True, ocr_fn=None
 ) -> Tuple[str, Optional[str], bool, Optional[str], Optional[str]]:
     """
     ประมวลผลรูปภาพเอกสารสแกน:
@@ -267,25 +278,27 @@ def extract_text_from_image_file(
     3. ส่งเข้า OCR Multi-Engine
     """
     preview_path = image_path
-    try:
+    img_cv = None
+    if opencv_available():
         import cv2
         img_cv = cv2.imread(image_path)
-        if img_cv is not None:
-            deskewed, _ = deskew_image(img_cv)
-            enhanced = enhance_document_contrast(deskewed)
-            preview_dir = Path(image_path).parent / "previews"
-            try:
-                preview_dir.mkdir(parents=True, exist_ok=True)
-                p_path = str(preview_dir / f"{Path(image_path).stem}_enhanced.png")
-                cv2.imwrite(p_path, enhanced)
-                preview_path = p_path
-            except OSError:
-                pass
-    except Exception:
-        pass
+
+    # ไม่มี OpenCV (เช่นบนคลาวด์) = ส่งภาพต้นฉบับเข้า OCR โดยไม่ปรับภาพ
+    if img_cv is not None:
+        deskewed, _ = deskew_image(img_cv)
+        enhanced = enhance_document_contrast(deskewed)
+        preview_dir = Path(image_path).parent / "previews"
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        preview_path = str(preview_dir / f"{Path(image_path).stem}_enhanced.png")
+        cv2.imwrite(preview_path, enhanced)
 
     pil_img = Image.open(preview_path)
-    text, eng_name = try_extract_ocr_multi_engine(pil_img, api_key=api_key, allow_cloud=allow_cloud)
+    text, eng_name = ("", None)
+    if ocr_fn is not None and allow_cloud:
+        text, eng_name = ocr_fn([pil_img])
+    if not text:
+        text, eng_name = try_extract_ocr_multi_engine(
+            pil_img, api_key=api_key, allow_cloud=allow_cloud and ocr_fn is None)
 
     if len(text.strip()) >= 20:
         return text, preview_path, False, None, eng_name
@@ -322,7 +335,11 @@ def parse_govdoc_metadata(raw_text: str) -> dict:
 
     # 2. ค้นหาวันที่ พ.ศ. (รองรับทั้งแบบมีเว้นวรรคและไม่มีเว้นวรรค)
     date_pattern = rf'([๐-๙0-9]{{1,2}})\s*({THAI_MONTHS_REGEX})\s*(?:พ\.ศ\.\s*)?([๐-๙0-9]{{2,4}})'
-    for line in lines[:30]:
+    # วันที่ลงหนังสืออยู่บรรทัดของตัวเอง (หรือหลัง "วันที่" ในบันทึกข้อความ) — ใช้ก่อนวันที่ในประโยคเนื้อหา
+    # เช่น วันจัดงานในย่อหน้าแรก ซึ่งมักมาก่อนบรรทัดลงชื่อ
+    standalone = re.compile(rf'^(?:วันที่\s*)?{date_pattern}\s*$')
+    date_lines = [ln for ln in lines[:30] if standalone.match(ln)] + lines[:30]
+    for line in date_lines:
         match_date = re.search(date_pattern, line)
         if match_date:
             day = match_date.group(1)
@@ -366,6 +383,17 @@ def parse_govdoc_metadata(raw_text: str) -> dict:
         "องค์การ", "ฝ่าย", "กอง", "คณะ", "สมาคม", "มูลนิธิ", "สโมสร", "ชมรม", "บริษัท"
     ]
     for line in lines[:20]:
+        # AI OCR อธิบายภาพเป็นวงเล็บ เช่น "[ตราสัญลักษณ์: สมาคม... ENGLISH NAME]" — ใช้เฉพาะชื่อภาษาไทยข้างใน
+        # ส่วนตรายางรับหนังสือ (เลขรับ) เป็นของผู้รับ ไม่ใช่หน่วยงานผู้ส่ง
+        if line.startswith("[ตรายาง") or "เลขรับ" in line:
+            continue
+        m_ann = re.match(r'^\[(?:ตรา|โลโก้|ตราสัญลักษณ์|หัวกระดาษ)[^:：\]]*[:：]\s*([^\]]+)\]\s*$', line)
+        if m_ann:
+            line = m_ann.group(1).strip()
+            if re.search(r'[ก-๙]', line):
+                line = re.sub(r'(?:\s+[A-Za-z][A-Za-z.&\'-]*)+\s*$', '', line).strip()
+        elif line.startswith("["):
+            continue
         if line.startswith("ที่") or line.startswith("เรื่อง") or line.startswith("เรียน") or "บันทึกข้อความ" in line:
             continue
         if any(kw in line for kw in dept_keywords):
@@ -403,6 +431,7 @@ def extract_source_document(
     api_key: Optional[str] = None,
     allow_cloud: bool = True,
     secret: SecretLevel = SecretLevel.NORMAL,
+    ocr_fn=None,
 ) -> SourceDocumentContext:
     """
     ฟังก์ชันหลักสำหรับวิเคราะห์และสกัดข้อมูลจากไฟล์ต้นเรื่องทุกชนิด
@@ -410,6 +439,7 @@ def extract_source_document(
 
     secret: ชั้นความลับของเอกสาร — ถ้าไม่ใช่ normal จะบังคับให้ OCR ใช้เฉพาะเครื่องภายใน
     allow_cloud: ถ้า False จะไม่เรียก Gemini Vision
+    ocr_fn: ตัวอ่านภาพด้วย AI (รับรายการภาพ คืน (ข้อความ, ชื่อ engine)) — ใช้ก่อน OCR แบบเดิม
     """
     path = Path(file_path)
     if not path.exists():
@@ -428,7 +458,7 @@ def extract_source_document(
     ocr_engine_used = None
 
     if ext == ".pdf":
-        raw_text, is_scanned, page_count, preview_path, extraction_failed, extraction_error, ocr_engine_used = extract_text_from_pdf(str(path), api_key=api_key, allow_cloud=allow_cloud)
+        raw_text, is_scanned, page_count, preview_path, extraction_failed, extraction_error, ocr_engine_used = extract_text_from_pdf(str(path), api_key=api_key, allow_cloud=allow_cloud, ocr_fn=ocr_fn)
     elif ext in [".docx", ".doc"]:
         raw_text = extract_text_from_docx(str(path))
         is_scanned = False
@@ -436,7 +466,7 @@ def extract_source_document(
         if extraction_failed:
             extraction_error = "ไม่สามารถอ่านข้อความจากไฟล์ Word ได้ หรือไฟล์ไม่มีเนื้อความ"
     elif ext in [".png", ".jpg", ".jpeg", ".tiff", ".bmp"]:
-        raw_text, preview_path, extraction_failed, extraction_error, ocr_engine_used = extract_text_from_image_file(str(path), api_key=api_key, allow_cloud=allow_cloud)
+        raw_text, preview_path, extraction_failed, extraction_error, ocr_engine_used = extract_text_from_image_file(str(path), api_key=api_key, allow_cloud=allow_cloud, ocr_fn=ocr_fn)
         is_scanned = True
     elif ext in [".txt", ".md", ".json"]:
         raw_text = path.read_text(encoding="utf-8")
@@ -464,7 +494,7 @@ def extract_source_document(
         except Exception:
             source_case = None
 
-    entity_method = "vlm" if ocr_engine_used == "Gemini Vision" else ("ocr" if is_scanned else "regex")
+    entity_method = "vlm" if (ocr_engine_used or "").startswith(("Gemini", "Claude")) else ("ocr" if is_scanned else "regex")
     entities = extract_entities(raw_text, method=entity_method) if raw_text else []
     unclear_spans = find_unclear_spans(raw_text) if raw_text else []
 
