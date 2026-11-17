@@ -81,12 +81,14 @@ FORM_KEYS: Dict[str, Tuple[DocType, DocumentKind]] = {
     "external": (DocType.EXTERNAL, DocumentKind.EXTERNAL_LETTER),
     "stamp_letter": (DocType.EXTERNAL, DocumentKind.STAMP_LETTER),
     "order": (DocType.EXTERNAL, DocumentKind.ORDER),
+    "announcement": (DocType.EXTERNAL, DocumentKind.ANNOUNCEMENT),
 }
 FORM_LABELS: Dict[str, str] = {
     "internal": "บันทึกข้อความ (หนังสือภายใน)",
     "external": "หนังสือภายนอก",
     "stamp_letter": "หนังสือประทับตรา",
     "order": "คำสั่ง",
+    "announcement": "ประกาศ",
 }
 # ชนิดที่จัดหน้าแบบ "หัวกลาง" (ครุฑ · ชื่อเอกสาร · ที่ · เรื่อง/ว่าด้วย · เส้นคั่น · ข้อความ · ... ณ วันที่ · ผู้ลงนาม)
 FORMAL_KINDS = frozenset({DocumentKind.ORDER, DocumentKind.REGULATION, DocumentKind.BYLAW, DocumentKind.ANNOUNCEMENT})

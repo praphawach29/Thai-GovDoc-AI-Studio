@@ -338,3 +338,62 @@ def test_order_pdf_layout():
     assert abs((sx0 + sx1) / 2 - (LEFT + 11 * CM)) < 0.2 * CM     # กึ่งกลางช่วง 6–16 ซม.
     assert (signer["top"] - date["bottom"]) / CM > 1.5           # ที่ว่างลงลายมือชื่อ
     assert min(w["x0"] for w in words) / CM > 2.95 and max(w["x1"] for w in words) / CM < 19.05
+
+
+# ================================================================ ประกาศ (แบบที่ ๗)
+def test_blank_announcement_shape():
+    doc = create_blank_document(DocType.EXTERNAL, profile=UserProfileSchema(dept_name="กองการกีฬา"),
+                                kind=DocumentKind.ANNOUNCEMENT)
+    assert doc.form_key == "announcement" and doc.special_title == "ประกาศกองการกีฬา"
+    assert doc.paragraph_purpose == "จึงประกาศให้ทราบโดยทั่วกัน"
+    labels = {p.split(":")[0] for p in doc.find_placeholders()}
+    assert "เลขที่หนังสือ" not in labels                      # ประกาศไม่มีบรรทัด "ที่"
+    rules = {i.rule_id for i in lint_gov_document(doc).issues}
+    assert not rules & {"RULE_DOC_NUMBER_PLACEHOLDER", "RULE_DOC_NUMBER_MISSING", "RULE_PURPOSE_CONVENTION"}
+
+
+@pytest.mark.parametrize("prompt, expected", [
+    ("ร่างประกาศรับสมัครนักกีฬาเยาวชน", "announcement"),
+    ("ช่วยทำประกาศรายชื่อผู้มีสิทธิ์เข้าแข่งขัน", "announcement"),
+    ("ร่างคำสั่งแต่งตั้งคณะกรรมการ", "order"),
+])
+def test_requested_announcement(prompt, expected):
+    assert requested_form(prompt) == expected
+
+
+def test_announcement_prompt():
+    prompt = build_user_prompt(doc_type=DocType.EXTERNAL, kind=DocumentKind.ANNOUNCEMENT,
+                               instruction="รับสมัครนักกีฬา", source_text="")
+    assert "ประกาศ (แบบที่ ๗" in prompt and "จึงประกาศให้ทราบโดยทั่วกัน" in prompt and "<form_example>" in prompt
+
+
+def test_api_announcement():
+    assert client.post("/api/v1/studio/blank", json={"doc_type": "announcement"}).json()["kind"] == "announcement"
+    res = client.post("/api/v1/studio/draft", data={"prompt": "ร่างประกาศรับสมัครนักกีฬาเยาวชน ปิดรับ ๓๐ พ.ย."})
+    assert res.status_code == 200 and res.json()["document"]["kind"] == "announcement"
+
+
+def test_announcement_docx(tmp_path):
+    from docx import Document
+
+    out = tmp_path / "ann.docx"
+    export_govdoc_to_docx(_formal(DocumentKind.ANNOUNCEMENT, special_title="ประกาศกองการกีฬา"), str(out))
+    texts = [p.text.replace("​", "") for p in Document(str(out)).paragraphs]
+    assert "ประกาศกองการกีฬา" in texts
+    assert not any(t.startswith("ที่") for t in texts)          # ไม่มีบรรทัดเลขที่
+    assert "ประกาศ ณ วันที่  17 พฤศจิกายน พ.ศ. 2569" in texts
+
+
+@pytest.mark.requires_typst
+def test_announcement_pdf():
+    res = client.post("/api/v1/export/pdf", json=_formal(DocumentKind.ANNOUNCEMENT).model_dump(mode="json"))
+    assert res.status_code == 200, res.text
+    page = pdfplumber.open(io.BytesIO(res.content)).pages[0]
+    words = page.extract_words()
+    assert not any("12/2569" in w["text"] for w in words)       # ไม่มีบรรทัด "ที่"
+    title = next(w for w in words if w["text"] == "TITLEX")
+    subject = next(w for w in words if w["text"] == "SUBJECTX")
+    assert 0.5 < (subject["bottom"] - title["bottom"]) / CM < 1.0   # เรื่องอยู่บรรทัดถัดจากชื่อเอกสาร
+    date = next(w for w in words if w["text"] == "17")
+    row = [w for w in words if abs(w["bottom"] - date["bottom"]) < 2]
+    assert abs((min(w["x0"] for w in row) - LEFT) / CM - 5.0) < 0.1

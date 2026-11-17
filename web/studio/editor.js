@@ -254,6 +254,7 @@
   // แบบหัวกลาง (คำสั่ง/ประกาศ/ระเบียบ/ข้อบังคับ) — ค่าเดียวกับ core/doc_forms.FORMAL
   const FORMAL_UI = {
     order: { number: true, subjectLabel: 'เรื่อง', dateLabel: 'สั่ง ณ วันที่' },
+    announcement: { number: false, subjectLabel: 'เรื่อง', dateLabel: 'ประกาศ ณ วันที่' },
   };
   const isFormal = () => !!FORMAL_UI[kindKey()];
   function formalSheetHTML() {
