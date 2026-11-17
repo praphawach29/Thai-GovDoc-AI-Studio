@@ -1,4 +1,4 @@
-// studio.js — ส่วนกลางของหน้าเว็บ GovDoc Studio: เรียก API, เก็บร่าง, ตัวช่วยข้อความไทย
+// studio.js — ส่วนกลางของหน้าเว็บ Thai GovDoc AI Studio: เรียก API, เก็บร่าง, ตัวช่วยข้อความไทย
 // ต้องโหลด auth.js ก่อนไฟล์นี้
 (function () {
   const API = '/api/v1';

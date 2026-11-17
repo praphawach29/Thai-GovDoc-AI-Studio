@@ -1,5 +1,5 @@
 """
-studio.py — Business logic สำหรับหน้าเว็บ GovDoc Studio (web/studio)
+studio.py — Business logic สำหรับหน้าเว็บ Thai GovDoc AI Studio (web/studio)
 
 รวมขั้นตอน "รับมอบหมาย → สกัดข้อความ → จำแนกชนิด → ร่าง → ตรวจ" ไว้ในที่เดียว
 เพื่อให้ frontend เรียกผ่าน API ครั้งเดียว โดยไม่ผูกกับ Streamlit session state

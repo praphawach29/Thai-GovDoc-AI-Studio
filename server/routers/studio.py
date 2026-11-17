@@ -1,4 +1,4 @@
-"""API ของหน้าเว็บ GovDoc Studio (หน้าแรก + หน้าแก้ไขเอกสาร)"""
+"""API ของหน้าเว็บ Thai GovDoc AI Studio (หน้าแรก + หน้าแก้ไขเอกสาร)"""
 
 from pathlib import Path
 from typing import List, Optional

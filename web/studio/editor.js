@@ -698,7 +698,7 @@
     $('type-select').value = kindKey();
     $('doc-title').textContent = d.subject || 'ไม่มีชื่อเรื่อง';
     $('doc-title').title = d.subject || '';
-    document.title = `${d.subject || 'เอกสาร'} — GovDoc Studio`;
+    document.title = `${d.subject || 'เอกสาร'} — Thai GovDoc AI Studio`;
     $('btn-undo').disabled = !st.undo.length; $('btn-redo').disabled = !st.redo.length;
     $('toggle-thai-num').checked = !!d.use_thai_numerals;
     $('font-select').value = d.font_family || 'it9';

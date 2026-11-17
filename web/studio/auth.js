@@ -1,4 +1,4 @@
-// auth.js — การเข้าสู่ระบบ (Supabase Auth) ของหน้าเว็บ GovDoc Studio
+// auth.js — การเข้าสู่ระบบ (Supabase Auth) ของหน้าเว็บ Thai GovDoc AI Studio
 // โหลดก่อน studio.js ทุกหน้า
 //   - ถาม /api/v1/config ว่าเซิร์ฟเวอร์บังคับล็อกอินไหม
 //   - โหมด Supabase: ยังไม่ล็อกอิน → ส่งไปหน้า login.html แล้วกลับมาหน้าเดิม
