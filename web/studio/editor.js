@@ -91,6 +91,8 @@
   const SAL_RE = /^(กราบเรียน|เรียน|ถึง)\s*/;
   const FIELDS = {
     doc_number: { get: d => d.doc_number, set: (d, v) => { d.doc_number = v; } },
+    special_edition: { get: d => d.special_edition || '', set: (d, v) => { d.special_edition = v.replace(/^\(?\s*ฉบับที่\s*/, '').replace(/\)$/, '').trim() || null; } },
+    special_year: { get: d => d.special_year || '', set: (d, v) => { d.special_year = v.trim() || null; } },
     special_title: { get: d => d.special_title || '', set: (d, v) => { d.special_title = v.replace(/\s*\n\s*/g, ' ').trim(); } },
     doc_date: { get: d => d.doc_date, set: (d, v) => { d.doc_date = v.replace(/^วันที่\s*/, ''); } },
     dept_name: { get: d => d.dept_name, set: (d, v) => { d.dept_name = v; } },
@@ -135,7 +137,7 @@
     };
   }
   const FIELD_LABEL = {
-    doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'ผู้รับ', special_title: 'ชื่อเอกสาร',
+    doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'ผู้รับ', special_title: 'ชื่อเอกสาร', special_edition: 'ฉบับที่', special_year: 'พ.ศ.',
     references: 'อ้างถึง', attachments: 'สิ่งที่ส่งมาด้วย', paragraph_reason: 'ภาคเหตุ', paragraph_details: 'ภาคข้อเท็จจริง',
     paragraph_purpose: 'ภาคความประสงค์', memo_intro: 'ต้นเรื่อง', memo_law: 'ข้อกฎหมาย', memo_facts: 'ข้อเท็จจริง',
     memo_consideration: 'ข้อพิจารณาและเสนอแนะ', memo_request: 'ภาคความประสงค์', closing: 'คำลงท้าย',
@@ -255,6 +257,8 @@
   const FORMAL_UI = {
     order: { number: true, subjectLabel: 'เรื่อง', dateLabel: 'สั่ง ณ วันที่' },
     announcement: { number: false, subjectLabel: 'เรื่อง', dateLabel: 'ประกาศ ณ วันที่' },
+    regulation: { number: false, subjectLabel: 'ว่าด้วย', dateLabel: 'ประกาศ ณ วันที่', yearLine: true },
+    bylaw: { number: false, subjectLabel: 'ว่าด้วย', dateLabel: 'ประกาศ ณ วันที่', yearLine: true },
   };
   const isFormal = () => !!FORMAL_UI[kindKey()];
   function formalSheetHTML() {
@@ -265,6 +269,8 @@
         <div>${field('special_title', 'doc-bold formal-title')}</div>
         ${ui.number ? `<div><span>ที่</span> ${field('doc_number', 'formal-center')}</div>` : ''}
         <div><span>${ui.subjectLabel}</span> ${field('subject', 'formal-center')}</div>
+        ${ui.yearLine ? `<div>(ฉบับที่ ${field('special_edition', 'formal-center', '… ว่าง = ฉบับแรก ไม่พิมพ์บรรทัดนี้')})</div>
+        <div>${field('special_year', 'formal-center')}</div>` : ''}
       </div>
       <div class="mx-auto mt-1 mb-2 w-[4cm] border-b border-slate-800" aria-hidden="true"></div>
       <div class="space-y-2">
@@ -402,6 +408,12 @@
         const r = document.createRange(); r.setStart(node, start); r.setEnd(node, start + m[0].length);
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
       }
+    }
+    // คลิกโดนชิป placeholder กลางย่อหน้า: เคอร์เซอร์ยังค้างที่ช่องเดิม (เขียนข้อความใหม่แทนชิปแล้ว) — วางไว้ท้ายช่องนี้
+    const sel = getSelection();
+    if (!sel.rangeCount || !el.contains(sel.anchorNode)) {
+      const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
     }
   });
   sheet.addEventListener('focusout', (e) => {

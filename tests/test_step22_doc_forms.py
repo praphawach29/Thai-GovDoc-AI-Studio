@@ -397,3 +397,100 @@ def test_announcement_pdf():
     date = next(w for w in words if w["text"] == "17")
     row = [w for w in words if abs(w["bottom"] - date["bottom"]) < 2]
     assert abs((min(w["x0"] for w in row) - LEFT) / CM - 5.0) < 0.1
+
+
+def test_rule_based_fallback_uses_form_skeleton():
+    # ไม่มี AI: เนื้อความเป็นโครงของแบบนั้น ไม่ใช่ข้อความหนังสือภายนอก ("ตามที่... จึงเรียนมาเพื่อ...")
+    for prompt, kind in (("ร่างคำสั่งแต่งตั้งคณะกรรมการ", "order"), ("ร่างหนังสือประทับตราขอเอกสาร", "stamp_letter"),
+                         ("ร่างระเบียบว่าด้วยการใช้สนามกีฬา", "regulation")):
+        doc = start_draft(prompt=prompt, profile=UserProfileSchema(dept_name="กองการกีฬา")).document
+        assert doc.kind.value == kind
+        assert "ได้มีหนังสือที่อ้างถึง" not in doc.paragraph_reason
+        assert not (doc.is_formal and doc.paragraph_purpose.startswith("จึงเรียน"))
+
+
+# ================================================================ ระเบียบ (แบบที่ ๕) / ข้อบังคับ (แบบที่ ๖)
+@pytest.mark.parametrize("kind, word", [(DocumentKind.REGULATION, "ระเบียบ"), (DocumentKind.BYLAW, "ข้อบังคับ")])
+def test_blank_regulation_shape(kind, word):
+    from core.doc_forms import formal_extra_lines
+
+    doc = create_blank_document(DocType.EXTERNAL, profile=UserProfileSchema(dept_name="กองการกีฬา"), kind=kind)
+    assert doc.special_title == f"{word}กองการกีฬา"
+    assert doc.special_year and doc.special_year.startswith("พ.ศ.")
+    assert doc.paragraph_details.startswith(f"ข้อ ๑ {word}นี้เรียกว่า")
+    assert doc.paragraph_purpose == ""
+    assert formal_extra_lines(doc) == [doc.special_year]                  # ฉบับแรก ไม่มี "(ฉบับที่ ...)"
+    doc.special_edition = "ฉบับที่ ๒"
+    assert formal_extra_lines(doc) == ["(ฉบับที่ ๒)", doc.special_year]
+    rules = {i.rule_id for i in lint_gov_document(doc).issues}
+    assert not rules & {"RULE_MISSING_PURPOSE_PARAGRAPH", "RULE_DOC_NUMBER_PLACEHOLDER", "RULE_REGULATION_CITATION"}
+    doc.paragraph_details = "ข้อ ๑ สาระ"
+    assert "RULE_REGULATION_CITATION" in {i.rule_id for i in lint_gov_document(doc).issues}
+
+
+@pytest.mark.parametrize("prompt, expected", [
+    ("ร่างระเบียบกองการกีฬาว่าด้วยการใช้สนามกีฬา", "regulation"),
+    ("ช่วยร่างข้อบังคับว่าด้วยการเป็นสมาชิกชมรม", "bylaw"),
+    ("ขอความเห็นตามระเบียบการเบิกจ่าย", None),
+])
+def test_requested_regulation(prompt, expected):
+    assert requested_form(prompt) == expected
+
+
+@pytest.mark.parametrize("kind, word, form_no", [(DocumentKind.REGULATION, "ระเบียบ", "๕"), (DocumentKind.BYLAW, "ข้อบังคับ", "๖")])
+def test_regulation_prompt(kind, word, form_no):
+    prompt = build_user_prompt(doc_type=DocType.EXTERNAL, kind=kind, instruction="การใช้สนาม", source_text="",
+                               title=f"{word}กองการกีฬา")
+    assert f"{word} (แบบที่ {form_no}" in prompt and f"จึงวาง{word}ไว้ ดังต่อไปนี้" in prompt
+    assert f"ชื่อเอกสาร (ระบบพิมพ์เป็นหัวกระดาษ): {word}กองการกีฬา" in prompt
+    assert "<form_example>" in prompt and "รักษาการ" in prompt
+
+
+def test_api_regulation_and_bylaw():
+    for key in ("regulation", "bylaw"):
+        assert client.post("/api/v1/studio/blank", json={"doc_type": key}).json()["kind"] == key
+    res = client.post("/api/v1/studio/draft", data={"prompt": "ร่างข้อบังคับว่าด้วยการใช้ห้องฟิตเนส"})
+    assert res.status_code == 200 and res.json()["document"]["kind"] == "bylaw"
+
+
+def test_regulation_docx(tmp_path):
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = _formal(DocumentKind.REGULATION, special_title="ระเบียบกองการกีฬา", special_edition="2",
+                  special_year="พ.ศ. 2569", paragraph_details="ข้อ 1 ระเบียบนี้เรียกว่า \"ระเบียบทดสอบ\"",
+                  paragraph_purpose="")
+    out = tmp_path / "reg.docx"
+    export_govdoc_to_docx(doc, str(out))
+    paras = {p.text.replace("​", ""): p for p in Document(str(out)).paragraphs}
+    for line in ("ระเบียบกองการกีฬา", "ว่าด้วย  SUBJECTX แต่งตั้งคณะกรรมการ", "(ฉบับที่ 2)", "พ.ศ. 2569"):
+        assert paras[line].alignment == WD_ALIGN_PARAGRAPH.CENTER, line
+    assert "ประกาศ ณ วันที่  17 พฤศจิกายน พ.ศ. 2569" in paras
+    assert abs(paras["ข้อ 1 ระเบียบนี้เรียกว่า \"ระเบียบทดสอบ\""].paragraph_format.first_line_indent.cm - 2.5) < 0.01
+    assert not any(t.startswith("ที่") for t in paras)
+
+
+@pytest.mark.requires_typst
+def test_regulation_pdf():
+    doc = _formal(DocumentKind.BYLAW, special_edition="2", special_year="YEARX 2569",
+                  paragraph_details="ข้อ 1 ITEMX ข้อบังคับนี้เรียกว่า", paragraph_purpose="")
+    res = client.post("/api/v1/export/pdf", json=doc.model_dump(mode="json"))
+    assert res.status_code == 200, res.text
+    page = pdfplumber.open(io.BytesIO(res.content)).pages[0]
+    words = page.extract_words()
+    centre = LEFT + 8 * CM
+
+    def row(marker):
+        w = next(w for w in words if marker in w["text"])
+        r = [x for x in words if abs(x["bottom"] - w["bottom"]) < 2]
+        return w, min(x["x0"] for x in r), max(x["x1"] for x in r)
+
+    t, _, _ = row("TITLEX")
+    s, _, _ = row("SUBJECTX")
+    y, y0, y1 = row("YEARX")
+    assert t["bottom"] < s["bottom"] < y["bottom"]               # ชื่อ · ว่าด้วย · (ฉบับที่) · พ.ศ.
+    assert abs((y0 + y1) / 2 - centre) < 0.3 * CM
+    assert (y["bottom"] - s["bottom"]) / CM > 1.0                 # มีบรรทัด (ฉบับที่ 2) คั่น
+    _, item_x0, _ = row("ITEMX")
+    assert abs((item_x0 - LEFT) / CM - 2.5) < 0.1                 # "ข้อ 1" ย่อหน้า 2.5 ซม.
+    assert not any("12/2569" in w["text"] for w in words)

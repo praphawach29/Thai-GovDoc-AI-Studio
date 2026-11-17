@@ -82,6 +82,8 @@ FORM_KEYS: Dict[str, Tuple[DocType, DocumentKind]] = {
     "stamp_letter": (DocType.EXTERNAL, DocumentKind.STAMP_LETTER),
     "order": (DocType.EXTERNAL, DocumentKind.ORDER),
     "announcement": (DocType.EXTERNAL, DocumentKind.ANNOUNCEMENT),
+    "regulation": (DocType.EXTERNAL, DocumentKind.REGULATION),
+    "bylaw": (DocType.EXTERNAL, DocumentKind.BYLAW),
 }
 FORM_LABELS: Dict[str, str] = {
     "internal": "บันทึกข้อความ (หนังสือภายใน)",
@@ -89,6 +91,8 @@ FORM_LABELS: Dict[str, str] = {
     "stamp_letter": "หนังสือประทับตรา",
     "order": "คำสั่ง",
     "announcement": "ประกาศ",
+    "regulation": "ระเบียบ",
+    "bylaw": "ข้อบังคับ",
 }
 # ชนิดที่จัดหน้าแบบ "หัวกลาง" (ครุฑ · ชื่อเอกสาร · ที่ · เรื่อง/ว่าด้วย · เส้นคั่น · ข้อความ · ... ณ วันที่ · ผู้ลงนาม)
 FORMAL_KINDS = frozenset({DocumentKind.ORDER, DocumentKind.REGULATION, DocumentKind.BYLAW, DocumentKind.ANNOUNCEMENT})
@@ -555,6 +559,8 @@ class GovDocumentSchema(BaseModel):
     special_preamble: Optional[str] = Field(None, description="ความนำ/อาศัยอำนาจของเอกสารชนิดพิเศษ")
     special_items: List[str] = Field(default_factory=list, description="ข้อความแยกข้อของเอกสารชนิดพิเศษ")
     special_note: Optional[str] = Field(None, description="หมายเหตุ/บทบังคับใช้ท้ายเอกสารชนิดพิเศษ")
+    special_edition: Optional[str] = Field(None, description="ระเบียบ/ข้อบังคับ: ฉบับที่ (ว่าง = ฉบับแรก ไม่แสดงบรรทัด) เช่น '๒'")
+    special_year: Optional[str] = Field(None, description="ระเบียบ/ข้อบังคับ: บรรทัดปีใต้ 'ว่าด้วย' เช่น 'พ.ศ. ๒๕๖๙'")
     sections: Optional[List[DocumentSection]] = Field(
         None, description="ลำดับหัวข้อเอกสารแบบอิสระ (None = ใช้ฟิลด์มาตรฐานเดิม)"
     )

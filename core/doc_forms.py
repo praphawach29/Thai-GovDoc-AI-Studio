@@ -106,7 +106,26 @@ FORMAL = {
          "[✏️ ระบุรายละเอียดที่ประกาศ เช่น คุณสมบัติ กำหนดการ สถานที่]",
          "จึงประกาศให้ทราบโดยทั่วกัน"),
     ),
+    DocumentKind.REGULATION: FormalSpec(
+        "ระเบียบ", "ว่าด้วย", "ประกาศ ณ วันที่", False,
+        ("โดยที่เป็นการสมควร[✏️ ระบุเหตุผลที่วางระเบียบ] อาศัยอำนาจตาม[✏️ ระบุกฎหมายที่ให้อำนาจ] จึงวางระเบียบไว้ ดังต่อไปนี้",
+         "ข้อ ๑ ระเบียบนี้เรียกว่า \"[✏️ ระบุชื่อระเบียบ]\"\n"
+         "ข้อ ๒ ระเบียบนี้ให้ใช้บังคับตั้งแต่[✏️ ระบุวันที่ใช้บังคับ]เป็นต้นไป\n"
+         "ข้อ ๓ [✏️ ระบุสาระของระเบียบ]\n"
+         "ข้อ ๔ ให้[✏️ ระบุตำแหน่ง]รักษาการตามระเบียบนี้",
+         ""),
+    ),
+    DocumentKind.BYLAW: FormalSpec(
+        "ข้อบังคับ", "ว่าด้วย", "ประกาศ ณ วันที่", False,
+        ("โดยที่เป็นการสมควร[✏️ ระบุเหตุผลที่วางข้อบังคับ] อาศัยอำนาจตาม[✏️ ระบุกฎหมายที่ให้อำนาจ] จึงวางข้อบังคับไว้ ดังต่อไปนี้",
+         "ข้อ ๑ ข้อบังคับนี้เรียกว่า \"[✏️ ระบุชื่อข้อบังคับ]\"\n"
+         "ข้อ ๒ ข้อบังคับนี้ให้ใช้บังคับตั้งแต่[✏️ ระบุวันที่ใช้บังคับ]เป็นต้นไป\n"
+         "ข้อ ๓ [✏️ ระบุสาระของข้อบังคับ]",
+         ""),
+    ),
 }
+# ระเบียบ/ข้อบังคับ: มีบรรทัด (ฉบับที่ ...) และ พ.ศ. ใต้ "ว่าด้วย"; ภาคท้าย (paragraph_purpose) ว่างได้
+WITH_YEAR_LINE = frozenset({DocumentKind.REGULATION, DocumentKind.BYLAW})
 
 # ระยะของแบบหัวกลาง (Word = PDF = หน้าแก้ไข)
 FORMAL_RULE_CM = 4.0            # เส้นคั่นใต้เรื่อง ยาว 4 ซม. กึ่งกลาง
@@ -115,7 +134,21 @@ FORMAL_SIGN_LEFT_CM = 6.0       # ผู้ลงนามกึ่งกลา�
 
 def formal_extra_lines(doc: GovDocumentSchema) -> List[str]:
     """บรรทัดใต้ "ว่าด้วย" ของระเบียบ/ข้อบังคับ (ฉบับที่ ..., พ.ศ. ...) — คำสั่ง/ประกาศไม่มี"""
-    return []
+    if doc.kind not in WITH_YEAR_LINE:
+        return []
+    out = []
+    edition = (doc.special_edition or "").strip()
+    if edition:
+        edition = re.sub(r"^\(?\s*ฉบับที่\s*", "", edition).rstrip(")").strip()
+        out.append(f"(ฉบับที่ {edition})")
+    out.append((doc.special_year or "").strip() or year_line(doc.doc_date))
+    return [x for x in out if x]
+
+
+def year_line(date: str) -> str:
+    """'๑๗ พฤศจิกายน พ.ศ. ๒๕๖๙' → 'พ.ศ. ๒๕๖๙' (บรรทัดปีของระเบียบ/ข้อบังคับ)"""
+    m = _YEAR_RE.match((date or "").strip())
+    return f"พ.ศ. {m.group(2)}" if m and "[" not in date else ""
 
 
 _YEAR_RE = re.compile(r"^(.*?)\s*(?:พ\.ศ\.\s*)?([0-9๐-๙]{4})\s*$")
@@ -144,17 +177,25 @@ def to_formal(doc: GovDocumentSchema, kind: DocumentKind, issuer: Optional[str] 
     d.attachments = None
     d.co_signers = None
     d.doc_date = with_buddhist_era(d.doc_date)
+    if kind in WITH_YEAR_LINE and not d.special_year:
+        d.special_year = year_line(d.doc_date) or None
     return d
 
 
 def apply_form(doc: GovDocumentSchema, kind: DocumentKind, issuer: Optional[str] = None) -> GovDocumentSchema:
     """แปลงร่างตามกฎ (หนังสือภายนอก) เป็นชนิดที่เลือก — ชนิดเดิม (ภายนอก/บันทึก) คืนค่าเดิม
-    issuer = ชื่อส่วนราชการ (ไม่มีที่อยู่/โทรศัพท์) จากโปรไฟล์หน่วยงาน"""
+    issuer = ชื่อส่วนราชการ (ไม่มีที่อยู่/โทรศัพท์) จากโปรไฟล์หน่วยงาน
+    เนื้อความเป็นโครงของชนิดนั้น (ร่างตามกฎของหนังสือภายนอกใช้กับแบบอื่นไม่ได้) — AI เขียนทับเมื่อร่างสำเร็จ"""
     if kind == DocumentKind.STAMP_LETTER:
-        return to_stamp_letter(doc, sender=issuer)
-    if kind in FORMAL:
-        return to_formal(doc, kind, issuer)
-    return doc
+        d = to_stamp_letter(doc, sender=issuer)
+    elif kind in FORMAL:
+        d = to_formal(doc, kind, issuer)
+    else:
+        return doc
+    d.paragraph_reason, d.paragraph_details, d.paragraph_purpose = blank_body(kind)
+    if "[✏️" in (d.subject or ""):
+        d.subject = "[✏️ ระบุเรื่อง]"          # เรื่องที่ร่างตามกฎเดาจากหนังสือภายนอก (เช่น "การให้ความอนุเคราะห์...")
+    return d
 
 
 def blank_body(kind: DocumentKind) -> Tuple[str, str, str]:

@@ -7,7 +7,7 @@ import re
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
-from core.models import FORMAL_NO_NUMBER, DocType, GovDocumentSchema, is_blank_doc_number
+from core.models import FORMAL_NO_NUMBER, DocType, DocumentKind, GovDocumentSchema, is_blank_doc_number
 
 
 THAI_MONTHS = [
@@ -181,7 +181,9 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
 
         # 2.2 ภาคความประสงค์ / สรุป
         clean_purpose = doc.paragraph_purpose.strip()
-        if not clean_purpose:
+        if not clean_purpose and doc.kind in FORMAL_NO_NUMBER and doc.kind != DocumentKind.ANNOUNCEMENT:
+            pass                   # ระเบียบ/ข้อบังคับ: ไม่มีภาคท้าย (จบที่ข้อสุดท้าย)
+        elif not clean_purpose:
             issues.append(LintIssue(
                 rule_id="RULE_MISSING_PURPOSE_PARAGRAPH",
                 severity="error",
@@ -220,6 +222,14 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
         from core.doc_forms import FORMAL
         spec = FORMAL.get(doc.kind)
         title = (doc.special_title or "").strip()
+        if doc.kind in (DocumentKind.REGULATION, DocumentKind.BYLAW) and "เรียกว่า" not in (doc.paragraph_details or ""):
+            issues.append(LintIssue(
+                rule_id="RULE_REGULATION_CITATION",
+                severity="warning",
+                field="paragraph_details",
+                message=f"{spec.prefix}ควรมีข้อ ๑ บอกชื่อที่ใช้อ้างอิง และข้อ ๒ วันใช้บังคับ",
+                suggestion=f"เช่น 'ข้อ ๑ {spec.prefix}นี้เรียกว่า \"...\"' และ 'ข้อ ๒ {spec.prefix}นี้ให้ใช้บังคับตั้งแต่...'"
+            ))
         if spec and not title.startswith(spec.prefix):
             issues.append(LintIssue(
                 rule_id="RULE_FORMAL_TITLE",

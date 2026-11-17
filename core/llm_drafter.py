@@ -210,6 +210,39 @@ paragraph_purpose: จึงประกาศให้ทราบโดยท�
 }
 
 
+def _rule_prompt(word: str, form_no: str) -> tuple:
+    """ระเบียบ (แบบที่ ๕) / ข้อบังคับ (แบบที่ ๖) — โครงเดียวกัน ต่างแค่คำ"""
+    return (
+        f"""ชนิดหนังสือ: {word} (แบบที่ {form_no} ตามระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ) — บรรดาข้อความที่วางไว้เป็นหลักปฏิบัติงานเป็นการประจำ
+หัว{word} (ชื่อส่วนราชการ บรรทัด พ.ศ. วันที่ประกาศ ผู้ลงนาม) ระบบใส่เอง เขียนเฉพาะช่องต่อไปนี้ (ช่อง memo_* และ reference ให้เป็น ""):
+- subject: เรื่องที่ "ว่าด้วย" เช่น "การใช้สนามกีฬา" (ไม่ต้องเขียนคำว่า "ว่าด้วย" และไม่ขึ้นต้นด้วยคำว่า "เรื่อง")
+- paragraph_reason: ความนำ ย่อหน้าเดียว "โดยที่เป็นการสมควร... อาศัยอำนาจตาม... จึงวาง{word}ไว้ ดังต่อไปนี้"
+  (กฎหมายที่ให้อำนาจที่ไม่มีในต้นเรื่อง ให้เว้น [✏️ ระบุกฎหมายที่ให้อำนาจ] ห้ามแต่งเอง)
+- paragraph_details: ตัว{word} เรียงเป็นข้อ บรรทัดละข้อ ขึ้นต้น "ข้อ ๑" "ข้อ ๒" (ไม่มีจุดหลังเลข) ข้อย่อยใช้ "(๑)" "(๒)" ขึ้นบรรทัดใหม่
+  ข้อ ๑ ชื่อ: "{word}นี้เรียกว่า "<ชื่อเอกสาร>ว่าด้วย<เรื่อง> พ.ศ. <ปี>""
+  ข้อ ๒ วันใช้บังคับ: "{word}นี้ให้ใช้บังคับตั้งแต่... เป็นต้นไป"
+  ข้อถัดไป: บทนิยาม (ถ้ามี) สาระสำคัญ และข้อสุดท้าย "ให้... รักษาการตาม{word}นี้"
+  แบ่งหมวดได้ด้วยบรรทัด "หมวด ๑ <ชื่อหมวด>" ถ้ายาว
+- paragraph_purpose: "" (ไม่มีภาคท้าย ระบบพิมพ์ "ประกาศ ณ วันที่" ให้)""",
+        f"""ตัวอย่างรูปแบบตามแบบในระเบียบ (เรื่องสมมุติ — ห้ามนำข้อเท็จจริงในตัวอย่างไปใช้):
+<form_example>
+subject: การใช้[สถานที่]
+paragraph_reason: โดยที่เป็นการสมควรกำหนดหลักเกณฑ์การใช้[สถานที่] ให้เป็นไปด้วยความเรียบร้อย อาศัยอำนาจตาม[กฎหมายที่ให้อำนาจ] จึงวาง{word}ไว้ ดังต่อไปนี้
+paragraph_details: ข้อ ๑ {word}นี้เรียกว่า "{word}[ส่วนราชการ]ว่าด้วยการใช้[สถานที่] พ.ศ. [ปี]"
+ข้อ ๒ {word}นี้ให้ใช้บังคับตั้งแต่วันถัดจากวันประกาศเป็นต้นไป
+ข้อ ๓ ในระเบียบนี้
+"[คำ]" หมายความว่า [ความหมาย]
+ข้อ ๔ ผู้ประสงค์จะใช้[สถานที่] ต้องยื่นคำขอต่อ[ตำแหน่ง] ล่วงหน้าไม่น้อยกว่า [จำนวน] วัน
+ข้อ ๕ ให้[ตำแหน่ง]รักษาการตาม{word}นี้
+paragraph_purpose:
+</form_example>""",
+    )
+
+
+FORM_PROMPTS[DocumentKind.REGULATION] = _rule_prompt("ระเบียบ", "๕")
+FORM_PROMPTS[DocumentKind.BYLAW] = _rule_prompt("ข้อบังคับ", "๖")
+
+
 def build_user_prompt(
     *,
     doc_type: DocType,
@@ -219,12 +252,14 @@ def build_user_prompt(
     review_party: str = "",
     examples: str = "",
     kind: Optional[DocumentKind] = None,
+    title: str = "",
 ) -> str:
     """examples = ส่วนตัวอย่างสำนวนจาก core.style_examples.few_shot_block (ว่าง = ไม่มี)
     kind = ชนิดอื่นตามแบบในระเบียบ (FORM_PROMPTS) — ใช้คำอธิบายและตัวอย่างรูปแบบของชนิดนั้นแทน"""
     if kind in FORM_PROMPTS:
         kind_text, form_example = FORM_PROMPTS[kind]
         kind_text += f"\nผู้รับ: {recipient}" if recipient else ""
+        kind_text += f"\nชื่อเอกสาร (ระบบพิมพ์เป็นหัวกระดาษ): {title}" if title else ""
         examples = "\n\n".join(x for x in (form_example, examples.strip()) if x)
         return _assemble(kind_text, instruction, source_text, examples)
     if doc_type == DocType.INTERNAL:
@@ -475,6 +510,7 @@ def draft_content_with_llm(
     avoid: Tuple[str, ...] = (),
     examples: str = "",
     kind: Optional[DocumentKind] = None,
+    title: str = "",
 ) -> LLMDraftResult:
     """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)"""
     result = LLMDraftResult()
@@ -503,7 +539,7 @@ def draft_content_with_llm(
     if len(source) > MAX_SOURCE_CHARS:
         source, result.truncated = source[:MAX_SOURCE_CHARS], True
     prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
-                               recipient=recipient, review_party=review_party, examples=examples, kind=kind)
+                               recipient=recipient, review_party=review_party, examples=examples, kind=kind, title=title)
 
     deadline = clock() + (config.total_timeout_s if budget_s is None else budget_s)
     for index, (name, model, call) in enumerate(providers):
