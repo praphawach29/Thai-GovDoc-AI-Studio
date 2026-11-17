@@ -124,7 +124,8 @@ class FakeSupabase:
         in_list = {k: v[4:-1].lower().split(",") for k, v in query.items() if v.startswith("in.(")}
         if table == "profiles":
             filters = {k: v for k, v in filters.items() if k == "user_id"}
-            filters["user_id"] = self._caller(request) if filters.get("user_id") else filters.get("user_id")
+            if filters.get("user_id"):
+                filters["user_id"] = self._caller(request)
 
         def match(r):
             return (all(str(r.get(k)).lower() == v.lower() for k, v in filters.items())
@@ -169,6 +170,25 @@ class FakeSupabase:
                 "note": p.get("p_note"), "edit_instruction": p.get("p_edit_instruction"),
             })
             return self._json(200, doc["current_version"])
+        if name == "issue_outgoing_number":
+            return self._issue_number(request, p)
+        if name == "use_reserved_number":
+            row = next((r for r in self.tables["outgoing_register"] if r["id"] == p["p_id"]), None)
+            if row is None or row["status"] != "reserved":
+                return self._json(404, {"code": "P0002", "message": "ไม่พบเลขที่จองไว้ หรือเลขนี้ถูกใช้/ยกเลิกไปแล้ว"})
+            if p.get("p_document_id") and self._active_number(p["p_document_id"], except_id=row["id"]):
+                return self._json(409, {"code": "23505", "message": "เอกสารนี้ออกเลขแล้ว"})
+            for key in ("subject", "to_recipient", "doc_date"):
+                if (p.get("p_" + key) or "").strip():
+                    row[key] = p["p_" + key].strip()
+            row.update(status="issued", issued_by=self._caller(request), issued_at="2026-11-16T03:00:00Z")
+            if p.get("p_document_id"):
+                row["document_id"] = p["p_document_id"]
+            if p.get("p_incoming_id"):
+                row["incoming_id"] = p["p_incoming_id"]
+            self._set_doc_number(row.get("document_id"), row["doc_number"])
+            self._audit("issue", "outgoing_register", row, request)
+            return self._json(200, row)
         if name == "reserve_outgoing_number":
             n = len([r for r in self.tables["outgoing_register"]]) + 1
             row = {"id": n, "reg_no": n, "doc_number": p["p_prefix"] + str(n), "status": "reserved",
@@ -176,13 +196,33 @@ class FakeSupabase:
             self.tables["outgoing_register"].append(row)
             return self._json(200, row)
         if name in ("mark_outgoing_issued", "cancel_outgoing_number"):
-            row = next(r for r in self.tables["outgoing_register"] if r["id"] == p["p_id"])
-            row["status"] = "issued" if name == "mark_outgoing_issued" else "cancelled"
+            row = next((r for r in self.tables["outgoing_register"] if r["id"] == p["p_id"]), None)
+            if row is None or row.get("status") == "cancelled":
+                return self._json(404, {"code": "P0002", "message": "ไม่พบเลขนี้ หรือถูกยกเลิกไปแล้ว"})
+            if name == "mark_outgoing_issued":
+                row["status"] = "issued"
+                return self._json(200, row)
+            row.update(status="cancelled", cancel_reason=p["p_reason"], cancelled_by=self._caller(request),
+                       cancelled_at="2026-11-16T04:00:00Z")
+            doc = next((d for d in self.tables["documents"] if d["id"] == row.get("document_id")), None)
+            if doc is not None and doc.get("doc_number") == row["doc_number"]:
+                doc["doc_number"] = None
+            self._audit("cancel", "outgoing_register", row, request)
             return self._json(200, row)
         if name == "register_incoming":
+            src = p.get("p_source_file_id")
+            if src and any(r.get("source_file_id") == src for r in self.tables["incoming_register"]):
+                return self._json(409, {"code": "23505", "message": "ต้นเรื่องนี้ลงรับแล้ว"})
             n = len(self.tables["incoming_register"]) + 1
-            row = {"id": n, "reg_no": n, "subject": p["p_subject"]}
+            row = {"id": n, "reg_no": n, "year_be": 2569, "received_at": "2026-11-16T02:15:00Z",
+                   "source_doc_number": p.get("p_source_doc_number") or "",
+                   "source_doc_date": p.get("p_source_doc_date") or "",
+                   "from_org": p.get("p_from_org") or "", "to_unit": p.get("p_to_unit") or "",
+                   "subject": p["p_subject"], "remark": p.get("p_remark") or "", "action_taken": "",
+                   "source_file_id": src, "document_id": p.get("p_document_id"),
+                   "created_by": self._caller(request), "created_at": "2026-11-16T02:15:00Z"}
             self.tables["incoming_register"].append(row)
+            self._audit("receive", "incoming_register", row, request)
             return self._json(200, row)
         if name == "register_final_file":
             doc = next((d for d in self.tables["documents"] if d["id"] == p["p_document_id"]), None)
@@ -224,6 +264,59 @@ class FakeSupabase:
             self.tables["storage_purge_queue"] = [q for q in self.tables["storage_purge_queue"] if q["storage_path"] not in p["p_paths"]]
             return self._json(200, before - len(self.tables["storage_purge_queue"]))
         return self._json(404, {"message": f"no function {name}"})
+
+    # ---------------------------------------------------------------- ทะเบียน (จำลอง migration 13)
+    def _active_number(self, document_id, except_id=None):
+        return next((r["doc_number"] for r in self.tables["outgoing_register"]
+                     if r.get("document_id") == document_id and r.get("status") != "cancelled"
+                     and r["id"] != except_id), None)
+
+    def _set_doc_number(self, document_id, number):
+        doc = next((d for d in self.tables["documents"] if d["id"] == document_id), None)
+        if doc is not None:
+            doc["doc_number"] = number
+
+    def _audit(self, action, entity, row, request):
+        self.tables["audit_log"].append({
+            "id": len(self.tables["audit_log"]) + 1, "action": action, "entity": entity,
+            "entity_id": str(row["id"]), "actor_id": self._caller(request),
+            "details": {"doc_number": row.get("doc_number")}, "at": "2026-11-16T03:00:00Z"})
+
+    def _issue_number(self, request, p):
+        prefix, suffix = p.get("p_prefix") or "", p.get("p_suffix") or ""
+        if not (prefix + suffix).strip():
+            return self._json(400, {"code": "22023", "message": "ต้องระบุรหัสหนังสือ"})
+        doc_id = p.get("p_document_id")
+        if doc_id:
+            if not any(d["id"] == doc_id for d in self.tables["documents"]):
+                return self._json(403, {"code": "42501", "message": "ไม่พบเอกสารนี้ในหน่วยงาน"})
+            if self._active_number(doc_id):
+                return self._json(409, {"code": "23505", "message": f"เอกสารนี้ออกเลขแล้ว: {self._active_number(doc_id)}"})
+        circ = bool(p.get("p_is_circular"))
+        book = "outgoing:" + prefix + ("ว" if circ else "") + (("|" + suffix) if suffix else "")
+        seq = next((x for x in self.tables["number_sequences"] if x["book"] == book), None)
+        if seq is None:
+            seq = {"book": book, "year_be": 2569, "last_value": 0}
+            self.tables["number_sequences"].append(seq)
+        seq["last_value"] += 1
+        num = str(seq["last_value"])
+        if any("๐" <= ch <= "๙" for ch in prefix + suffix):
+            num = num.translate(str.maketrans("0123456789", "๐๑๒๓๔๕๖๗๘๙"))
+        reserve = bool(p.get("p_reserve_only"))
+        caller = self._caller(request)
+        row = {"id": len(self.tables["outgoing_register"]) + 1, "book": book, "year_be": 2569,
+               "reg_no": seq["last_value"], "doc_number": prefix + ("ว " if circ else "") + num + suffix,
+               "doc_date": p.get("p_doc_date"), "from_unit": p.get("p_from_unit") or "",
+               "to_recipient": p.get("p_to_recipient") or "", "subject": p.get("p_subject") or "",
+               "action_taken": "", "remark": "", "status": "reserved" if reserve else "issued",
+               "cancel_reason": None, "document_id": doc_id, "incoming_id": p.get("p_incoming_id"),
+               "created_by": caller, "created_at": "2026-11-16T03:00:00Z",
+               "issued_at": None if reserve else "2026-11-16T03:00:00Z",
+               "issued_by": None if reserve else caller, "cancelled_at": None, "cancelled_by": None}
+        self.tables["outgoing_register"].append(row)
+        self._set_doc_number(doc_id, row["doc_number"])
+        self._audit("reserve" if reserve else "issue", "outgoing_register", row, request)
+        return self._json(200, row)
 
     # ---------------------------------------------------------------- Storage
     def _storage(self, request: httpx.Request, path: str) -> httpx.Response:

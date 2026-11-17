@@ -157,7 +157,7 @@ def test_documents_api_is_unavailable_in_local_mode(client):
 def test_registry_uses_database_functions(fake, client):
     h = _auth(fake)
     res = client.post("/api/v1/registry/reserve", json={"prefix": "กท ๐๐๐๑/", "subject": "ทดสอบ"}, headers=h)
-    assert res.json()["reserved_number"] == "กท ๐๐๐๑/1"
+    assert res.json()["reserved_number"] == "กท ๐๐๐๑/๑"
     entry_id = res.json()["entry"]["id"]
     assert client.post(f"/api/v1/registry/outgoing/{entry_id}/issue", json={}, headers=h).json()["status"] == "issued"
     assert client.post(f"/api/v1/registry/outgoing/{entry_id}/cancel", json={"reason": "ผิด"}, headers=h).json()["status"] == "cancelled"
