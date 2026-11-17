@@ -24,6 +24,7 @@ from server import source_store
 from server.auth import CurrentUser, get_current_user, get_profile, get_supabase
 from server.deps import save_upload
 from server.routers.examples import example_finder
+from server.routers.org_profile import load_org_profile
 from server.routers.signers import load_roster
 from server.settings import Settings, get_settings, llm_config
 from server.supabase import SupabaseClient
@@ -118,9 +119,13 @@ def studio_apply_unit(
 
 
 @router.get("/api/v1/studio/profile")
-def studio_profile():
-    """โปรไฟล์หน่วยงาน/ผู้ลงนาม สำหรับแสดงบนหน้าแรก"""
-    return get_user_profile()
+def studio_profile(
+    user: Optional[CurrentUser] = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
+    """ข้อมูลหน่วยงาน สำหรับแสดง/แก้บนหน้าแรก — editable = แก้จากหน้าเว็บได้ (โหมด Supabase)"""
+    profile = load_org_profile(user, settings)
+    return {**profile.model_dump(mode="json", exclude={"issuing_units"}), "editable": isinstance(user, CurrentUser)}
 
 
 @router.post("/api/v1/studio/draft", response_model=StudioDraftResponse)
@@ -179,6 +184,7 @@ async def studio_draft(
             review_party=unit.review_party if unit and doc_type != DocType.EXTERNAL else "",
             # สำนวนจากหนังสือฉบับจริงของหน่วยงาน (คลังตัวอย่าง) — โหมด Supabase เท่านั้น
             find_examples=example_finder(client) if user is not None else None,
+            profile=load_org_profile(user, settings),
         )
     finally:
         if user is not None and saved_path is not None:
@@ -208,7 +214,7 @@ def studio_blank(
     settings: Settings = Depends(get_settings),
 ):
     """เอกสารเปล่า (บันทึกข้อความ / หนังสือภายนอก) พร้อม placeholder"""
-    doc = normalize_for_editor(create_blank_document(req.doc_type))
+    doc = normalize_for_editor(create_blank_document(req.doc_type, profile=load_org_profile(user, settings)))
     if req.doc_type == DocType.INTERNAL:
         doc = _apply_unit(doc, req.unit_key, user, settings, fresh=True)
     else:

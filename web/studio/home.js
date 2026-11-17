@@ -605,10 +605,57 @@
       $('sg-list').addEventListener('click', onSignerClick);
     },
     async profile(body) {
-      const p = state.profile || await api.profile();
+      const p = await api.profile();
+      state.profile = p;
       const row = (k, v) => `<div class="grid grid-cols-3 gap-3 py-2 border-b border-slate-100 last:border-0 text-xs"><dt class="text-slate-500">${k}</dt><dd class="col-span-2 text-slate-800 font-body">${esc(v || '—')}</dd></div>`;
-      body.innerHTML = `<dl>${row('ส่วนราชการ', p.department_full)}${row('รหัสหนังสือออก', p.doc_origin_code)}${row('ผู้ลงนาม', p.signatory_name)}${row('ตำแหน่ง', p.signatory_position)}${row('ส่วนราชการเจ้าของเรื่อง', p.contact_dept)}${row('โทร / โทรสาร', [p.contact_tel, p.contact_fax].filter(Boolean).join(' / '))}${row('อีเมล', p.contact_email)}</dl>
-        <p class="text-[11px] text-slate-400 mt-3">ข้อมูลนี้ใช้เติมหัวหนังสือและผู้ลงนามในร่างทุกฉบับ (ไฟล์ data/user_profile.json)</p>`;
+      if (!p.editable) {
+        body.innerHTML = `<dl>${row('ส่วนราชการ', p.department_full)}${row('รหัสหนังสือออก', p.doc_origin_code)}${row('ผู้ลงนาม', p.signatory_name)}${row('ตำแหน่ง', p.signatory_position)}${row('ส่วนราชการเจ้าของเรื่อง', p.contact_dept)}${row('โทร / โทรสาร', [p.contact_tel, p.contact_fax].filter(Boolean).join(' / '))}${row('อีเมล', p.contact_email)}</dl>
+          <p class="text-[11px] text-slate-400 mt-3">โหมดเครื่องเดียว: ข้อมูลจากไฟล์ data/user_profile.json — แก้จากหน้าเว็บได้เมื่อเข้าสู่ระบบ</p>`;
+        return;
+      }
+      const input = (key, label, hint = '', type = 'text') => `
+        <label class="block"><span class="text-slate-600">${label}</span>${hint ? `<span class="text-[11px] text-slate-400"> — ${hint}</span>` : ''}
+          <input id="op-${key}" data-op="${key}" type="${type}" value="${esc(p[key] || '')}" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-body focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>`;
+      body.innerHTML = `
+        <form id="op-form" class="text-xs space-y-3" novalidate>
+          <p class="text-slate-500">ใช้ร่วมกันทุกคนในหน่วยงาน — มีผลกับร่างใหม่และเอกสารเปล่า (ฉบับที่ร่างไว้แล้วไม่เปลี่ยน) · ช่องที่เว้นว่างใช้ค่าตั้งต้นของระบบ</p>
+          ${input('department_full', 'ส่วนราชการ', 'หัวหนังสือ (รวมโทร/โทรสารได้)')}
+          ${input('dept_name', 'ชื่อหน่วยงานสั้น', 'เช่น สำนักวัฒนธรรม กีฬา และการท่องเที่ยว')}
+          ${input('doc_origin_code', 'รหัสหนังสือออก', 'เช่น กท ๐๒๐๔/')}
+          ${input('contact_dept', 'ส่วนราชการเจ้าของเรื่อง', 'ท้ายหนังสือภายนอก')}
+          <div class="grid grid-cols-2 gap-3">${input('contact_tel', 'โทร')}${input('contact_fax', 'โทรสาร')}</div>
+          ${input('contact_email', 'อีเมล', '', 'email')}
+          <div class="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center gap-3">
+            <div class="flex-1 min-w-0"><div class="text-slate-500">ผู้ลงนาม</div>
+              <div id="op-signer" class="text-slate-800 font-body text-sm truncate">กำลังโหลด...</div></div>
+            <button type="button" id="op-signers" class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium"><i class="fa-solid fa-signature text-emerald-700"></i>จัดการผู้ลงนาม</button>
+          </div>
+          <p class="text-[11px] text-slate-400">บันทึกข้อความใช้ส่วนราชการ เลขที่ และผู้รับตาม <b>หน่วยออกหนังสือ</b> ในสายการเสนอ (กลุ่มงาน → กอง → สำนัก)</p>
+          <p id="op-error" class="text-rose-700" hidden></p>
+          <div class="flex justify-end"><button type="submit" id="op-save" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-floppy-disk"></i>บันทึกข้อมูลหน่วยงาน</button></div>
+        </form>`;
+      api.signers.list().then((list) => {
+        const d = list.find(x => x.is_default);
+        $('op-signer').textContent = d ? `${d.full_name} · ${String(d.position || '').split('\n')[0]}` : 'ยังไม่ได้ตั้งผู้ลงนามเริ่มต้น';
+      }).catch(() => { $('op-signer').textContent = 'ตั้งได้ที่ "ผู้ลงนามของหน่วย"'; });
+      $('op-signers').addEventListener('click', () => document.querySelector('nav [data-open="signers"]')?.click());
+      $('op-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fields = {};
+        body.querySelectorAll('[data-op]').forEach((el) => { fields[el.dataset.op] = el.value.trim(); });
+        const err = $('op-error');
+        err.hidden = true;
+        $('op-save').disabled = true;
+        try {
+          state.profile = await api.saveProfile(fields);
+          toast('บันทึกข้อมูลหน่วยงานแล้ว — ใช้กับร่างใหม่ทันที');
+        } catch (ex) {
+          // 422 จาก pydantic: แสดงเฉพาะข้อความของแต่ละช่อง
+          let msg = ex.message;
+          try { msg = JSON.parse(ex.message).map(x => String(x.msg).replace(/^Value error, /, '')).join(' · '); } catch (_) { /* ข้อความธรรมดา */ }
+          err.textContent = msg; err.hidden = false;
+        } finally { $('op-save').disabled = false; }
+      });
     },
   };
   // ---------- คลังกฎหมาย: นำเข้าไฟล์ + ตรวจยืนยันรายข้อ ----------
@@ -971,7 +1018,7 @@
     }
   }
 
-  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงานและผู้ลงนาม' };
+  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงาน' };
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => {
     const key = b.dataset.open;
     setSidebar(false);

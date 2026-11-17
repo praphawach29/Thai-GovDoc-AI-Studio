@@ -39,6 +39,26 @@ def get_default_profile() -> UserProfileSchema:
     )
 
 
+# ข้อมูลหน่วยงานที่แก้จากหน้าเว็บได้ (ตาราง org_profile โหมด Supabase) — ผู้ลงนามอยู่ที่รายชื่อผู้ลงนามของหน่วย
+ORG_PROFILE_FIELDS = ("dept_name", "department_full", "doc_origin_code", "contact_dept",
+                      "contact_tel", "contact_fax", "contact_email")
+
+
+def apply_org_profile(base: UserProfileSchema, row: Optional[dict]) -> UserProfileSchema:
+    """ทับค่าในโปรไฟล์ตั้งต้นด้วยข้อมูลหน่วยงานที่บันทึกไว้ (ช่องว่าง = ใช้ค่าตั้งต้น ยกเว้นอีเมล/โทรสารที่ลบได้)"""
+    if not row:
+        return base
+    values = {}
+    for key in ORG_PROFILE_FIELDS:
+        value = row.get(key)
+        if value is None:
+            continue
+        value = str(value).strip()
+        if value or key in ("contact_email", "contact_fax"):
+            values[key] = value or ("" if key == "contact_fax" else None)
+    return base.model_copy(update=values)
+
+
 def get_user_profile() -> UserProfileSchema:
     """
     โหลดโปรไฟล์หน่วยงานของผู้ใช้จาก data/user_profile.json

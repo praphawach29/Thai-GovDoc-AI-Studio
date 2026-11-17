@@ -35,6 +35,7 @@
 
   const api = {
     profile: () => request('/studio/profile').then(r => r.json()),
+    saveProfile: (fields) => sendJSON('PUT', '/org-profile', fields).then(r => r.json()),
     draft: (formData) => request('/studio/draft', { method: 'POST', body: formData }).then(r => r.json()),
     blank: (docType, unitKey) => postJSON('/studio/blank', { doc_type: docType, unit_key: unitKey || null }).then(r => r.json()),
     units: () => request('/studio/units').then(r => r.json()),

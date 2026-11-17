@@ -212,6 +212,7 @@ def start_draft(
     recipient: str = "",
     review_party: str = "",
     find_examples: Optional[ExampleFinder] = None,
+    profile: Optional[UserProfileSchema] = None,
 ) -> StudioDraftResult:
     """
     เริ่มร่างจากคำสั่งที่พิมพ์และ/หรือไฟล์ต้นเรื่อง
@@ -220,7 +221,8 @@ def start_draft(
     """
     allow_cloud = cloud_ai_allowed(secret)
     result = StudioDraftResult(cloud_ai_blocked=not allow_cloud)
-    profile = get_user_profile()
+    # ข้อมูลหน่วยงาน: โหมด Supabase ส่งของหน่วยงานมา (ตั้งได้จากหน้าแรก) / โหมดเครื่องเดียวอ่านไฟล์โปรไฟล์
+    profile = profile or get_user_profile()
     # เวลารวมของคำขอ (อ่านไฟล์ + ร่าง) ต้องทันเพดาน 120 วินาทีของ Vercel (vercel.json)
     started = time.monotonic()
     request_budget = 105.0
@@ -279,6 +281,8 @@ def start_draft(
     )
     doc.urgency = urgency
     doc.secret = secret
+    doc.contact_fax = profile.contact_fax or doc.contact_fax
+    doc.contact_email = profile.contact_email or doc.contact_email
 
     # AI เรียบเรียงเนื้อความ (Claude → Gemini) ไม่สำเร็จ/ไม่ได้ตั้งค่า = ใช้ร่างตามกฎข้างบน
     if llm is not None:
