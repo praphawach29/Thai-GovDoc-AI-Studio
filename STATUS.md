@@ -18,7 +18,7 @@
 | ขนาด function | ~249 MB (เพดาน Vercel 250 MB) |
 | Log | Vercel runtime logs (แผน Hobby เก็บ 1 ชั่วโมง) |
 
-**ตัวแปรสภาพแวดล้อมบน Vercel** (ตั้งใน dashboard เท่านั้น): `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` (หรือชื่อ `NEXT_PUBLIC_*`), `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID` (ถ้าคีย์ระดับองค์กร), ตัวเลือก `GOVDOC_AI_ORDER`, `GOVDOC_GEMINI_MODEL`, `GOVDOC_CLAUDE_MODEL`, `GOVDOC_CLAUDE_EFFORT`
+**ตัวแปรสภาพแวดล้อมบน Vercel** (ตั้งใน dashboard เท่านั้น): `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` (หรือชื่อ `NEXT_PUBLIC_*`), `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID` (ถ้าคีย์ระดับองค์กร), ตัวเลือก `GOVDOC_AI_ORDER`, `GOVDOC_MASK_PII` (ค่าเริ่มต้นเปิด), `GOVDOC_GEMINI_MODEL`, `GOVDOC_CLAUDE_MODEL`, `GOVDOC_CLAUDE_EFFORT`
 
 ---
 
@@ -30,6 +30,7 @@
 - บันทึกข้อความ ๔ หัวข้อแบบ กทม.: ต้นเรื่อง / ข้อกฎหมาย (ถ้ามี) / ข้อเท็จจริง / ข้อพิจารณาและเสนอแนะ + ภาคความประสงค์ตามขั้นเสนอ
 - อ้างถึงจาก AI: ชื่อองค์กรผู้ส่ง + วันที่ลงหนังสือ (ตรวจกับงานจริงแล้ว ถูกต้อง)
 - ข้อมูลที่ไม่มีในต้นเรื่องเว้นเป็น `[✏️ ระบุ...]` ไม่แต่งเอง
+- ปิดข้อมูลส่วนบุคคลก่อนส่ง AI (`core/pii_mask.py`) — ๑๗ พ.ย. ๒๕๖๙: ชื่อ เลขบัตร ปชช. โทรศัพท์ อีเมล เลขบัญชี บ้านเลขที่ แทนด้วยรหัส `[ชื่อ_1]` แล้วใส่ค่าจริงกลับในร่าง (ขั้นร่าง + เสนอข้อกฎหมาย) ขั้นตอนบอกจำนวนที่ปิด; ปิดได้ด้วย `GOVDOC_MASK_PII=0` · **ข้อจำกัด:** ภาพไฟล์สแกนยังส่งให้ AI อ่านทั้งภาพ
 - ตรวจข้อเท็จจริงเทียบต้นเรื่อง (`core/fact_check.py`): วันที่ เวลา ตัวเลขในร่างที่หาในต้นเรื่องไม่เจอ → จุด "ตรวจกับต้นเรื่อง" ในป้ายต้องแก้ (ดูในต้นเรื่อง / ถูกต้องแล้ว)
 
 ### ประเภทหนังสือตามแบบในระเบียบงานสารบรรณ (นอกจากหนังสือภายนอก/บันทึกข้อความ)
@@ -137,4 +138,5 @@
 - `AGENTS.md` — กฎเหล็ก (อ่านก่อนแก้โค้ดทุกครั้ง)
 - `skills/thai-govdoc-ai-drafting/SKILL.md` — คู่มือระบบร่างด้วย AI ทั้ง pipeline + บทเรียนจากการใช้งานจริง
 - `skills/thai-govdoc-ux-frontend/SKILL.md` — แนวทาง UX/UI
+- `skills/thai-govdoc-pdpa/SKILL.md` — ข้อมูลออกจากระบบไปที่ไหน, การปิดข้อมูลส่วนบุคคลก่อนส่ง AI, รายการเตรียมก่อนนำร่องกับเอกสารจริง
 - `ARCHITECTURE.md` — Vercel + Supabase, `EXPORT_ENGINE.md` — Word/PDF, `PROMPT_ENGINEERING.md` — prompt

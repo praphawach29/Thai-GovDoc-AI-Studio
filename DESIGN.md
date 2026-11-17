@@ -243,6 +243,6 @@ class GovDocumentSchema(BaseModel):
 
 เนื่องจากหนังสือราชการอาจมีเนื้อหาที่เป็น **ชั้นความลับ (ลับ, ลับมาก, ลับที่สุด)** หรือข้อมูลส่วนบุคคล (PDPA):
 1. **On-Premise / Local Mode:** รองรับการเชื่อมต่อกับ Local LLM (เช่น ผ่าน Ollama / vLLM ภายในเครือข่ายหน่วยงาน) และ Local Tesseract OCR ทำให้ข้อมูลเอกสารไม่หลุดออกสู่อินเทอร์เน็ต
-2. **Cloud API Mode:** กรณีใช้ Cloud LLM (Gemini / Claude / OpenAI) ต้องมีระบบ Masking ข้อมูลส่วนบุคคล (เช่น เลขบัตร ปชช., เบอร์ส่วนตัว) ก่อนส่งไปยัง API
+2. **Cloud API Mode:** กรณีใช้ Cloud LLM (Gemini / Claude / OpenAI) ต้องมีระบบ Masking ข้อมูลส่วนบุคคล (เช่น เลขบัตร ปชช., เบอร์ส่วนตัว) ก่อนส่งไปยัง API — ทำแล้วในขั้นร่างและเสนอข้อกฎหมาย (`core/pii_mask.py`); ภาพไฟล์สแกนที่ส่งให้ AI อ่านยังปิดไม่ได้ (ดู `skills/thai-govdoc-pdpa`)
 3. **Data Retention:** ไม่บันทึกไฟล์แคชต้นเรื่องไว้อย่างถาวร เว้นแต่ผู้ใช้จะสั่งบันทึกลงระบบสารบรรณ (eDocument Registry)
 

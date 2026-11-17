@@ -56,6 +56,8 @@ def _ai_step(ai) -> StudioStep:
     if ai.content is not None:
         used = f"{_PROVIDER_LABEL.get(ai.provider, ai.provider)} ({ai.model})"
         detail = " · ".join(failed + [f"เรียบเรียงด้วย {used}"])
+        if ai.masked:
+            detail += f" · ปิดข้อมูลส่วนบุคคลก่อนส่ง ({ai.masked})"
         if ai.truncated:
             detail += " · ต้นเรื่องยาวมาก ส่งเฉพาะส่วนต้น"
         return StudioStep(key="ai", label="AI เรียบเรียงเนื้อความ", detail=detail)

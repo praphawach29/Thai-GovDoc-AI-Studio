@@ -23,6 +23,7 @@ from typing import Callable, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from core.models import DocType, DocumentKind, GovDocumentSchema, SecretLevel
+from core.pii_mask import PiiVault
 from core.security import cloud_ai_allowed
 
 logger = logging.getLogger("govdoc.ai")
@@ -74,6 +75,8 @@ class LLMConfig:
     # ลำดับผู้ให้บริการ ใช้ทั้งอ่านไฟล์สแกนและร่าง: ตัวแรกทำทั้งงานถ้าทำได้ ตัวถัดไปเป็นตัวสำรอง
     # ค่าเริ่มต้น Gemini ก่อน (ถูกกว่า) แล้ว Claude
     provider_order: Tuple[str, ...] = ("gemini", "claude")
+    # ปิดชื่อ เลขบัตร โทรศัพท์ อีเมล เลขบัญชี บ้านเลขที่ ก่อนส่งข้อความให้ AI แล้วใส่ค่าจริงกลับ (core/pii_mask.py)
+    mask_pii: bool = True
 
     @property
     def any_provider(self) -> bool:
@@ -108,6 +111,7 @@ class LLMDraftResult:
     attempts: List[LLMAttempt] = field(default_factory=list)
     truncated: bool = False
     skipped_reason: str = ""                 # ไม่ได้เรียก AI เพราะอะไร (ไม่มีคีย์ / ชั้นความลับ)
+    masked: str = ""                         # ข้อมูลส่วนบุคคลที่ปิดก่อนส่ง เช่น "ชื่อ 2 · โทรศัพท์ 1"
 
 
 # ---------------------------------------------------------------- prompt
@@ -132,6 +136,9 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
    - ไม่มีหนังสือต้นเรื่อง (มีเพียงคำสั่งของผู้ใช้) ให้เป็น ""
 9. ถ้ามี <example> (หนังสือฉบับจริงของหน่วยงาน) ให้เลียนแบบสำนวน ลำดับความ และประโยคขึ้นต้น-ลงท้ายของแต่ละภาค
    แต่ห้ามนำข้อเท็จจริงในตัวอย่างมาใช้ ข้อเท็จจริงทุกอย่างมาจาก <source>/<instruction> ของเรื่องใหม่เท่านั้น
+10. รหัสในวงเล็บเหลี่ยม เช่น [ชื่อ_1] [เลขบัตร_1] [โทร_1] [อีเมล_1] [บัญชี_1] [ที่อยู่_1] คือข้อมูลส่วนบุคคลที่ระบบปิดไว้
+   รหัสเดียวกันคือคนหรือค่าเดียวกัน เมื่อต้องเขียนถึงให้คัดลอกรหัสตรงตัว (ไม่ต้องเติมคำนำหน้าชื่อ ไม่แปลงเลขในรหัสเป็นเลขไทย)
+   ห้ามเดาค่าจริง ระบบจะใส่ค่าจริงกลับเอง
 """
 
 
@@ -384,45 +391,69 @@ def _call_gemini(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
 def structured_call(system: str, prompt: str, schema, config: "LLMConfig", timeout_s: float = 25.0):
     """คำขอเล็ก ๆ ที่ตอบเป็น JSON ตาม schema (pydantic) — ลองตามลำดับผู้ให้บริการ (Gemini → Claude)
     คืนวัตถุตาม schema หรือ raise ถ้าทุกตัวล้มเหลว / ไม่มีคีย์"""
+    vault = PiiVault() if config.mask_pii else None
+    if vault is not None:
+        prompt = vault.mask(prompt)
     errors = []
     for name in config.provider_order:
-        try:
-            if name == "gemini" and config.gemini_api_key:
-                from google import genai
-                from google.genai import types
-
-                client = genai.Client(api_key=config.gemini_api_key,
-                                      http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
-                response = _gemini_generate(client, config.gemini_model, prompt, system_instruction=system,
-                                            response_mime_type="application/json", response_schema=schema)
-                if isinstance(getattr(response, "parsed", None), schema):
-                    return response.parsed
-                return schema.model_validate_json(response.text or "")
-            if name == "claude" and config.anthropic_api_key:
-                sch = schema.model_json_schema()
-
-                def closed(node):          # โหมด JSON เข้มงวดต้องปิด additionalProperties ทุกระดับ
-                    if isinstance(node, dict):
-                        if node.get("type") == "object" or "properties" in node:
-                            node["additionalProperties"] = False
-                        for v in node.values():
-                            closed(v)
-                    elif isinstance(node, list):
-                        for v in node:
-                            closed(v)
-                closed(sch)
-                client = _anthropic_client(config, timeout_s)
-                response = _claude_create(client, dict(
-                    model=config.claude_model, max_tokens=2000, system=system,
-                    messages=[{"role": "user", "content": prompt}],
-                    output_config={"effort": "low", "format": {"type": "json_schema", "schema": sch}},
-                ))
-                text = next((b.text for b in response.content if b.type == "text"), "")
-                return schema.model_validate_json(text)
-        except Exception as exc:
-            _log_failure("structured", name, config.gemini_model if name == "gemini" else config.claude_model, exc)
-            errors.append(f"{name}: {_short_error(exc)}")
+        result = _structured_once(name, system, prompt, schema, config, timeout_s, errors)
+        if result is not None:
+            return _unmask_model(result, vault) if vault is not None and vault.total else result
     raise RuntimeError("; ".join(errors) or "ไม่ได้ตั้งค่า AI")
+
+
+def _unmask_model(obj, vault: PiiVault):
+    """ใส่ค่าจริงกลับทุกช่องข้อความของคำตอบ (รวมช่องในรายการ/วัตถุย่อย)"""
+    def walk(value):
+        if isinstance(value, str):
+            return vault.unmask(value)
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        return value
+    return type(obj).model_validate(walk(obj.model_dump()))
+
+
+def _structured_once(name, system, prompt, schema, config, timeout_s, errors):
+    """เรียกผู้ให้บริการหนึ่งตัว; ไม่มีคีย์หรือไม่สำเร็จคืน None (สาเหตุต่อท้าย errors)"""
+    try:
+        if name == "gemini" and config.gemini_api_key:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=config.gemini_api_key,
+                                  http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
+            response = _gemini_generate(client, config.gemini_model, prompt, system_instruction=system,
+                                        response_mime_type="application/json", response_schema=schema)
+            if isinstance(getattr(response, "parsed", None), schema):
+                return response.parsed
+            return schema.model_validate_json(response.text or "")
+        if name == "claude" and config.anthropic_api_key:
+            sch = schema.model_json_schema()
+
+            def closed(node):          # โหมด JSON เข้มงวดต้องปิด additionalProperties ทุกระดับ
+                if isinstance(node, dict):
+                    if node.get("type") == "object" or "properties" in node:
+                        node["additionalProperties"] = False
+                    for v in node.values():
+                        closed(v)
+                elif isinstance(node, list):
+                    for v in node:
+                        closed(v)
+            closed(sch)
+            client = _anthropic_client(config, timeout_s)
+            response = _claude_create(client, dict(
+                model=config.claude_model, max_tokens=2000, system=system,
+                messages=[{"role": "user", "content": prompt}],
+                output_config={"effort": "low", "format": {"type": "json_schema", "schema": sch}},
+            ))
+            text = next((b.text for b in response.content if b.type == "text"), "")
+            return schema.model_validate_json(text)
+    except Exception as exc:
+        _log_failure("structured", name, config.gemini_model if name == "gemini" else config.claude_model, exc)
+        errors.append(f"{name}: {_short_error(exc)}")
+    return None
 
 
 def _status_and_message(exc: Exception) -> Tuple[Optional[int], str]:
@@ -538,6 +569,12 @@ def draft_content_with_llm(
     source = source_text or ""
     if len(source) > MAX_SOURCE_CHARS:
         source, result.truncated = source[:MAX_SOURCE_CHARS], True
+    # ปิดข้อมูลส่วนบุคคลก่อนส่ง (ตัวอย่างสำนวนปิดด้วย mask_facts มาแล้ว)
+    vault = PiiVault() if config.mask_pii else None
+    if vault is not None:
+        instruction, source = vault.mask(instruction), vault.mask(source)
+        recipient, review_party, title = vault.mask(recipient), vault.mask(review_party), vault.mask(title)
+        result.masked = vault.summary()
     prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
                                recipient=recipient, review_party=review_party, examples=examples, kind=kind, title=title)
 
@@ -553,6 +590,8 @@ def draft_content_with_llm(
         started = clock()
         try:
             content = _clean(call(prompt, config, budget))
+            if vault is not None and vault.total:
+                content = _unmask_model(content, vault)
         except Exception as exc:  # สลับไปตัวถัดไปเสมอ — เหตุผลบันทึกไว้แสดงในขั้นตอน
             _log_failure("draft", name, model, exc)
             result.attempts.append(LLMAttempt(name, model, False, _short_error(exc), round(clock() - started, 1)))

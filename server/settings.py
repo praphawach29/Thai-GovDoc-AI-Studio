@@ -80,6 +80,8 @@ class Settings:
     ai_order: tuple = field(default_factory=lambda: tuple(
         n for n in _split_csv(os.environ.get("GOVDOC_AI_ORDER", "gemini,claude").lower()) if n in ("gemini", "claude")
     ) or ("gemini", "claude"))
+    # ปิดข้อมูลส่วนบุคคลก่อนส่งให้ AI (ค่าเริ่มต้นเปิด; GOVDOC_MASK_PII=0 ปิด — ใช้เฉพาะไล่ปัญหา)
+    mask_pii: bool = field(default_factory=lambda: os.environ.get("GOVDOC_MASK_PII", "1").strip() != "0")
     web_dir: Path = ROOT_DIR / "web" / "studio"
     assets_dir: Path = ROOT_DIR / "assets"
     typst_templates_dir: Path = ROOT_DIR / "templates" / "typst"
@@ -94,6 +96,7 @@ def llm_config(settings: "Settings"):
         anthropic_workspace_id=settings.anthropic_workspace_id,
         claude_model=settings.claude_model, claude_effort=settings.claude_effort,
         gemini_model=settings.gemini_model, provider_order=settings.ai_order,
+        mask_pii=settings.mask_pii,
     )
 
 
