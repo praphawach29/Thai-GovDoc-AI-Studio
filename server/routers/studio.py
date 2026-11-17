@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from core.issuing_units import apply_issuing_unit, pick_unit
-from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, Signer, UrgencyLevel
+from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, Signer, UrgencyLevel, parse_form_key
 from core.profile_manager import get_user_profile
 from core.fact_check import check_facts
 from core.signers import OrgSigner, fill_document_signers
@@ -38,8 +38,17 @@ class StudioDraftResponse(StudioDraftResult):
 
 
 class BlankRequest(BaseModel):
-    doc_type: DocType = DocType.INTERNAL
+    # คีย์ประเภท: internal / external / stamp_letter / ... (core.models.FORM_KEYS)
+    doc_type: str = "internal"
     unit_key: Optional[str] = None
+
+
+def _form(key: Optional[str]):
+    """คีย์ประเภทจากหน้าเว็บ → (DocType, DocumentKind) หรือ None; ไม่รู้จัก = 400"""
+    try:
+        return parse_form_key(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 class ApplyUnitRequest(BaseModel):
@@ -131,7 +140,7 @@ def studio_profile(
 @router.post("/api/v1/studio/draft", response_model=StudioDraftResponse)
 async def studio_draft(
     prompt: str = Form(""),
-    doc_type: Optional[DocType] = Form(None),
+    doc_type: Optional[str] = Form(None),           # คีย์ประเภท (ว่าง = อัตโนมัติ)
     urgency: UrgencyLevel = Form(UrgencyLevel.NORMAL),
     secret: SecretLevel = Form(SecretLevel.NORMAL),
     file: Optional[UploadFile] = File(None),
@@ -146,6 +155,8 @@ async def studio_draft(
     โหมด Supabase: ไฟล์ต้นเรื่องทุกไฟล์ถูกเก็บใน Storage + ตาราง source_files
     และไฟล์ชั่วคราวบนเซิร์ฟเวอร์ถูกลบทันทีหลังอ่านเสร็จ
     """
+    form = _form(doc_type)
+    internal = form is not None and form[0] == DocType.INTERNAL
     has_file = file is not None and bool(file.filename)
     if not has_file and not source_path and not prompt.strip():
         raise HTTPException(status_code=400, detail="พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องก่อนเริ่มร่าง")
@@ -176,12 +187,12 @@ async def studio_draft(
         result = start_draft(
             prompt=prompt,
             file_path=str(saved_path) if saved_path else None,
-            doc_type_hint=doc_type,
+            form_hint=doc_type or None,
             urgency=urgency,
             secret=secret,
             llm=llm_config(settings),
-            recipient=unit.recipient if unit and doc_type != DocType.EXTERNAL else "",
-            review_party=unit.review_party if unit and doc_type != DocType.EXTERNAL else "",
+            recipient=unit.recipient if unit and (form is None or internal) else "",
+            review_party=unit.review_party if unit and (form is None or internal) else "",
             # สำนวนจากหนังสือฉบับจริงของหน่วยงาน (คลังตัวอย่าง) — โหมด Supabase เท่านั้น
             find_examples=example_finder(client) if user is not None else None,
             profile=load_org_profile(user, settings),
@@ -213,9 +224,10 @@ def studio_blank(
     user: Optional[CurrentUser] = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ):
-    """เอกสารเปล่า (บันทึกข้อความ / หนังสือภายนอก) พร้อม placeholder"""
-    doc = normalize_for_editor(create_blank_document(req.doc_type, profile=load_org_profile(user, settings)))
-    if req.doc_type == DocType.INTERNAL:
+    """เอกสารเปล่าตามประเภทที่เลือก (บันทึกข้อความ / หนังสือภายนอก / หนังสือประทับตรา / ...) พร้อม placeholder"""
+    doc_type, kind = _form(req.doc_type) or (DocType.INTERNAL, None)
+    doc = normalize_for_editor(create_blank_document(doc_type, profile=load_org_profile(user, settings), kind=kind))
+    if doc_type == DocType.INTERNAL:
         doc = _apply_unit(doc, req.unit_key, user, settings, fresh=True)
     else:
         doc = _fill_signers(doc, user, settings, fresh=True)

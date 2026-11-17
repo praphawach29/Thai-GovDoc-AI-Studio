@@ -139,7 +139,7 @@
   }
   // ค่าสรุปสำหรับรายการงาน (เหมือนที่ API ส่งในโหมดเซิร์ฟเวอร์)
   const summarize = (x) => ({
-    ...x, docType: x.doc?.doc_type, editStatus: x.doc?.edit_status,
+    ...x, docType: formKey(x.doc), editStatus: x.doc?.edit_status,
     todo: (x.check?.placeholders?.length || 0) + (x.check?.lint?.issues?.length || 0) + (x.check?.facts?.length || 0),
   });
   const localStore = {
@@ -182,7 +182,7 @@
       const rows = await request('/documents?limit=50' + (archived ? '&archived=true' : '')).then(r => r.json());
       return rows.map(r => ({
         id: r.id, title: r.subject, updated: r.updated_at, doc: { urgency: r.urgency }, docNumber: r.doc_number, status: r.status,
-        docType: r.doc_type, unitKey: r.unit_key, todo: r.todo || 0, editStatus: r.edit_status, sourceName: r.source_name,
+        docType: DOC_TYPE_LABEL[r.kind] ? r.kind : r.doc_type, unitKey: r.unit_key, todo: r.todo || 0, editStatus: r.edit_status, sourceName: r.source_name,
       }));
     },
     async setArchived(id, on) {
@@ -256,7 +256,9 @@
     setTimeout(() => el.remove(), 3600);
   }
 
-  const DOC_TYPE_LABEL = { internal: 'บันทึกข้อความ', external: 'หนังสือภายนอก' };
+  // ประเภทหนังสือ: คีย์เดียวกับ core.models.FORM_KEYS (doc_type ของ API) — ชนิดอื่นแยกด้วย doc.kind
+  const DOC_TYPE_LABEL = { internal: 'บันทึกข้อความ', external: 'หนังสือภายนอก', stamp_letter: 'หนังสือประทับตรา' };
+  const formKey = (doc) => (doc && DOC_TYPE_LABEL[doc.kind] ? doc.kind : (doc?.doc_type === 'internal' ? 'internal' : 'external'));
   const URGENCY = {
     normal: { label: 'ปกติ', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
     urgent: { label: 'ด่วน', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -270,5 +272,5 @@
     top_secret: { label: 'ลับที่สุด', cls: 'bg-rose-600 text-white border-rose-600' },
   };
 
-  window.GovDoc = { api, store, auth, toThai, esc, PH_RE, hasPlaceholder, relTime, download, toast, DOC_TYPE_LABEL, URGENCY, SECRET };
+  window.GovDoc = { api, store, auth, toThai, esc, PH_RE, hasPlaceholder, relTime, download, toast, DOC_TYPE_LABEL, formKey, URGENCY, SECRET };
 })();

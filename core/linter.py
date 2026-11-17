@@ -187,7 +187,15 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
                 message="ขาดข้อความภาคความประสงค์หรือภาคสรุป",
                 suggestion="ต้องระบุสิ่งที่ต้องการให้ผู้รับดำเนินการ"
             ))
-        elif not clean_purpose.startswith("จึงเรียนมาเพื่อ"):
+        elif doc.is_stamp_letter and not clean_purpose.startswith("จึง"):
+            issues.append(LintIssue(
+                rule_id="RULE_PURPOSE_CONVENTION",
+                severity="warning",
+                field="paragraph_purpose",
+                message="ข้อความหนังสือประทับตรามักปิดท้ายด้วยประโยค 'จึง...'",
+                suggestion="เช่น 'จึงเรียนมาเพื่อโปรดทราบ' หรือ 'จึงเรียนมาเพื่อโปรดดำเนินการต่อไป'"
+            ))
+        elif not doc.is_stamp_letter and not clean_purpose.startswith("จึงเรียนมาเพื่อ"):
             issues.append(LintIssue(
                 rule_id="RULE_PURPOSE_CONVENTION",
                 severity="warning",
@@ -197,7 +205,25 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
             ))
 
     # 3. ตรวจสอบคำขึ้นต้นและคำลงท้าย (Rule: RULE_SALUTATION_CLOSING)
-    if doc.doc_type == DocType.EXTERNAL:
+    if doc.is_stamp_letter:
+        # หนังสือประทับตรา: ใช้ "ถึง" ไม่มีคำขึ้นต้น/คำลงท้าย และใช้ไม่ได้กับเรื่องสำคัญ
+        if not doc.salutation.strip().startswith("ถึง"):
+            issues.append(LintIssue(
+                rule_id="RULE_STAMP_RECIPIENT",
+                severity="warning",
+                field="salutation",
+                message="หนังสือประทับตราใช้คำว่า 'ถึง' นำหน้าผู้รับ ไม่ใช้ 'เรียน'",
+                suggestion="เช่น 'ถึง สำนักงานเขตปทุมวัน'"
+            ))
+        if any(title in doc.salutation for title in HIGH_OFFICIALS):
+            issues.append(LintIssue(
+                rule_id="RULE_STAMP_NOT_FOR_HIGH_OFFICIAL",
+                severity="warning",
+                field="salutation",
+                message="หนังสือประทับตราใช้เฉพาะเรื่องที่ไม่สำคัญ ไม่เหมาะกับหนังสือถึงผู้ดำรงตำแหน่งระดับสูง",
+                suggestion="เปลี่ยนเป็นหนังสือภายนอกที่หัวหน้าส่วนราชการลงนาม"
+            ))
+    elif doc.doc_type == DocType.EXTERNAL:
         # ตรวจสอบกรณีผู้รับเป็นบุคคลชั้นผู้ใหญ่ (นายกฯ, ประธานรัฐสภา, ประธานศาลฎีกา)
         is_high_official = any(title in doc.salutation for title in HIGH_OFFICIALS)
         if is_high_official:
@@ -261,7 +287,7 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
         ))
 
     # 5. ตรวจสอบข้อมูลผู้ลงนาม
-    if not doc.signatory_name.strip() and not doc.signatory_stamp:
+    if not doc.signatory_name.strip() and not doc.signatory_stamp and not doc.is_stamp_letter:
         issues.append(LintIssue(
             rule_id="RULE_MISSING_SIGNATORY_NAME",
             severity="error",

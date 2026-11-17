@@ -22,7 +22,7 @@ from typing import Callable, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
-from core.models import DocType, GovDocumentSchema, SecretLevel
+from core.models import DocType, DocumentKind, GovDocumentSchema, SecretLevel
 from core.security import cloud_ai_allowed
 
 logger = logging.getLogger("govdoc.ai")
@@ -135,6 +135,38 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
 """
 
 
+# ---- ชนิดอื่นตามแบบในระเบียบงานสารบรรณ: คำอธิบาย + ตัวอย่างรูปแบบ (few-shot) ----
+# ตัวอย่างเป็นเรื่องสมมุติ ปิดข้อเท็จจริงด้วย [...] ให้ AI เลียนแบบรูปแบบและสำนวนเท่านั้น
+FORM_PROMPTS = {
+    DocumentKind.STAMP_LETTER: (
+        """ชนิดหนังสือ: หนังสือประทับตรา (แบบที่ ๓ ตามระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ)
+ใช้ประทับตราชื่อส่วนราชการแทนการลงชื่อของหัวหน้าส่วนราชการ เฉพาะเรื่องที่ไม่ใช่เรื่องสำคัญ เช่น ขอรายละเอียดเพิ่มเติม
+ส่งสำเนาหนังสือ/สิ่งพิมพ์/เอกสาร ตอบรับทราบที่ไม่เกี่ยวกับราชการสำคัญหรือการเงิน แจ้งผลงานที่ได้ดำเนินการไปแล้ว
+เตือนเรื่องที่ค้าง หรือเรื่องที่หัวหน้าส่วนราชการระดับกรมขึ้นไปกำหนดให้ใช้หนังสือประทับตรา
+หนังสือมีเพียง ที่ · ถึง · ข้อความ · ส่วนราชการที่ส่ง · ตรา · วันที่ — ไม่มีคำขึ้นต้น คำลงท้าย และผู้ลงนาม
+เขียนช่องต่อไปนี้ (ช่อง memo_* ให้เป็น ""):
+- subject: ใจความสั้น ๆ ของเรื่อง (ไม่พิมพ์บนหนังสือ ใช้ลงทะเบียนส่ง)
+- paragraph_reason: ที่มาของเรื่อง ขึ้นต้นด้วย "ตามที่..." (ลงท้าย "นั้น") หรือ "ด้วย..." สั้น กระชับ
+- paragraph_details: สิ่งที่ขอ/ส่ง/แจ้ง (ว่างได้ถ้ารวมในย่อหน้าแรกแล้ว)
+- paragraph_purpose: ประโยคสั้นปิดท้าย เช่น "จึงเรียนมาเพื่อโปรดทราบ" "จึงเรียนมาเพื่อโปรดดำเนินการต่อไป"
+- reference: "" (หนังสือประทับตราไม่มีหัวข้ออ้างถึง ให้อ้างในข้อความแทน)""",
+        """ตัวอย่างรูปแบบตามแบบในระเบียบ (เรื่องสมมุติ — ห้ามนำข้อเท็จจริงในตัวอย่างไปใช้):
+<form_example>
+subject: ขอเอกสารประกอบการพิจารณาเพิ่มเติม
+paragraph_reason: ตามที่ [หน่วยงานผู้รับ] ได้มีหนังสือ ที่ [เลขที่] ลงวันที่ [วันที่] ขอรับการสนับสนุน[เรื่อง] มายัง[หน่วยงานผู้ส่ง] ความละเอียดแจ้งแล้ว นั้น
+paragraph_details: ในการนี้ เพื่อประกอบการพิจารณา ขอให้จัดส่ง[รายการเอกสาร] จำนวน [เลข] ชุด ภายในวันที่ [วันที่]
+paragraph_purpose: จึงเรียนมาเพื่อโปรดดำเนินการต่อไป
+</form_example>
+<form_example>
+subject: ส่งสำเนาคำสั่ง
+paragraph_reason: [หน่วยงานผู้ส่ง] ขอส่งสำเนาคำสั่ง[หน่วยงาน] ที่ [เลขที่] ลงวันที่ [วันที่] เรื่อง [เรื่อง] มาเพื่อโปรดทราบ
+paragraph_details:
+paragraph_purpose: จึงเรียนมาเพื่อโปรดทราบ
+</form_example>""",
+    ),
+}
+
+
 def build_user_prompt(
     *,
     doc_type: DocType,
@@ -143,8 +175,15 @@ def build_user_prompt(
     recipient: str = "",
     review_party: str = "",
     examples: str = "",
+    kind: Optional[DocumentKind] = None,
 ) -> str:
-    """examples = ส่วนตัวอย่างสำนวนจาก core.style_examples.few_shot_block (ว่าง = ไม่มี)"""
+    """examples = ส่วนตัวอย่างสำนวนจาก core.style_examples.few_shot_block (ว่าง = ไม่มี)
+    kind = ชนิดอื่นตามแบบในระเบียบ (FORM_PROMPTS) — ใช้คำอธิบายและตัวอย่างรูปแบบของชนิดนั้นแทน"""
+    if kind in FORM_PROMPTS:
+        kind_text, form_example = FORM_PROMPTS[kind]
+        kind_text += f"\nผู้รับ: {recipient}" if recipient else ""
+        examples = "\n\n".join(x for x in (form_example, examples.strip()) if x)
+        return _assemble(kind_text, instruction, source_text, examples)
     if doc_type == DocType.INTERNAL:
         party = review_party or "[ชื่อหน่วยงานผู้เสนอ]"
         kind = f"""ชนิดหนังสือ: บันทึกข้อความ (หนังสือภายใน) เสนอ{(' ' + recipient) if recipient else 'ผู้บังคับบัญชา'}
@@ -161,6 +200,10 @@ def build_user_prompt(
 - paragraph_reason (ภาคเหตุ): ขึ้นต้นด้วย "ด้วย..." หรือ "ตามที่... นั้น"
 - paragraph_details (ภาคข้อเท็จจริง): รายละเอียด (ว่างได้ถ้าไม่จำเป็น)
 - paragraph_purpose (ภาคความประสงค์): ขึ้นต้นด้วย "จึงเรียนมาเพื่อ..." """
+    return _assemble(kind, instruction, source_text, examples)
+
+
+def _assemble(kind: str, instruction: str, source_text: str, examples: str) -> str:
     parts = [kind]
     if examples.strip():
         # ตัวอย่างอยู่ก่อนต้นเรื่อง — ต้นเรื่องของเรื่องใหม่อยู่ท้ายสุดเสมอ
@@ -388,6 +431,7 @@ def draft_content_with_llm(
     prefer: Optional[str] = None,
     avoid: Tuple[str, ...] = (),
     examples: str = "",
+    kind: Optional[DocumentKind] = None,
 ) -> LLMDraftResult:
     """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)"""
     result = LLMDraftResult()
@@ -416,7 +460,7 @@ def draft_content_with_llm(
     if len(source) > MAX_SOURCE_CHARS:
         source, result.truncated = source[:MAX_SOURCE_CHARS], True
     prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
-                               recipient=recipient, review_party=review_party, examples=examples)
+                               recipient=recipient, review_party=review_party, examples=examples, kind=kind)
 
     deadline = clock() + (config.total_timeout_s if budget_s is None else budget_s)
     for index, (name, model, call) in enumerate(providers):

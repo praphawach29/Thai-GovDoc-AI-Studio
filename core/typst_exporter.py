@@ -71,6 +71,41 @@ def _format_co_signers(data: GovDocumentSchema) -> str:
     return "(" + "".join(i + ", " for i in items) + ")"
 
 
+def _format_body(lines) -> str:
+    """ย่อหน้า [(indent_cm, text)] → Typst array ของ dictionary"""
+    items = [f"(indent: {indent:.2f}cm, text: {_escape_typst_string(text)})" for indent, text in lines]
+    return "(" + "".join(i + ", " for i in items) + ")"
+
+
+def _stamp_content(data: GovDocumentSchema, garuda_rel_path: str, font: str) -> str:
+    from core.doc_forms import STAMP_GAP_CM, body_lines, recipient_of
+
+    num = to_thai_numerals if data.use_thai_numerals else (lambda t: t or "")
+    lines = [(i, num(t)) for i, t in body_lines(data.paragraph_reason, data.paragraph_details, data.paragraph_purpose)]
+    return f"""// สร้างอัตโนมัติโดย Thai GovDoc AI Studio — หนังสือประทับตรา
+#import "templates/typst/stamp.typ": govdoc_stamp
+
+#govdoc_stamp(
+  doc_number: {_escape_typst_string(num(data.doc_number))},
+  recipient: {_escape_typst_string(recipient_of(data.salutation))},
+  body: {_format_body(lines)},
+  sender: {_escape_typst_string(data.dept_name)},
+  doc_date: {_escape_typst_string(num(data.doc_date))},
+  stamp_gap: {STAMP_GAP_CM:g}cm,
+  contact_dept: {_escape_typst_string(data.contact_dept)},
+  contact_tel: {_escape_typst_string(num(data.contact_tel or ""))},
+  contact_fax: {_escape_typst_string(num(data.contact_fax or ""))},
+  contact_email: {_escape_typst_string(data.contact_email or "")},
+  urgency: "{data.urgency.value}",
+  secret: "{data.secret.value}",
+  thai_page_numbers: {"true" if data.use_thai_numerals else "false"},
+  font: "{font}",
+  garuda_path: "{garuda_rel_path}",
+  garuda: read("{garuda_rel_path}", encoding: none),
+)
+"""
+
+
 def generate_typst_content(
     data: GovDocumentSchema,
     garuda_rel_path: str = "assets/garuda_krut.png",
@@ -82,6 +117,8 @@ def generate_typst_content(
     ซึ่งบันทึกข้อความคือแบบกรุงเทพมหานคร)
     """
     profile = get_layout_profile(layout_profile, data.doc_type)
+    if data.is_stamp_letter:
+        return _stamp_content(data, garuda_rel_path, TYPST_FAMILY[data.font_family or profile.font_key])
     fmt_date = to_thai_numerals(data.doc_date) if data.use_thai_numerals else data.doc_date
     fmt_number = to_thai_numerals(data.doc_number) if data.use_thai_numerals else data.doc_number
     fmt_reason = to_thai_numerals(data.paragraph_reason) if data.use_thai_numerals else data.paragraph_reason

@@ -20,8 +20,12 @@ import logging
 import time
 
 from core.llm_drafter import LLMConfig, apply_draft_content, draft_content_with_llm, ocr_images_with_llm
+from core.doc_forms import apply_form, blank_body
 from core.models import (
+    FORM_KEYS,
+    FORM_LABELS,
     DocType,
+    DocumentKind,
     GovDocumentSchema,
     MemoHierarchyLevel,
     SecretLevel,
@@ -123,14 +127,17 @@ def check_document(doc: GovDocumentSchema) -> StudioCheck:
     return StudioCheck(placeholders=doc.find_placeholders(), lint=lint_gov_document(doc))
 
 
-def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema] = None) -> GovDocumentSchema:
-    """เอกสารเปล่าพร้อม placeholder — ข้อมูลหน่วยงาน/ผู้ลงนามมาจากโปรไฟล์เท่านั้น"""
+def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema] = None,
+                          kind: Optional[DocumentKind] = None) -> GovDocumentSchema:
+    """เอกสารเปล่าพร้อม placeholder — ข้อมูลหน่วยงาน/ผู้ลงนามมาจากโปรไฟล์เท่านั้น
+    kind: ชนิดอื่น (เช่น หนังสือประทับตรา) — doc_type ต้องเป็น EXTERNAL"""
     p = profile or get_user_profile()
     internal = doc_type == DocType.INTERNAL
-    reason = "[✏️ ระบุต้นเรื่อง]" if internal else "[✏️ ระบุภาคเหตุ]"
-    details = "[✏️ ระบุข้อเท็จจริง]" if internal else "[✏️ ระบุภาคข้อเท็จจริง]"
-    purpose = "[✏️ ระบุข้อพิจารณาและเสนอแนะ]" if internal else "[✏️ ระบุภาคความประสงค์]"
-    return GovDocumentSchema(
+    if internal:
+        reason, details, purpose = "[✏️ ระบุต้นเรื่อง]", "[✏️ ระบุข้อเท็จจริง]", "[✏️ ระบุข้อพิจารณาและเสนอแนะ]"
+    else:
+        reason, details, purpose = blank_body(kind or DocumentKind.EXTERNAL_LETTER)
+    doc = GovDocumentSchema(
         doc_type=doc_type,
         urgency=UrgencyLevel.NORMAL,
         secret=SecretLevel.NORMAL,
@@ -156,9 +163,16 @@ def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema
         contact_fax=p.contact_fax,
         contact_email=p.contact_email,
     )
+    if kind is not None and not internal:
+        doc = apply_form(doc, kind, issuer=p.dept_name)
+    return doc
 
 
 DOC_TYPE_THAI = {DocType.INTERNAL: "บันทึกข้อความ (หนังสือภายใน)", DocType.EXTERNAL: "หนังสือภายนอก"}
+# คำในคำสั่งที่บอกชนิดอื่น (ตรวจก่อนบันทึก/ภายนอก) — เรียงจากเฉพาะเจาะจงที่สุด
+_ASK_FORMS = (
+    ("stamp_letter", ("หนังสือประทับตรา", "ประทับตราแทนการลงชื่อ", "ประทับตราส่วนราชการ")),
+)
 _ASK_INTERNAL = ("บันทึกข้อความ", "หนังสือภายใน", "บันทึกเสนอ", "เสนอผู้บังคับบัญชา", "เสนอตามสายงาน",
                  "เสนอ ผอ", "เสนอผู้อำนวยการ", "เสนอหัวหน้า", "เสนอปลัด")
 _ASK_EXTERNAL = ("หนังสือภายนอก", "หนังสือตอบ", "ตอบหนังสือ", "ตอบกลับ", "มีหนังสือถึง", "แจ้งตอบ")
@@ -174,6 +188,28 @@ def requested_doc_type(prompt: str) -> Optional[DocType]:
     return None
 
 
+def requested_form(prompt: str) -> Optional[str]:
+    """ประเภทที่ผู้ใช้ระบุในคำสั่ง เป็นคีย์ (internal / external / stamp_letter / ...) — ไม่ระบุ = None"""
+    text = (prompt or "").replace(" ", "")
+    for key, words in _ASK_FORMS:
+        if any(w.replace(" ", "") in text for w in words):
+            return key
+    asked = requested_doc_type(prompt)
+    return asked.value if asked is not None else None
+
+
+def choose_output_form(hint: Optional[str], prompt: str, *, has_source_file: bool,
+                       classified: DocType) -> tuple:
+    """ประเภทที่จะร่างเป็นคีย์: ผู้ใช้เลือก > คำสั่งที่พิมพ์ > มีไฟล์ต้นเรื่อง = บันทึกข้อความ > ตัวจำแนก"""
+    if hint:
+        return hint, "ผู้ใช้เลือกเอง"
+    asked = requested_form(prompt)
+    if asked is not None:
+        return asked, "ตามคำสั่งที่พิมพ์"
+    doc_type, why = choose_output_type(None, prompt, has_source_file=has_source_file, classified=classified)
+    return doc_type.value, why
+
+
 def choose_output_type(hint: Optional[DocType], prompt: str, *, has_source_file: bool,
                        classified: DocType) -> tuple:
     """ประเภทหนังสือที่จะร่าง (ไม่ใช่ประเภทของต้นเรื่อง):
@@ -187,6 +223,10 @@ def choose_output_type(hint: Optional[DocType], prompt: str, *, has_source_file:
         # ต้นเรื่องที่รับเข้ามา (มักเป็นหนังสือภายนอก) ต้องเสนอผู้บังคับบัญชาด้วยบันทึกข้อความก่อน
         return DocType.INTERNAL, "ต้นเรื่องรับเข้า จึงร่างบันทึกเสนอตามสายงาน (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
     return classified, "จำแนกจากเนื้อหา (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
+
+
+def classic_kind(kind: DocumentKind) -> bool:
+    return kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO)
 
 
 def _pick_examples(find: Optional[ExampleFinder], source: str, prompt: str, doc_type: DocType) -> List[dict]:
@@ -205,6 +245,7 @@ def start_draft(
     prompt: str = "",
     file_path: Optional[str] = None,
     doc_type_hint: Optional[DocType] = None,
+    form_hint: Optional[str] = None,
     urgency: UrgencyLevel = UrgencyLevel.NORMAL,
     secret: SecretLevel = SecretLevel.NORMAL,
     api_key: Optional[str] = None,
@@ -262,10 +303,12 @@ def start_draft(
 
     cls = classify_source_document(ctx)
     result.classification = cls
-    doc_type, why = choose_output_type(doc_type_hint, prompt, has_source_file=bool(file_path), classified=cls.doc_type)
+    form, why = choose_output_form(form_hint or (doc_type_hint.value if doc_type_hint else None), prompt,
+                                   has_source_file=bool(file_path), classified=cls.doc_type)
+    doc_type, kind = FORM_KEYS[form]
     result.steps.append(StudioStep(
         key="classify", label="เลือกประเภทหนังสือที่จะร่าง",
-        detail=f"{DOC_TYPE_THAI[doc_type]} · {why}",
+        detail=f"{FORM_LABELS[form]} · {why}",
     ))
 
     doc = draft_from_context_rule_based(
@@ -279,6 +322,7 @@ def start_draft(
         contact_tel=profile.contact_tel,
         secret=secret,
     )
+    doc = apply_form(doc, kind, issuer=profile.dept_name)
     doc.urgency = urgency
     doc.secret = secret
     doc.contact_fax = profile.contact_fax or doc.contact_fax
@@ -286,10 +330,13 @@ def start_draft(
 
     # AI เรียบเรียงเนื้อความ (Claude → Gemini) ไม่สำเร็จ/ไม่ได้ตั้งค่า = ใช้ร่างตามกฎข้างบน
     if llm is not None:
+        # ตัวอย่างของหน่วยมีเฉพาะหนังสือภายนอก/บันทึกข้อความ — ชนิดอื่นใช้แบบในระเบียบ (few-shot ใน prompt)
+        classic = kind in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO)
         examples = (_pick_examples(find_examples, ctx.raw_text or "", prompt, doc.doc_type)
-                    if llm.any_provider and allow_cloud else [])
+                    if llm.any_provider and allow_cloud and classic else [])
         ai = draft_content_with_llm(
             doc_type=doc.doc_type,
+            kind=kind,
             budget_s=min(llm.total_timeout_s, max(0.0, request_budget - (time.monotonic() - started))),
             instruction=prompt if file_path else "",
             source_text=ctx.raw_text or "",
@@ -320,7 +367,7 @@ def start_draft(
     result.check = check_document(doc)
     result.check.facts = check_facts(result.document, source_text_of(ctx.raw_text, prompt if file_path else ""))
     result.steps.append(StudioStep(
-        key="draft", label="ร่างหนังสือตามโครงสร้าง ๓ ภาค",
+        key="draft", label="ร่างหนังสือตามโครงสร้าง ๓ ภาค" if classic_kind(kind) else f"ร่าง{FORM_LABELS[form]}ตามแบบในระเบียบ",
         detail=f"เหลือจุดที่ต้องระบุ {len(result.check.placeholders)} จุด",
     ))
     return result

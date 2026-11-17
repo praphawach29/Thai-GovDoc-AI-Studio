@@ -522,7 +522,9 @@ def export_govdoc_to_docx(
         fmt_details = to_thai_numerals(data.paragraph_details) if (data.paragraph_details and data.use_thai_numerals) else data.paragraph_details
         fmt_purpose = to_thai_numerals(data.paragraph_purpose) if data.use_thai_numerals else data.paragraph_purpose
 
-        if data.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
+        if data.is_stamp_letter:
+            _build_stamp_doc(doc, data, garuda_path, profile)
+        elif data.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
             _build_special_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
         elif data.sections is not None:
             _build_sections_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
@@ -717,6 +719,87 @@ def _build_sections_doc(
 
         if content:
             add_body(label, content)
+
+    _add_page_number_header(doc, profile.page_number_style)
+
+
+def _add_body_lines(doc: Document, lines, space_before_pt: float = 6.0) -> None:
+    """ย่อหน้าเนื้อความ [(indent_cm, text)] — 1 บรรทัด + 6 pt ระหว่างย่อหน้า, กระจายแบบไทย"""
+    for indent, text in lines:
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.space_before = Pt(space_before_pt)
+        pf.space_after = Pt(0)
+        pf.line_spacing = 1.0
+        pf.first_line_indent = Cm(indent)
+        _apply_thai_distributed(p)
+        _set_run_thai_font(p.add_run(insert_zwsp(text)))
+
+
+def _label_paragraph(doc: Document, label: str, value: str, hanging_cm: float, space_before_pt: float = 6.0):
+    """หัวข้อตัวหนา + ข้อความ (บรรทัดถัดไปเยื้องตรงข้อความ)"""
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    pf.space_before = Pt(space_before_pt)
+    pf.space_after = Pt(0)
+    pf.left_indent = Cm(hanging_cm)
+    pf.first_line_indent = Cm(-hanging_cm)
+    pf.tab_stops.add_tab_stop(Cm(hanging_cm))
+    _set_run_thai_font(p.add_run(label), bold=True)
+    _set_run_thai_font(p.add_run("\t" + insert_zwsp(value)))
+    return p
+
+
+def _build_stamp_doc(doc: Document, data: GovDocumentSchema, garuda_path: Optional[str], profile: LayoutProfile):
+    """หนังสือประทับตรา (แบบที่ ๓) — ตำแหน่งตรงกับ templates/typst/stamp.typ
+    ครุฑ 3 ซม. กึ่งกลาง · ที่ (แนวเท้าครุฑ) · ถึง · ข้อความ · ส่วนราชการที่ส่ง/ที่ว่างประทับตรา/วันที่ (เริ่ม 8 ซม.)
+    · ส่วนราชการเจ้าของเรื่อง โทร. โทรสาร ไปรษณีย์อิเล็กทรอนิกส์"""
+    from core.doc_forms import SENDER_INDENT_CM, STAMP_GAP_CM, body_lines, recipient_of
+
+    num = to_thai_numerals if data.use_thai_numerals else (lambda t: t or "")
+    if garuda_path and os.path.exists(garuda_path):
+        p_g = doc.add_paragraph()
+        p_g.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_g.paragraph_format.space_after = Pt(0)
+        p_g.paragraph_format.line_spacing = 1.0
+        p_g.add_run().add_picture(garuda_path, height=Cm(3.0))
+
+    p_num = doc.add_paragraph()
+    p_num.paragraph_format.space_after = Pt(0)
+    p_num.paragraph_format.line_spacing = 1.0
+    _set_run_thai_font(p_num.add_run("ที่"), bold=True)
+    _set_run_thai_font(p_num.add_run("  " + num(data.doc_number)))
+
+    _label_paragraph(doc, "ถึง", recipient_of(data.salutation), hanging_cm=1.0)
+    _add_body_lines(doc, [(i, num(t)) for i, t in
+                          body_lines(data.paragraph_reason, data.paragraph_details, data.paragraph_purpose)])
+
+    def right(text: str, before_pt: float):
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Cm(SENDER_INDENT_CM)
+        p.paragraph_format.space_before = Pt(before_pt)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = 1.0
+        _set_run_thai_font(p.add_run(insert_zwsp(text)))
+        return p
+
+    right(data.dept_name, 6 + 18)                    # 1 บรรทัด + 6 pt จากย่อหน้าสุดท้าย
+    right(num(data.doc_date), STAMP_GAP_CM / 2.54 * 72)
+
+    # ส่วนราชการเจ้าของเรื่อง 16 pt ใต้วันที่ 4 Enter (เหมือนหนังสือภายนอก)
+    contact = [data.contact_dept]
+    if data.contact_tel:
+        contact.append(f"โทร. {num(data.contact_tel)}")
+    if data.contact_fax:
+        contact.append(f"โทรสาร {num(data.contact_fax)}")
+    if data.contact_email:
+        contact.append(f"ไปรษณีย์อิเล็กทรอนิกส์ {data.contact_email}")
+    for index, line in enumerate(contact):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(3 * 18 if index == 0 else 0)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = 1.0
+        _set_run_thai_font(p.add_run(insert_zwsp(line)))
 
     _add_page_number_header(doc, profile.page_number_style)
 

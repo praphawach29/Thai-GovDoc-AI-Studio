@@ -65,6 +65,29 @@ class DocumentKind(str, Enum):
         return True
 
 
+# ประเภทที่ผู้ใช้เลือกได้ในหน้าเว็บ (คีย์ใน select ประเภท / ฟอร์ม doc_type ของ API) → (DocType, DocumentKind)
+# DocType ยังเป็น external/internal เท่านั้น (ข้อจำกัดคอลัมน์ documents.doc_type ในฐานข้อมูล) — ชนิดอื่นแยกด้วย kind
+FORM_KEYS: Dict[str, Tuple[DocType, DocumentKind]] = {
+    "internal": (DocType.INTERNAL, DocumentKind.INTERNAL_MEMO),
+    "external": (DocType.EXTERNAL, DocumentKind.EXTERNAL_LETTER),
+    "stamp_letter": (DocType.EXTERNAL, DocumentKind.STAMP_LETTER),
+}
+FORM_LABELS: Dict[str, str] = {
+    "internal": "บันทึกข้อความ (หนังสือภายใน)",
+    "external": "หนังสือภายนอก",
+    "stamp_letter": "หนังสือประทับตรา",
+}
+
+
+def parse_form_key(key: Optional[str]) -> Optional[Tuple[DocType, DocumentKind]]:
+    """คีย์ประเภทจากหน้าเว็บ → (DocType, DocumentKind); ว่าง = None, ไม่รู้จัก = ValueError"""
+    if key is None or str(key).strip() == "":
+        return None
+    if key not in FORM_KEYS:
+        raise ValueError(f"ไม่รู้จักประเภทหนังสือ: {key}")
+    return FORM_KEYS[key]
+
+
 class UrgencyLevel(str, Enum):
     NORMAL = "normal"              # ปกติ
     URGENT = "urgent"              # ด่วน
@@ -627,6 +650,17 @@ class GovDocumentSchema(BaseModel):
         consideration, request = split_consideration_and_request(consideration_src, self.memo_request)
         return intro or "", facts or "", law, consideration or "", request or ""
 
+    @property
+    def form_key(self) -> str:
+        """คีย์ประเภทที่หน้าเว็บใช้ (internal / external / stamp_letter / ...)"""
+        if self.kind.value in FORM_KEYS:
+            return self.kind.value
+        return "internal" if self.doc_type == DocType.INTERNAL else "external"
+
+    @property
+    def is_stamp_letter(self) -> bool:
+        return self.kind == DocumentKind.STAMP_LETTER
+
     def get_memo_sections(self) -> List[tuple]:
         """
         ส่งคืนรายการหัวข้อและเนื้อหาของบันทึกข้อความ [(หัวข้อ, เนื้อหา), ...]
@@ -696,9 +730,9 @@ class GovDocumentSchema(BaseModel):
             ("ข้อกฎหมาย (บันทึกข้อความ)", self.memo_law or ""),
             ("ข้อพิจารณาและเสนอแนะ (บันทึกข้อความ)", self.memo_consideration or ""),
             ("ภาคความประสงค์ (บันทึกข้อความ)", self.memo_request or ""),
-            ("คำลงท้าย", self.closing),
-            ("ชื่อผู้ลงนาม", "" if self.signatory_stamp else self.signatory_name),
-            ("ตำแหน่งผู้ลงนาม", "" if self.signatory_stamp else self.signatory_position),
+            ("คำลงท้าย", "" if self.is_stamp_letter else self.closing),
+            ("ชื่อผู้ลงนาม", "" if (self.signatory_stamp or self.is_stamp_letter) else self.signatory_name),
+            ("ตำแหน่งผู้ลงนาม", "" if (self.signatory_stamp or self.is_stamp_letter) else self.signatory_position),
             ("กลุ่มงานเจ้าของเรื่อง", self.contact_dept or ""),
             ("โทรศัพท์", self.contact_tel or "")
         ]

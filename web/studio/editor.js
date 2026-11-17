@@ -1,6 +1,6 @@
 // editor.js — หน้าแก้ไขเอกสาร: กระดาษ A4 แก้ไขได้โดยตรง + บทสนทนา/ต้นเรื่อง/ผลตรวจ + ส่งออก
 (async function () {
-  const { api, store, esc, toThai, PH_RE, hasPlaceholder, relTime, download, toast, URGENCY, SECRET, DOC_TYPE_LABEL } = window.GovDoc;
+  const { api, store, esc, toThai, PH_RE, hasPlaceholder, relTime, download, toast, URGENCY, SECRET, DOC_TYPE_LABEL, formKey } = window.GovDoc;
   const $ = (id) => document.getElementById(id);
 
   await window.GovDoc.auth.ready;
@@ -26,6 +26,9 @@
     refine: null,
   };
   const isMemo = () => st.doc.doc_type === 'internal';
+  // ชนิดตามแบบในระเบียบ (ไม่ใช่หนังสือภายนอก/บันทึกข้อความ) — หน้ากระดาษและช่องต่างกัน
+  const kindKey = () => formKey(st.doc);
+  const isStamp = () => kindKey() === 'stamp_letter';
   const num = (s) => st.doc.use_thai_numerals ? toThai(s) : String(s ?? '');
 
   // ---------- บันทึก ----------
@@ -85,7 +88,7 @@
 
   // ---------- ช่องแก้ไขบนกระดาษ ----------
   // ค่าของแต่ละช่อง: getter/setter ผูกกับฟิลด์ใน GovDocumentSchema
-  const SAL_RE = /^(กราบเรียน|เรียน)\s*/;
+  const SAL_RE = /^(กราบเรียน|เรียน|ถึง)\s*/;
   const FIELDS = {
     doc_number: { get: d => d.doc_number, set: (d, v) => { d.doc_number = v; } },
     doc_date: { get: d => d.doc_date, set: (d, v) => { d.doc_date = v.replace(/^วันที่\s*/, ''); } },
@@ -93,7 +96,7 @@
     subject: { get: d => d.subject, set: (d, v) => { d.subject = v.replace(/\s*\n\s*/g, ' '); } },
     salutation_to: {
       get: d => (d.salutation || '').replace(SAL_RE, ''),
-      set: (d, v) => { const pre = (d.salutation || '').match(SAL_RE)?.[1] || 'เรียน'; d.salutation = `${pre}  ${v.trim()}`; },
+      set: (d, v) => { const pre = (d.salutation || '').match(SAL_RE)?.[1] || (d.kind === 'stamp_letter' ? 'ถึง' : 'เรียน'); d.salutation = `${pre}  ${v.trim()}`; },
     },
     references: { get: d => (d.references || []).join('\n'), set: (d, v) => { d.references = v.split('\n').map(s => s.trim()).filter(Boolean); } },
     attachments: { get: d => (d.attachments || []).join('\n'), set: (d, v) => { d.attachments = v.split('\n').map(s => s.trim()).filter(Boolean); } },
@@ -131,7 +134,7 @@
     };
   }
   const FIELD_LABEL = {
-    doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'เรียน',
+    doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'ผู้รับ',
     references: 'อ้างถึง', attachments: 'สิ่งที่ส่งมาด้วย', paragraph_reason: 'ภาคเหตุ', paragraph_details: 'ภาคข้อเท็จจริง',
     paragraph_purpose: 'ภาคความประสงค์', memo_intro: 'ต้นเรื่อง', memo_law: 'ข้อกฎหมาย', memo_facts: 'ข้อเท็จจริง',
     memo_consideration: 'ข้อพิจารณาและเสนอแนะ', memo_request: 'ภาคความประสงค์', closing: 'คำลงท้าย',
@@ -164,7 +167,9 @@
   const RE_L3 = /^[0-9๐-๙]+\.[0-9๐-๙]+\.[0-9๐-๙]+/, RE_L2 = /^([0-9๐-๙]+\.[0-9๐-๙]+|(มาตรา|ข้อ)\s*[0-9๐-๙]+)/;
   const MAX_LEVEL = 6;
   const tabCount = (line) => line.match(/^\t*/)[0].length;
-  const autoLevel = (line) => { const s = line.trim(); return RE_L3.test(s) ? 3 : RE_L2.test(s) ? 2 : 1; };
+  // บันทึกข้อความ: "ข้อ ๑"/"มาตรา" ที่ยกมาอยู่ระดับ ๒ (core/memo_layout) — ชนิดอื่นใช้เฉพาะเลข ๑.๑ (core/doc_forms.line_level)
+  const RE_L2_FORM = /^[0-9๐-๙]+\.[0-9๐-๙]+/;
+  const autoLevel = (line) => { const s = line.trim(); return RE_L3.test(s) ? 3 : (isMemo() ? RE_L2 : RE_L2_FORM).test(s) ? 2 : 1; };
   const lineLevel = (line) => Math.min(tabCount(line), MAX_LEVEL) || autoLevel(line);
   const indentOf = (line) => `${2.5 + (lineLevel(line) - 1)}cm`;
   const lineDiv = (line, inner) => `<div class="ln" style="text-indent:${indentOf(line)}">${inner || '<br>'}</div>`;
@@ -231,8 +236,42 @@
     </div>`;
   }
 
+  // ส่วนราชการเจ้าของเรื่อง (ท้ายหนังสือภายนอก/หนังสือประทับตรา)
+  const contactHTML = () => `
+      <div class="mt-[1.2cm] text-[15pt] leading-tight">
+        <div>${field('contact_dept')}</div>
+        <div class="flex gap-1"><span>โทร.</span>${field('contact_tel', 'flex-1')}</div>
+        <div class="flex gap-1"><span>โทรสาร</span>${field('contact_fax', 'flex-1')}</div>
+        <div class="flex gap-1"><span>ไปรษณีย์อิเล็กทรอนิกส์</span>${field('contact_email', 'flex-1')}</div>
+      </div>`;
+  // เรื่อง: ชนิดที่ไม่พิมพ์ "เรื่อง" บนหนังสือ (หนังสือประทับตรา) ยังต้องมีไว้ลงทะเบียนส่ง — แสดงนอกกระดาษเวลาพิมพ์
+  const registerSubject = () => `
+      <div class="no-print -mt-[1.2cm] mb-[0.6cm] flex items-baseline gap-2 text-slate-400 text-[13pt]" title="ไม่พิมพ์ในหนังสือ ใช้ลงทะเบียนส่ง">
+        <span class="shrink-0 font-sans text-[10pt]"><i class="fa-solid fa-book mr-1"></i>เรื่อง (ลงทะเบียน ไม่พิมพ์)</span>${field('subject', 'flex-1 text-slate-600')}
+      </div>`;
+
+  // หนังสือประทับตรา (แบบที่ ๓): ที่ · ถึง · ข้อความ · ส่วนราชการที่ส่ง · ตรา · วันที่ · ส่วนราชการเจ้าของเรื่อง
+  function stampSheetHTML() {
+    return `${stamps()}
+      ${registerSubject()}
+      <div class="flex justify-center mb-3"><img src="/assets/garuda_krut.png" alt="ตราครุฑ" class="garuda-ext"></div>
+      <div class="flex items-baseline gap-2 w-[6.5cm] -mt-[1.6cm]"><span class="doc-bold">ที่</span>${field('doc_number', 'flex-1')}</div>
+      <div class="mt-3 flex items-baseline gap-2"><span class="doc-bold shrink-0">ถึง</span>${field('salutation_to', 'flex-1')}</div>
+      <div class="mt-2 space-y-2">
+        ${block('paragraph_reason', 'justify-thai')}
+        ${d_details() ? block('paragraph_details', 'justify-thai') : ''}
+        ${block('paragraph_purpose', 'justify-thai')}
+      </div>
+      <div class="ml-[8cm] mt-[0.9cm]">${field('dept_name', 'block')}</div>
+      <div class="ml-[8cm] my-1 h-[2cm] w-[6cm] stamp-area stamp-seal" contenteditable="false"><i class="fa-solid fa-stamp"></i>ตราชื่อส่วนราชการ (หมึกแดง) + ลงชื่อย่อกำกับตรา</div>
+      <div class="ml-[8cm]">${field('doc_date', 'block')}</div>
+      ${contactHTML()}`;
+  }
+  const d_details = () => st.doc.paragraph_details != null;
+
   function sheetHTML() {
     const d = st.doc;
+    if (isStamp()) return stampSheetHTML();
     const refs = d.references != null, atts = d.attachments != null;
     if (isMemo()) {
       const law = d.memo_law != null;
@@ -284,12 +323,7 @@
         ${block('paragraph_purpose', 'indent-25 justify-thai')}
       </div>
       ${signature()}
-      <div class="mt-[1.2cm] text-[15pt] leading-tight">
-        <div>${field('contact_dept')}</div>
-        <div class="flex gap-1"><span>โทร.</span>${field('contact_tel', 'flex-1')}</div>
-        <div class="flex gap-1"><span>โทรสาร</span>${field('contact_fax', 'flex-1')}</div>
-        <div class="flex gap-1"><span>ไปรษณีย์อิเล็กทรอนิกส์</span>${field('contact_email', 'flex-1')}</div>
-      </div>`;
+      ${contactHTML()}`;
   }
 
   function fillFields() {
@@ -407,7 +441,8 @@
     { key: 'memo_law', label: 'ข้อกฎหมาย', memoOnly: true, placeholder: '[✏️ ระบุข้อกฎหมายจากคลังที่ยืนยันแล้ว]' },
   ];
   function renderToggles() {
-    const items = OPTIONAL.filter(o => !o.memoOnly || isMemo());
+    // หนังสือประทับตราไม่มีอ้างถึง/สิ่งที่ส่งมาด้วยในแบบ — อ้างในข้อความแทน
+    const items = isStamp() ? [] : OPTIONAL.filter(o => !o.memoOnly || isMemo());
     $('section-toggles').innerHTML = items.map((o) => `
       <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
         <input type="checkbox" data-opt="${o.key}" ${st.doc[o.key] != null ? 'checked' : ''} class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">
@@ -416,7 +451,7 @@
     const on = items.filter(o => st.doc[o.key] != null).length;
     $('section-count').textContent = `เปิด ${toThai(on)}/${toThai(items.length)}`;
     // ผู้ลงนามแต่ละคน: ใช้ตราประทับชื่อ-ตำแหน่งหรือไม่ (ชื่อที่แสดง = ตำแหน่ง ถ้ายังไม่มีใช้ลำดับ)
-    const signers = [{ key: 'main', position: st.doc.signatory_position, stamp: !!st.doc.signatory_stamp },
+    const signers = isStamp() ? [] : [{ key: 'main', position: st.doc.signatory_position, stamp: !!st.doc.signatory_stamp },
       ...(isMemo() ? (st.doc.co_signers || []).slice(0, 3).map((c, i) => ({ key: String(i), position: c.position, stamp: !!c.stamp })) : [])];
     $('signer-toggles').innerHTML = signers.map((sg, i) => `
       <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
@@ -620,8 +655,8 @@
   }
   function renderChrome() {
     const d = st.doc;
-    $('type-label').textContent = DOC_TYPE_LABEL[d.doc_type] || 'เอกสาร';
-    $('type-select').value = d.doc_type;
+    $('type-label').textContent = DOC_TYPE_LABEL[kindKey()] || 'เอกสาร';
+    $('type-select').value = kindKey();
     $('doc-title').textContent = d.subject || 'ไม่มีชื่อเรื่อง';
     $('doc-title').title = d.subject || '';
     document.title = `${d.subject || 'เอกสาร'} — GovDoc Studio`;
@@ -634,7 +669,7 @@
     $('version-count').textContent = toThai(st.versions.length + 1);
     const words = [d.subject, d.paragraph_reason, d.paragraph_details, d.paragraph_purpose, d.memo_law].filter(Boolean).join(' ');
     $('footer-words').textContent = `ความยาว ${toThai(words.replace(/\s+/g, '').length)} ตัวอักษร`;
-    $('footer-format').textContent = `A4 · ${FONT_LABEL[d.font_family || 'it9']} ๑๖ pt · ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`;
+    $('footer-format').textContent = `${DOC_TYPE_LABEL[kindKey()]} · A4 · ${FONT_LABEL[d.font_family || 'it9']} ๑๖ pt · ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`;
     renderSaveState('saved');
     fitToolbar();
   }
@@ -1337,7 +1372,7 @@
           <button type="button" id="card-open" class="w-full bg-white border-2 border-emerald-500/70 rounded-xl p-3 shadow-sm hover:border-emerald-600 transition flex items-center justify-between gap-2 text-left group">
             <span class="flex items-center gap-3 min-w-0">
               <span class="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0"><i class="fa-regular fa-file-lines"></i></span>
-              <span class="text-xs min-w-0"><span class="text-emerald-700 font-medium">กำลังเปิดอยู่</span><span class="text-slate-400 mx-1">·</span><span class="text-slate-500 font-medium">${DOC_TYPE_LABEL[st.doc.doc_type]}</span>
+              <span class="text-xs min-w-0"><span class="text-emerald-700 font-medium">กำลังเปิดอยู่</span><span class="text-slate-400 mx-1">·</span><span class="text-slate-500 font-medium">${DOC_TYPE_LABEL[kindKey()]}</span>
               <span class="block text-slate-800 font-medium mt-0.5 truncate">${esc(st.doc.subject)}</span></span>
             </span>
             <i class="fa-solid fa-chevron-right text-slate-400 text-xs group-hover:translate-x-0.5 transition"></i>
@@ -1558,7 +1593,7 @@
   // ---------- ร่างใหม่จากข้อมูลเพิ่มเติม ----------
   // ร่างใหม่ทั้งฉบับด้วย AI จากต้นเรื่องเดิม (ข้อความที่อ่านจากไฟล์แล้ว ไม่ต้องอ่านไฟล์ซ้ำ)
   // ใช้ทั้งตอนเพิ่มข้อมูล และตอนเปลี่ยนประเภทหนังสือ
-  async function redraft({ extra = '', docType = st.doc.doc_type, note = 'ก่อนร่างใหม่' } = {}) {
+  async function redraft({ extra = '', docType = kindKey(), note = 'ก่อนร่างใหม่' } = {}) {
     const source = entry.context?.raw_text || '';
     const parts = [entry.prompt, source !== entry.prompt ? source : '', extra].filter(Boolean);
     if (!parts.length) throw new Error('ไม่มีต้นเรื่องเดิมให้ร่างใหม่ — พิมพ์ข้อมูลเพิ่มในช่องด้านล่าง');
@@ -1600,10 +1635,10 @@
   // เปลี่ยนประเภทหนังสือ → AI ร่างใหม่เป็นประเภทนั้น (โครงสร้างต่างกันมาก แปลงช่องตรง ๆ ไม่ได้ผลดี)
   $('type-select').addEventListener('change', async (e) => {
     const target = e.target.value;
-    if (target === st.doc.doc_type) return;
+    if (target === kindKey()) return;
     const label = DOC_TYPE_LABEL[target];
     if (!confirm(`ร่างใหม่เป็น${label}ด้วย AI จากต้นเรื่องเดิม? (ฉบับปัจจุบันเก็บไว้ในประวัติเวอร์ชัน กลับไปใช้ได้)`)) {
-      e.target.value = st.doc.doc_type; return;
+      e.target.value = kindKey(); return;
     }
     e.target.disabled = true;
     toast(`กำลังร่างใหม่เป็น${label}... อาจใช้เวลาราว ๑ นาที`);
@@ -1611,7 +1646,7 @@
       await redraft({ docType: target, note: `ก่อนเปลี่ยนเป็น${label}` });
       toast(`เปลี่ยนเป็น${label}แล้ว`);
     } catch (err) {
-      e.target.value = st.doc.doc_type;
+      e.target.value = kindKey();
       toast(err.message, 'error');
     } finally { e.target.disabled = false; }
   });

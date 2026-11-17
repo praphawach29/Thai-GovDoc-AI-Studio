@@ -72,7 +72,7 @@
   // ลบ = ย้ายไปถังขยะ (status archived) — หายจากงานล่าสุด/งานค้าง กู้คืนได้จาก "ถังขยะ"
   // ไม่ลบถาวร: ระบบเก็บประวัติเวอร์ชันของเอกสารทุกฉบับ (audit trail)
   const DOT = { normal: 'bg-sky-500', urgent: 'bg-amber-500', very_urgent: 'bg-rose-500', most_urgent: 'bg-rose-700' };
-  const TYPE_SHORT = { internal: 'บันทึก', external: 'ภายนอก' };
+  const TYPE_SHORT = { internal: 'บันทึก', external: 'ภายนอก', stamp_letter: 'ประทับตรา' };
   const unitLabels = {};
   let recent = [], showArchived = false;
   async function loadRecent() {
@@ -495,6 +495,7 @@
     } catch (err) { toast(err.message, 'error'); }
   }
   document.querySelectorAll('[data-blank]').forEach(b => b.addEventListener('click', () => openBlank(b.dataset.blank)));
+  $('blank-other').addEventListener('change', (e) => { const t = e.target.value; e.target.value = ''; if (t) openBlank(t); });
 
   async function openTemplate(id, title) {
     try {
