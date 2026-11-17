@@ -106,6 +106,42 @@ def _stamp_content(data: GovDocumentSchema, garuda_rel_path: str, font: str) -> 
 """
 
 
+def _formal_content(data: GovDocumentSchema, garuda_rel_path: str, font: str) -> str:
+    from core.doc_forms import (FORMAL, FORMAL_DATE_INDENT_CM, FORMAL_RULE_CM, FORMAL_SIGN_LEFT_CM,
+                                body_lines, formal_extra_lines)
+
+    spec = FORMAL[data.kind]
+    num = to_thai_numerals if data.use_thai_numerals else (lambda t: t or "")
+    lines = [(i, num(t)) for i, t in body_lines(data.paragraph_reason, data.paragraph_details, data.paragraph_purpose)]
+    name, position = data.signer_lines()[0]
+    number = _escape_typst_string(num(data.doc_number)) if spec.number else "none"
+    return f"""// สร้างอัตโนมัติโดย Thai GovDoc AI Studio — {spec.prefix}
+#import "templates/typst/formal.typ": govdoc_formal
+
+#govdoc_formal(
+  title: {_escape_typst_string(data.special_title or spec.prefix)},
+  doc_number: {number},
+  subject_label: {_escape_typst_string(spec.subject_label)},
+  subject: {_escape_typst_string(num(data.subject))},
+  extra_lines: {_format_typst_list([num(x) for x in formal_extra_lines(data)])},
+  rule_length: {FORMAL_RULE_CM:g}cm,
+  body: {_format_body(lines)},
+  date_label: {_escape_typst_string(spec.date_label)},
+  doc_date: {_escape_typst_string(num(data.doc_date))},
+  date_indent: {FORMAL_DATE_INDENT_CM:g}cm,
+  sign_left: {FORMAL_SIGN_LEFT_CM:g}cm,
+  signatory_name: {_escape_typst_string(name)},
+  signatory_position: {_escape_typst_string(position)},
+  urgency: "{data.urgency.value}",
+  secret: "{data.secret.value}",
+  thai_page_numbers: {"true" if data.use_thai_numerals else "false"},
+  font: "{font}",
+  garuda_path: "{garuda_rel_path}",
+  garuda: read("{garuda_rel_path}", encoding: none),
+)
+"""
+
+
 def generate_typst_content(
     data: GovDocumentSchema,
     garuda_rel_path: str = "assets/garuda_krut.png",
@@ -119,6 +155,8 @@ def generate_typst_content(
     profile = get_layout_profile(layout_profile, data.doc_type)
     if data.is_stamp_letter:
         return _stamp_content(data, garuda_rel_path, TYPST_FAMILY[data.font_family or profile.font_key])
+    if data.is_formal:
+        return _formal_content(data, garuda_rel_path, TYPST_FAMILY[data.font_family or profile.font_key])
     fmt_date = to_thai_numerals(data.doc_date) if data.use_thai_numerals else data.doc_date
     fmt_number = to_thai_numerals(data.doc_number) if data.use_thai_numerals else data.doc_number
     fmt_reason = to_thai_numerals(data.paragraph_reason) if data.use_thai_numerals else data.paragraph_reason

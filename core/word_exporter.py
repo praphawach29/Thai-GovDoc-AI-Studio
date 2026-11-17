@@ -524,6 +524,8 @@ def export_govdoc_to_docx(
 
         if data.is_stamp_letter:
             _build_stamp_doc(doc, data, garuda_path, profile)
+        elif data.is_formal:
+            _build_formal_doc(doc, data, garuda_path, profile)
         elif data.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
             _build_special_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
         elif data.sections is not None:
@@ -800,6 +802,68 @@ def _build_stamp_doc(doc: Document, data: GovDocumentSchema, garuda_path: Option
         p.paragraph_format.space_after = Pt(0)
         p.paragraph_format.line_spacing = 1.0
         _set_run_thai_font(p.add_run(insert_zwsp(line)))
+
+    _add_page_number_header(doc, profile.page_number_style)
+
+
+def _add_center_rule(doc: Document, length_cm: float) -> None:
+    """เส้นคั่นสั้นกึ่งกลาง: ย่อหน้าว่างที่มีเส้นขอบล่าง เยื้องซ้าย-ขวาเท่ากัน"""
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    side = (TEXT_WIDTH_CM - length_cm) / 2
+    pf.left_indent, pf.right_indent = Cm(side), Cm(side)
+    pf.space_before, pf.space_after = Pt(0), Pt(6)
+    pf.line_spacing = Pt(8)
+    _apply_bottom_border(p, sz=4)
+
+
+def _build_formal_doc(doc: Document, data: GovDocumentSchema, garuda_path: Optional[str], profile: LayoutProfile):
+    """คำสั่ง / ระเบียบ / ข้อบังคับ / ประกาศ (แบบที่ ๔–๗) — ตำแหน่งตรงกับ templates/typst/formal.typ"""
+    from core.doc_forms import (FORMAL, FORMAL_DATE_INDENT_CM, FORMAL_RULE_CM, FORMAL_SIGN_LEFT_CM,
+                                body_lines, formal_extra_lines)
+
+    spec = FORMAL[data.kind]
+    num = to_thai_numerals if data.use_thai_numerals else (lambda t: t or "")
+    if garuda_path and os.path.exists(garuda_path):
+        p_g = doc.add_paragraph()
+        p_g.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_g.paragraph_format.space_after = Pt(0)
+        p_g.paragraph_format.line_spacing = 1.0
+        p_g.add_run().add_picture(garuda_path, height=Cm(3.0))
+
+    def center(text: str, bold: bool = False, before: float = 0):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pf = p.paragraph_format
+        pf.space_before, pf.space_after, pf.line_spacing = Pt(before), Pt(0), 1.0
+        _set_run_thai_font(p.add_run(insert_zwsp(text)), bold=bold)
+        return p
+
+    center(data.special_title or spec.prefix, bold=True, before=6)
+    if spec.number:
+        center(f"ที่  {num(data.doc_number)}")
+    center(f"{spec.subject_label}  {num(data.subject)}")
+    for line in formal_extra_lines(data):
+        center(num(line))
+    _add_center_rule(doc, FORMAL_RULE_CM)
+    _add_body_lines(doc, [(i, num(t)) for i, t in
+                          body_lines(data.paragraph_reason, data.paragraph_details, data.paragraph_purpose)])
+
+    p_date = doc.add_paragraph()
+    pf = p_date.paragraph_format
+    pf.left_indent = Cm(FORMAL_DATE_INDENT_CM)
+    pf.space_before, pf.space_after, pf.line_spacing = Pt(18 + 6), Pt(0), 1.0
+    _set_run_thai_font(p_date.add_run(f"{spec.date_label}  {num(data.doc_date)}"))
+
+    name, position = data.signer_lines()[0]
+    for index, line in enumerate([name, *position.split("\n")]):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pf = p.paragraph_format
+        pf.left_indent = Cm(FORMAL_SIGN_LEFT_CM)
+        pf.space_before = Pt(3 * 18 if index == 0 else 0)      # ว่าง 3 บรรทัดสำหรับลายมือชื่อ
+        pf.space_after, pf.line_spacing = Pt(0), 1.0
+        _set_run_thai_font(p.add_run(line))
 
     _add_page_number_header(doc, profile.page_number_style)
 

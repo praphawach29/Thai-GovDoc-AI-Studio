@@ -80,11 +80,74 @@ def to_stamp_letter(doc: GovDocumentSchema, sender: Optional[str] = None) -> Gov
     return d
 
 
+class FormalSpec:
+    """แบบหัวกลาง (คำสั่ง แบบที่ ๔ / ระเบียบ ๕ / ข้อบังคับ ๖ / ประกาศ ๗)
+    ครุฑ 3 ซม. · ชื่อเอกสาร (เช่น "คำสั่งกองการกีฬา") · ที่ (เฉพาะคำสั่ง) · เรื่อง/ว่าด้วย · เส้นคั่น
+    · ข้อความ · "<สั่ง/ประกาศ> ณ วันที่ ..." · ลายมือชื่อ ชื่อเต็ม ตำแหน่ง"""
+
+    def __init__(self, prefix: str, subject_label: str, date_label: str, number: bool, blank: Tuple[str, str, str]):
+        self.prefix = prefix
+        self.subject_label = subject_label
+        self.date_label = date_label
+        self.number = number
+        self.blank = blank
+
+
+FORMAL = {
+    DocumentKind.ORDER: FormalSpec(
+        "คำสั่ง", "เรื่อง", "สั่ง ณ วันที่", True,
+        ("[✏️ ระบุเหตุผลที่ออกคำสั่ง] และอาศัยอำนาจตาม[✏️ ระบุกฎหมาย/ระเบียบที่ให้อำนาจ] จึง[✏️ ระบุสิ่งที่สั่ง] ดังนี้",
+         "๑. [✏️ ระบุรายการที่สั่ง]",
+         "ทั้งนี้ ตั้งแต่บัดนี้เป็นต้นไป"),
+    ),
+}
+
+# ระยะของแบบหัวกลาง (Word = PDF = หน้าแก้ไข)
+FORMAL_RULE_CM = 4.0            # เส้นคั่นใต้เรื่อง ยาว 4 ซม. กึ่งกลาง
+FORMAL_DATE_INDENT_CM = 5.0     # "สั่ง ณ วันที่ ..." เริ่ม 5 ซม. จากขอบซ้ายพื้นที่พิมพ์
+FORMAL_SIGN_LEFT_CM = 6.0       # ผู้ลงนามกึ่งกลางในช่วง 6 ซม. ถึงขอบขวา (เหมือนบันทึกข้อความ)
+
+def formal_extra_lines(doc: GovDocumentSchema) -> List[str]:
+    """บรรทัดใต้ "ว่าด้วย" ของระเบียบ/ข้อบังคับ (ฉบับที่ ..., พ.ศ. ...) — คำสั่ง/ประกาศไม่มี"""
+    return []
+
+
+_YEAR_RE = re.compile(r"^(.*?)\s*(?:พ\.ศ\.\s*)?([0-9๐-๙]{4})\s*$")
+
+
+def with_buddhist_era(date: str) -> str:
+    """'๑๗ พฤศจิกายน ๒๕๖๙' → '๑๗ พฤศจิกายน พ.ศ. ๒๕๖๙' (แบบคำสั่ง/ประกาศ ระบุ พ.ศ.)"""
+    m = _YEAR_RE.match((date or "").strip())
+    if not m or "[" in date:
+        return date
+    return f"{m.group(1).strip()} พ.ศ. {m.group(2)}".strip()
+
+
+def to_formal(doc: GovDocumentSchema, kind: DocumentKind, issuer: Optional[str] = None) -> GovDocumentSchema:
+    """แปลงร่างหนังสือภายนอกเป็นแบบหัวกลาง: ชื่อเอกสาร = คำนำหน้า + ชื่อส่วนราชการ, ไม่มีคำขึ้นต้น/ลงท้าย/อ้างถึง"""
+    spec = FORMAL[kind]
+    d = doc.model_copy(deep=True)
+    d.kind = kind
+    d.doc_type = DocType.EXTERNAL
+    name = sender_name(issuer or d.dept_name) or "[✏️ ระบุชื่อส่วนราชการ]"
+    d.special_title = f"{spec.prefix}{name}"
+    d.dept_name = name
+    d.salutation = ""
+    d.closing = ""
+    d.references = None
+    d.attachments = None
+    d.co_signers = None
+    d.doc_date = with_buddhist_era(d.doc_date)
+    return d
+
+
 def apply_form(doc: GovDocumentSchema, kind: DocumentKind, issuer: Optional[str] = None) -> GovDocumentSchema:
     """แปลงร่างตามกฎ (หนังสือภายนอก) เป็นชนิดที่เลือก — ชนิดเดิม (ภายนอก/บันทึก) คืนค่าเดิม
     issuer = ชื่อส่วนราชการ (ไม่มีที่อยู่/โทรศัพท์) จากโปรไฟล์หน่วยงาน"""
     if kind == DocumentKind.STAMP_LETTER:
         return to_stamp_letter(doc, sender=issuer)
+    if kind in FORMAL:
+        return to_formal(doc, kind, issuer)
     return doc
 
 
@@ -92,4 +155,6 @@ def blank_body(kind: DocumentKind) -> Tuple[str, str, str]:
     """(ภาคเหตุ, ภาคข้อเท็จจริง, ภาคความประสงค์) ของเอกสารเปล่า"""
     if kind == DocumentKind.STAMP_LETTER:
         return ("[✏️ ระบุที่มาของเรื่อง เช่น ตามที่... นั้น]", "[✏️ ระบุสิ่งที่ขอ/แจ้ง]", "จึงเรียนมาเพื่อโปรดทราบ")
+    if kind in FORMAL:
+        return FORMAL[kind].blank
     return ("[✏️ ระบุภาคเหตุ]", "[✏️ ระบุภาคข้อเท็จจริง]", "[✏️ ระบุภาคความประสงค์]")

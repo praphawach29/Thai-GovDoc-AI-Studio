@@ -91,6 +91,7 @@
   const SAL_RE = /^(กราบเรียน|เรียน|ถึง)\s*/;
   const FIELDS = {
     doc_number: { get: d => d.doc_number, set: (d, v) => { d.doc_number = v; } },
+    special_title: { get: d => d.special_title || '', set: (d, v) => { d.special_title = v.replace(/\s*\n\s*/g, ' ').trim(); } },
     doc_date: { get: d => d.doc_date, set: (d, v) => { d.doc_date = v.replace(/^วันที่\s*/, ''); } },
     dept_name: { get: d => d.dept_name, set: (d, v) => { d.dept_name = v; } },
     subject: { get: d => d.subject, set: (d, v) => { d.subject = v.replace(/\s*\n\s*/g, ' '); } },
@@ -134,7 +135,7 @@
     };
   }
   const FIELD_LABEL = {
-    doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'ผู้รับ',
+    doc_number: 'ที่', doc_date: 'วันที่', dept_name: 'ส่วนราชการ', subject: 'เรื่อง', salutation_to: 'ผู้รับ', special_title: 'ชื่อเอกสาร',
     references: 'อ้างถึง', attachments: 'สิ่งที่ส่งมาด้วย', paragraph_reason: 'ภาคเหตุ', paragraph_details: 'ภาคข้อเท็จจริง',
     paragraph_purpose: 'ภาคความประสงค์', memo_intro: 'ต้นเรื่อง', memo_law: 'ข้อกฎหมาย', memo_facts: 'ข้อเท็จจริง',
     memo_consideration: 'ข้อพิจารณาและเสนอแนะ', memo_request: 'ภาคความประสงค์', closing: 'คำลงท้าย',
@@ -250,6 +251,30 @@
         <span class="shrink-0 font-sans text-[10pt]"><i class="fa-solid fa-book mr-1"></i>เรื่อง (ลงทะเบียน ไม่พิมพ์)</span>${field('subject', 'flex-1 text-slate-600')}
       </div>`;
 
+  // แบบหัวกลาง (คำสั่ง/ประกาศ/ระเบียบ/ข้อบังคับ) — ค่าเดียวกับ core/doc_forms.FORMAL
+  const FORMAL_UI = {
+    order: { number: true, subjectLabel: 'เรื่อง', dateLabel: 'สั่ง ณ วันที่' },
+  };
+  const isFormal = () => !!FORMAL_UI[kindKey()];
+  function formalSheetHTML() {
+    const ui = FORMAL_UI[kindKey()];
+    return `${stamps()}
+      <div class="flex justify-center"><img src="/assets/garuda_krut.png" alt="ตราครุฑ" class="garuda-ext"></div>
+      <div class="mt-[6pt] text-center">
+        <div>${field('special_title', 'doc-bold formal-title')}</div>
+        ${ui.number ? `<div><span>ที่</span> ${field('doc_number', 'formal-center')}</div>` : ''}
+        <div><span>${ui.subjectLabel}</span> ${field('subject', 'formal-center')}</div>
+      </div>
+      <div class="mx-auto mt-1 mb-2 w-[4cm] border-b border-slate-800" aria-hidden="true"></div>
+      <div class="space-y-2">
+        ${block('paragraph_reason', 'justify-thai')}
+        ${d_details() ? block('paragraph_details', 'justify-thai') : ''}
+        ${block('paragraph_purpose', 'justify-thai')}
+      </div>
+      <div class="ml-[5cm] mt-[0.9cm] flex items-baseline gap-2"><span class="shrink-0">${ui.dateLabel}</span>${field('doc_date', 'flex-1')}</div>
+      <div class="ml-[6cm] mt-[1.9cm] text-center space-y-0.5">${signerSlot('main', st.doc.signatory_stamp, 'signatory_name', 'signatory_position')}</div>`;
+  }
+
   // หนังสือประทับตรา (แบบที่ ๓): ที่ · ถึง · ข้อความ · ส่วนราชการที่ส่ง · ตรา · วันที่ · ส่วนราชการเจ้าของเรื่อง
   function stampSheetHTML() {
     return `${stamps()}
@@ -272,6 +297,7 @@
   function sheetHTML() {
     const d = st.doc;
     if (isStamp()) return stampSheetHTML();
+    if (isFormal()) return formalSheetHTML();
     const refs = d.references != null, atts = d.attachments != null;
     if (isMemo()) {
       const law = d.memo_law != null;
@@ -442,7 +468,7 @@
   ];
   function renderToggles() {
     // หนังสือประทับตราไม่มีอ้างถึง/สิ่งที่ส่งมาด้วยในแบบ — อ้างในข้อความแทน
-    const items = isStamp() ? [] : OPTIONAL.filter(o => !o.memoOnly || isMemo());
+    const items = isStamp() || isFormal() ? [] : OPTIONAL.filter(o => !o.memoOnly || isMemo());
     $('section-toggles').innerHTML = items.map((o) => `
       <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
         <input type="checkbox" data-opt="${o.key}" ${st.doc[o.key] != null ? 'checked' : ''} class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">

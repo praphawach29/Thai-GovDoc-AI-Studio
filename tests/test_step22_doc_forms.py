@@ -205,3 +205,136 @@ def test_stamp_pdf_layout():
     assert (date["top"] - sender["bottom"]) / CM > 2.0                             # ที่ว่างประทับตรา
     assert min(w["x0"] for w in words) / CM > 2.95                                 # ขอบซ้าย
     assert max(w["x1"] for w in words) / CM < 21.0 - 1.95                          # ขอบขวา
+
+
+# ================================================================ คำสั่ง (แบบที่ ๔)
+def _formal(kind=DocumentKind.ORDER, **changes):
+    doc = create_blank_document(DocType.EXTERNAL, profile=UserProfileSchema(dept_name="กองการกีฬา"), kind=kind)
+    values = dict(
+        doc_number="12/2569", subject="SUBJECTX แต่งตั้งคณะกรรมการ", special_title="TITLEX คำสั่งกองการกีฬา",
+        paragraph_reason="REASON ด้วยกองการกีฬา กำหนดจัดการแข่งขัน จึงแต่งตั้งคณะกรรมการ ประกอบด้วย",
+        paragraph_details="1. ผู้อำนวยการกอง ประธานกรรมการ\n1.1 DETAIL อำนาจหน้าที่",
+        paragraph_purpose="ทั้งนี้ ตั้งแต่บัดนี้เป็นต้นไป", doc_date="17 พฤศจิกายน พ.ศ. 2569",
+        signatory_name="SIGNER", signatory_position="ผู้อำนวยการกองการกีฬา", use_thai_numerals=False,
+    )
+    values.update(changes)
+    for k, v in values.items():
+        setattr(doc, k, v)
+    return doc
+
+
+def test_blank_order_shape():
+    doc = create_blank_document(DocType.EXTERNAL, profile=UserProfileSchema(dept_name="กองการกีฬา"),
+                                kind=DocumentKind.ORDER)
+    assert doc.form_key == "order" and doc.is_formal
+    assert doc.special_title == "คำสั่งกองการกีฬา"
+    assert "พ.ศ." in doc.doc_date
+    assert doc.salutation == "" and doc.closing == "" and doc.references is None
+    labels = {p.split(":")[0] for p in doc.find_placeholders()}
+    assert not labels & {"คำขึ้นต้น", "คำลงท้าย", "ส่วนราชการ"}
+    assert doc.paragraph_purpose.startswith("ทั้งนี้")
+
+
+def test_with_buddhist_era():
+    from core.doc_forms import with_buddhist_era
+    assert with_buddhist_era("๑๗ พฤศจิกายน ๒๕๖๙") == "๑๗ พฤศจิกายน พ.ศ. ๒๕๖๙"
+    assert with_buddhist_era("17 พฤศจิกายน พ.ศ. 2569") == "17 พฤศจิกายน พ.ศ. 2569"
+    assert with_buddhist_era("[✏️ ระบุวันที่]") == "[✏️ ระบุวันที่]"
+
+
+@pytest.mark.parametrize("prompt, expected", [
+    ("ช่วยร่างคำสั่งแต่งตั้งคณะกรรมการจัดการแข่งขันกีฬา", "order"),
+    ("ออกคำสั่งมอบหมายให้เจ้าหน้าที่ปฏิบัติงานวันหยุด", "order"),
+    ("ตามคำสั่งกรุงเทพมหานคร ที่ ๑๒/๒๕๖๙ ขอเชิญประชุม", None),
+])
+def test_requested_order(prompt, expected):
+    assert requested_form(prompt) == expected
+
+
+def test_order_prompt_form_and_few_shot():
+    prompt = build_user_prompt(doc_type=DocType.EXTERNAL, kind=DocumentKind.ORDER,
+                               instruction="แต่งตั้งคณะกรรมการ", source_text="")
+    assert "คำสั่ง (แบบที่ ๔" in prompt and "อาศัยอำนาจตาม" in prompt
+    assert "ทั้งนี้ ตั้งแต่บัดนี้เป็นต้นไป" in prompt and "<form_example>" in prompt
+    assert "ห้ามใช้ \"จึงเรียนมาเพื่อ\"" in prompt
+
+
+def test_api_order_blank_and_draft():
+    doc = client.post("/api/v1/studio/blank", json={"doc_type": "order"}).json()
+    assert doc["kind"] == "order" and doc["special_title"].startswith("คำสั่ง")
+    res = client.post("/api/v1/studio/draft", data={"prompt": "ร่างคำสั่งแต่งตั้งคณะกรรมการจัดงานกีฬาเยาวชน"})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["document"]["kind"] == "order"
+    assert any("คำสั่ง" in s["detail"] for s in body["steps"] if s["key"] == "classify")
+
+
+def test_lint_order():
+    rules = {i.rule_id for i in lint_gov_document(_formal(special_title="คำสั่งกองการกีฬา")).issues}
+    assert not rules & {"RULE_REASON_CONVENTION", "RULE_PURPOSE_CONVENTION", "RULE_FORMAL_TITLE"}
+    rules = {i.rule_id for i in lint_gov_document(
+        _formal(paragraph_purpose="จึงเรียนมาเพื่อโปรดทราบ", special_title="กองการกีฬา")).issues}
+    assert {"RULE_FORMAL_NO_LETTER_CLOSING", "RULE_FORMAL_TITLE"} <= rules
+
+
+def test_order_docx(tmp_path):
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    out = tmp_path / "order.docx"
+    export_govdoc_to_docx(_formal(), str(out))
+    d = Document(str(out))
+    text = {p.text.replace("​", ""): p for p in d.paragraphs}
+    sec = d.sections[0]
+    assert [round(x.cm, 2) for x in (sec.top_margin, sec.bottom_margin, sec.left_margin, sec.right_margin)] == [2.5, 2.0, 3.0, 2.0]
+    assert abs(d.inline_shapes[0].height.cm - 3.0) < 0.01
+    title = text["TITLEX คำสั่งกองการกีฬา"]
+    assert title.alignment == WD_ALIGN_PARAGRAPH.CENTER and title.runs[0].bold
+    assert text["ที่  12/2569"].alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert text["เรื่อง  SUBJECTX แต่งตั้งคณะกรรมการ"].alignment == WD_ALIGN_PARAGRAPH.CENTER
+    date = text["สั่ง ณ วันที่  17 พฤศจิกายน พ.ศ. 2569"]
+    assert abs(date.paragraph_format.left_indent.cm - 5.0) < 0.01
+    signer = text["SIGNER"]
+    assert signer.alignment == WD_ALIGN_PARAGRAPH.CENTER and abs(signer.paragraph_format.left_indent.cm - 6.0) < 0.01
+    assert abs(text["1.1 DETAIL อำนาจหน้าที่"].paragraph_format.first_line_indent.cm - 3.5) < 0.01
+    assert not any(t.startswith(("เรียน", "ขอแสดงความนับถือ")) for t in text)
+    with zipfile.ZipFile(out) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    assert "<w:pBdr>" in xml                                   # เส้นคั่นใต้เรื่อง
+
+
+@pytest.mark.requires_typst
+def test_order_pdf_layout():
+    res = client.post("/api/v1/export/pdf", json=_formal().model_dump(mode="json"))
+    assert res.status_code == 200, res.text
+    page = pdfplumber.open(io.BytesIO(res.content)).pages[0]
+    words = page.extract_words()
+    centre = LEFT + 8 * CM
+    garuda = page.images[0]
+    assert abs((garuda["bottom"] - garuda["top"]) / CM - 3.0) < 0.05
+    assert abs((garuda["x0"] + garuda["x1"]) / 2 - centre) < 0.1 * CM
+    assert abs(garuda["top"] / CM - 2.5) < 0.05
+
+    def line_of(marker):
+        w = next((w for w in words if w["text"] == marker), None) or next(w for w in words if marker in w["text"])
+        row = [x for x in words if abs(x["bottom"] - w["bottom"]) < 2]
+        return w, min(x["x0"] for x in row), max(x["x1"] for x in row)
+
+    for marker in ("TITLEX", "12/2569", "SUBJECTX"):         # หัวกลาง
+        _, x0, x1 = line_of(marker)
+        assert abs((x0 + x1) / 2 - centre) < 0.3 * CM, marker
+    title, _, _ = line_of("TITLEX")
+    assert title["top"] > garuda["bottom"]
+    assert line_of("12/2569")[0]["top"] > title["bottom"] and line_of("SUBJECTX")[0]["top"] > line_of("12/2569")[0]["bottom"]
+    reason, _, _ = line_of("REASON")
+    assert abs((reason["x0"] - LEFT) / CM - 2.5) < 0.1
+    _, detail_x0, _ = line_of("DETAIL")
+    assert abs((detail_x0 - LEFT) / CM - 3.5) < 0.1             # "1.1 DETAIL" — เลขข้อเริ่ม 3.5 ซม.
+    rule = [l for l in page.lines + page.rects if abs((l["x1"] - l["x0"]) / CM - 4.0) < 0.1]
+    assert rule and abs((rule[0]["x0"] + rule[0]["x1"]) / 2 - centre) < 0.1 * CM   # เส้นคั่น 4 ซม. กึ่งกลาง
+    date, date_x0, _ = line_of("17")                             # บรรทัด "สั่ง ณ วันที่ 17 ..."
+    assert abs((date_x0 - LEFT) / CM - 5.0) < 0.1               # เริ่ม 5 ซม.
+    signer, sx0, sx1 = line_of("SIGNER")
+    assert abs((sx0 + sx1) / 2 - (LEFT + 11 * CM)) < 0.2 * CM     # กึ่งกลางช่วง 6–16 ซม.
+    assert (signer["top"] - date["bottom"]) / CM > 1.5           # ที่ว่างลงลายมือชื่อ
+    assert min(w["x0"] for w in words) / CM > 2.95 and max(w["x1"] for w in words) / CM < 19.05

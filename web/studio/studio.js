@@ -257,7 +257,7 @@
   }
 
   // ประเภทหนังสือ: คีย์เดียวกับ core.models.FORM_KEYS (doc_type ของ API) — ชนิดอื่นแยกด้วย doc.kind
-  const DOC_TYPE_LABEL = { internal: 'บันทึกข้อความ', external: 'หนังสือภายนอก', stamp_letter: 'หนังสือประทับตรา' };
+  const DOC_TYPE_LABEL = { internal: 'บันทึกข้อความ', external: 'หนังสือภายนอก', stamp_letter: 'หนังสือประทับตรา', order: 'คำสั่ง' };
   const formKey = (doc) => (doc && DOC_TYPE_LABEL[doc.kind] ? doc.kind : (doc?.doc_type === 'internal' ? 'internal' : 'external'));
   const URGENCY = {
     normal: { label: 'ปกติ', cls: 'bg-slate-100 text-slate-600 border-slate-200' },

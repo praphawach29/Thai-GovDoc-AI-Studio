@@ -7,7 +7,7 @@ import re
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
-from core.models import DocType, GovDocumentSchema, is_blank_doc_number
+from core.models import FORMAL_NO_NUMBER, DocType, GovDocumentSchema, is_blank_doc_number
 
 
 THAI_MONTHS = [
@@ -71,7 +71,9 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
 
     # 1.1 ตรวจสอบเลขที่หนังสือ: AI ต้องไม่สร้างเอง และต้องออกจากทะเบียนก่อนส่ง
     number = doc.doc_number.strip()
-    if not number:
+    if doc.kind in FORMAL_NO_NUMBER:
+        pass                       # ประกาศ/ระเบียบ/ข้อบังคับ ไม่มีบรรทัด "ที่"
+    elif not number:
         issues.append(LintIssue(
             rule_id="RULE_DOC_NUMBER_MISSING",
             severity="error",
@@ -168,7 +170,7 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
                 message="ขาดข้อความภาคเหตุ (ย่อหน้าที่ 1)",
                 suggestion="ต้องระบุความเป็นมา หรือเหตุผลในการออกหนังสือ"
             ))
-        elif not any(clean_reason.startswith(s) for s in valid_reason_starters):
+        elif not doc.is_formal and not any(clean_reason.startswith(s) for s in valid_reason_starters):
             issues.append(LintIssue(
                 rule_id="RULE_REASON_CONVENTION",
                 severity="warning",
@@ -187,6 +189,15 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
                 message="ขาดข้อความภาคความประสงค์หรือภาคสรุป",
                 suggestion="ต้องระบุสิ่งที่ต้องการให้ผู้รับดำเนินการ"
             ))
+        elif doc.is_formal:
+            if clean_purpose.startswith(("จึงเรียน", "จึงกราบเรียน")):
+                issues.append(LintIssue(
+                    rule_id="RULE_FORMAL_NO_LETTER_CLOSING",
+                    severity="warning",
+                    field="paragraph_purpose",
+                    message="คำสั่ง/ประกาศ/ระเบียบไม่ใช้ประโยค 'จึงเรียนมาเพื่อ...' แบบหนังสือ",
+                    suggestion="เช่น 'ทั้งนี้ ตั้งแต่บัดนี้เป็นต้นไป' (คำสั่ง) หรือ 'จึงประกาศให้ทราบโดยทั่วกัน' (ประกาศ)"
+                ))
         elif doc.is_stamp_letter and not clean_purpose.startswith("จึง"):
             issues.append(LintIssue(
                 rule_id="RULE_PURPOSE_CONVENTION",
@@ -205,7 +216,19 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
             ))
 
     # 3. ตรวจสอบคำขึ้นต้นและคำลงท้าย (Rule: RULE_SALUTATION_CLOSING)
-    if doc.is_stamp_letter:
+    if doc.is_formal:
+        from core.doc_forms import FORMAL
+        spec = FORMAL.get(doc.kind)
+        title = (doc.special_title or "").strip()
+        if spec and not title.startswith(spec.prefix):
+            issues.append(LintIssue(
+                rule_id="RULE_FORMAL_TITLE",
+                severity="warning",
+                field="special_title",
+                message=f"ชื่อเอกสารต้องขึ้นต้นด้วย '{spec.prefix}' ตามด้วยชื่อส่วนราชการที่ออก",
+                suggestion=f"เช่น '{spec.prefix}กรุงเทพมหานคร'"
+            ))
+    elif doc.is_stamp_letter:
         # หนังสือประทับตรา: ใช้ "ถึง" ไม่มีคำขึ้นต้น/คำลงท้าย และใช้ไม่ได้กับเรื่องสำคัญ
         if not doc.salutation.strip().startswith("ถึง"):
             issues.append(LintIssue(

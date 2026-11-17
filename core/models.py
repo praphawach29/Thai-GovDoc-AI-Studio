@@ -50,9 +50,18 @@ class DocumentKind(str, Enum):
     DIRECTIVE = "directive"                  # คำสั่ง/ระเบียบ/ข้อบังคับ (แบบ 4–6)
     PUBLIC_RELATIONS = "public_relations"    # ประกาศ/แถลงการณ์/ข่าว (แบบ 7–9)
     EVIDENCE = "evidence"                    # หนังสือรับรอง/รายงานการประชุม/บันทึก (แบบ 10–11)
+    # หนังสือสั่งการ/ประชาสัมพันธ์แยกตามแบบ (ใช้ในหน้าเว็บ — DIRECTIVE/PUBLIC_RELATIONS เดิมคงไว้ให้ข้อมูลเก่า)
+    ORDER = "order"                          # คำสั่ง (แบบที่ ๔)
+    REGULATION = "regulation"                # ระเบียบ (แบบที่ ๕)
+    BYLAW = "bylaw"                          # ข้อบังคับ (แบบที่ ๖)
+    ANNOUNCEMENT = "announcement"            # ประกาศ (แบบที่ ๗)
 
     def thai_label(self) -> str:
         return {
+            DocumentKind.ORDER: "คำสั่ง (แบบ 4)",
+            DocumentKind.REGULATION: "ระเบียบ (แบบ 5)",
+            DocumentKind.BYLAW: "ข้อบังคับ (แบบ 6)",
+            DocumentKind.ANNOUNCEMENT: "ประกาศ (แบบ 7)",
             DocumentKind.EXTERNAL_LETTER: "หนังสือภายนอก (แบบ 1)",
             DocumentKind.INTERNAL_MEMO: "หนังสือภายใน / บันทึกข้อความ (แบบ 2)",
             DocumentKind.STAMP_LETTER: "หนังสือประทับตรา (แบบ 3)",
@@ -71,12 +80,18 @@ FORM_KEYS: Dict[str, Tuple[DocType, DocumentKind]] = {
     "internal": (DocType.INTERNAL, DocumentKind.INTERNAL_MEMO),
     "external": (DocType.EXTERNAL, DocumentKind.EXTERNAL_LETTER),
     "stamp_letter": (DocType.EXTERNAL, DocumentKind.STAMP_LETTER),
+    "order": (DocType.EXTERNAL, DocumentKind.ORDER),
 }
 FORM_LABELS: Dict[str, str] = {
     "internal": "บันทึกข้อความ (หนังสือภายใน)",
     "external": "หนังสือภายนอก",
     "stamp_letter": "หนังสือประทับตรา",
+    "order": "คำสั่ง",
 }
+# ชนิดที่จัดหน้าแบบ "หัวกลาง" (ครุฑ · ชื่อเอกสาร · ที่ · เรื่อง/ว่าด้วย · เส้นคั่น · ข้อความ · ... ณ วันที่ · ผู้ลงนาม)
+FORMAL_KINDS = frozenset({DocumentKind.ORDER, DocumentKind.REGULATION, DocumentKind.BYLAW, DocumentKind.ANNOUNCEMENT})
+# แบบในระเบียบไม่มีบรรทัด "ที่" (มีเฉพาะคำสั่ง)
+FORMAL_NO_NUMBER = frozenset({DocumentKind.REGULATION, DocumentKind.BYLAW, DocumentKind.ANNOUNCEMENT})
 
 
 def parse_form_key(key: Optional[str]) -> Optional[Tuple[DocType, DocumentKind]]:
@@ -661,6 +676,11 @@ class GovDocumentSchema(BaseModel):
     def is_stamp_letter(self) -> bool:
         return self.kind == DocumentKind.STAMP_LETTER
 
+    @property
+    def is_formal(self) -> bool:
+        """คำสั่ง / ระเบียบ / ข้อบังคับ / ประกาศ — ไม่มีคำขึ้นต้น คำลงท้าย และส่วนราชการเจ้าของเรื่อง"""
+        return self.kind in FORMAL_KINDS
+
     def get_memo_sections(self) -> List[tuple]:
         """
         ส่งคืนรายการหัวข้อและเนื้อหาของบันทึกข้อความ [(หัวข้อ, เนื้อหา), ...]
@@ -745,7 +765,13 @@ class GovDocumentSchema(BaseModel):
         for idx, co in enumerate(self.co_signers or [], 2):
             if not co.stamp:
                 text_fields += [(f"ชื่อผู้ลงนาม ({idx})", co.name), (f"ตำแหน่งผู้ลงนาม ({idx})", co.position)]
-                
+        if self.is_formal:
+            # คำสั่ง/ประกาศ/ระเบียบ/ข้อบังคับ ไม่พิมพ์ช่องเหล่านี้ — ไม่นับเป็นจุดต้องระบุ
+            hidden = {"ส่วนราชการ", "คำขึ้นต้น", "คำลงท้าย", "กลุ่มงานเจ้าของเรื่อง", "โทรศัพท์"}
+            if self.kind in FORMAL_NO_NUMBER:
+                hidden.add("เลขที่หนังสือ")
+            text_fields = [("ชื่อเอกสาร", self.special_title or "")] + [f for f in text_fields if f[0] not in hidden]
+
         for label, val in text_fields:
             if not val:
                 continue
