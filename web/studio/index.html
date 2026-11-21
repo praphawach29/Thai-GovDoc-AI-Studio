@@ -137,9 +137,9 @@
           <button id="btn-attach" type="button" class="shrink-0 inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-within:border-slate-300 text-sm font-medium transition" title="แนบไฟล์ต้นเรื่อง (PDF, Word, รูปภาพ) หรือลากไฟล์มาวาง">
             <i class="fa-solid fa-paperclip text-emerald-700"></i><span>แนบไฟล์</span>
           </button>
-          <input id="template-input" type="file" class="sr-only" accept=".docx">
-          <button id="btn-attach-template" type="button" class="shrink-0 inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 text-sm font-medium transition" title="แนบไฟล์ Word ฉบับก่อน (เช่น โครงการปีที่แล้ว) เป็นแม่แบบ — AI อ่านต้นเรื่องแล้วทำตามรูปแบบของแม่แบบ">
-            <i class="fa-regular fa-file-word text-blue-600"></i><span>แนบแม่แบบ</span>
+          <input id="template-input" type="file" class="sr-only" multiple accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.tif,.tiff">
+          <button id="btn-attach-template" type="button" class="shrink-0 inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 text-sm font-medium transition" title="แนบต้นแบบ (สูงสุด ๓ ไฟล์ PDF/Word/ภาพ) เช่น คู่มือการเขียนโครงการ หรือหนังสือฉบับก่อนที่ได้รับอนุมัติ — AI อ่านเทียบก่อน แล้วร่างตามรูปแบบนั้นด้วยเนื้อหาจากต้นเรื่อง">
+            <i class="fa-regular fa-copy text-blue-600"></i><span>แนบต้นแบบ</span>
           </button>
           <span class="w-px h-5 bg-slate-200 mx-0.5 shrink-0" aria-hidden="true"></span>
           <label class="shrink-0 inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-within:border-slate-300 text-sm font-medium transition cursor-pointer" title="ประเภทหนังสือ (อัตโนมัติ: มีไฟล์ต้นเรื่อง = บันทึกข้อความ)">

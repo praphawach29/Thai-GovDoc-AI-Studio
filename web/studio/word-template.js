@@ -7,18 +7,20 @@
   const modal = $('modal-wt');
   if (!modal) return;
   let proposal = null, lastFocus = null;
+  let pendingRefs = [];      // ต้นแบบอื่นจากช่องแชท (เช่น คู่มือ PDF) ส่งเป็นแนวทางให้ AI
 
   const open = () => { lastFocus = document.activeElement; modal.hidden = false; $('wt-file').focus(); };
-  const close = () => { modal.hidden = true; lastFocus?.focus?.(); };
+  const close = () => { modal.hidden = true; pendingRefs = []; lastFocus?.focus?.(); };
   $('btn-word-template').addEventListener('click', open);
   modal.addEventListener('click', (e) => { if (e.target === modal || e.target.closest('[data-close]')) close(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) close(); });
-  $('wt-file').addEventListener('change', () => { proposal = null; $('wt-review').hidden = true; });
+  $('wt-file').addEventListener('change', () => { proposal = null; pendingRefs = []; $('wt-review').hidden = true; });
 
   // เรียกจากช่องแชทหน้าแรก (แนบต้นเรื่อง + แม่แบบ): ใส่ไฟล์/คำสั่งในหน้าต่างนี้แล้วให้ AI เสนอทันที
   const asFiles = (f) => { const dt = new DataTransfer(); if (f) dt.items.add(f); return dt.files; };
   window.GovDocWordTemplate = {
-    run({ template, source, prompt, secret }) {
+    run({ template, source, prompt, secret, references = [] }) {
+      pendingRefs = references;
       open();
       $('wt-file').files = asFiles(template);
       $('wt-source-file').files = asFiles(source);
@@ -47,6 +49,7 @@
     const fd = new FormData();
     fd.append('file', file);
     if ($('wt-source-file').files[0]) fd.append('source', $('wt-source-file').files[0]);
+    pendingRefs.forEach(f => fd.append('references', f));
     fd.append('prompt', $('wt-prompt').value);
     fd.append('source_text', $('wt-source').value);
     fd.append('secret', $('wt-secret').value);

@@ -5,14 +5,14 @@
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from core.docx_template import MAX_SEGMENTS, apply_edits, segments
-from core.studio import read_source_text
+from core.studio import MAX_REFERENCES, read_source_text, references_block
 from server.deps import save_upload
 from core.llm_drafter import structured_call
 from core.models import SecretLevel
@@ -51,6 +51,7 @@ async def propose(
     prompt: str = Form(""),
     source_text: str = Form(""),
     source: Optional[UploadFile] = File(None),      # ไฟล์ต้นเรื่อง (PDF/Word/ภาพ) — AI อ่านแล้วใส่ข้อมูลลงแม่แบบ
+    references: List[UploadFile] = File(default=[]),  # ต้นแบบอื่น เช่น คู่มือการเขียนโครงการ (PDF) ใช้เป็นแนวทาง
     secret: SecretLevel = Form(SecretLevel.NORMAL),
     settings: Settings = Depends(get_settings),
 ):
@@ -77,11 +78,21 @@ async def propose(
         source_name = Path(source.filename).name
         source_text = "\n\n".join(x for x in (text, source_text) if x.strip())
 
+    guide = []
+    for ref in [r for r in references if r.filename][:MAX_REFERENCES]:
+        path = await save_upload(ref, settings)
+        try:
+            text, _ = read_source_text(str(path), config, secret)
+        finally:
+            path.unlink(missing_ok=True)
+        if text:
+            guide.append((Path(ref.filename).name, text))
+
     def call(system, text):
         return structured_call(system, text, TemplateEdits, config, timeout_s=90.0, max_tokens=16000)
 
     try:
-        result = propose_edits(segs, prompt, source_text, call)
+        result = propose_edits(segs, prompt, source_text, call, guide=references_block(guide))
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=f"AI ไม่ตอบ: {exc}")
     return {**result.model_dump(), "segment_count": len(segs), "source_name": source_name}

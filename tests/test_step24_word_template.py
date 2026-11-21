@@ -119,7 +119,25 @@ def test_template_block_guides_format_not_facts():
 
     assert template_block("") == ""
     block = template_block("ชื่อโครงการ ...\n๑. หลักการและเหตุผล", "โครงการปี 2570.docx")
-    assert "<template>" in block and "โครงการปี 2570.docx" in block and "ห้ามคัดลอก" in block
+    assert '<reference name="โครงการปี 2570.docx">' in block and "ห้ามคัดลอก" in block
+
+
+def test_references_block_splits_budget_and_names_files():
+    from core.studio import TEMPLATE_CHARS, references_block
+
+    assert references_block([]) == "" and references_block([("a.pdf", "  ")]) == ""
+    block = references_block([("คู่มือ.pdf", "ก" * TEMPLATE_CHARS), ("ฉบับก่อน.docx", "ข" * 10)])
+    assert '<reference name="คู่มือ.pdf">' in block and '<reference name="ฉบับก่อน.docx">' in block
+    assert block.count("ก") <= TEMPLATE_CHARS // 2 + 50                   # ไฟล์ยาวไม่กินที่ไฟล์อื่น
+
+
+def test_manual_reference_picks_project_form():
+    from core.models import DocType
+    from core.studio import choose_output_form
+
+    form, _ = choose_output_form(None, "ร่างให้ปี 2571", has_source_file=True, classified=DocType.EXTERNAL,
+                                 source_text="หนังสือขออนุมัติจัดกิจกรรม", template_text="คู่มือการเขียนโครงการ\nชื่อโครงการ")
+    assert form == "project"
 
 
 def test_project_template_picks_project_form():
@@ -129,14 +147,24 @@ def test_project_template_picks_project_form():
     tpl = "ชื่อโครงการ ก\n๑. หลักการและเหตุผล\n๒. วัตถุประสงค์\n๓. เป้าหมาย\n๖. แผนปฏิบัติการ\n๙. ประโยชน์ที่คาดว่าจะได้รับ"
     form, why = choose_output_form(None, "ร่างให้ปี 2571", has_source_file=True, classified=DocType.EXTERNAL,
                                    source_text="หนังสือขออนุมัติจัดกิจกรรม", template_text=tpl)
-    assert form == "project" and "แม่แบบ" in why
+    assert form == "project" and "ต้นแบบ" in why
 
 
-def test_draft_accepts_template_and_rejects_non_docx():
-    files = {"template": ("แม่แบบ.docx", _template(), "application/octet-stream")}
+def test_draft_accepts_several_references(monkeypatch):
+    from server.routers import studio as studio_router
+
+    monkeypatch.setattr(studio_router, "read_source_text",
+                        lambda path, cfg, secret: ("", "อ่านไม่ได้") if path.endswith(".png") else ("ข้อความต้นแบบ", ""))
+    files = [("references", ("คู่มือ.pdf", b"%PDF-1.4", "application/pdf")),
+             ("references", ("ฉบับก่อน.docx", _template(), "application/octet-stream")),
+             ("references", ("สแกน.png", b"x", "image/png"))]
     res = client.post("/api/v1/studio/draft", data={"prompt": "เขียนหนังสือภายนอกขอใช้สนามกีฬา"}, files=files)
     assert res.status_code == 200, res.text
-    bad = {"template": ("แม่แบบ.pdf", b"%PDF", "application/pdf")}
+    failed = [s for s in res.json()["steps"] if s["key"] == "reference"]
+    assert len(failed) == 1 and "สแกน.png" in failed[0]["detail"]          # ไฟล์ที่อ่านไม่ได้ข้าม แต่ร่างต่อ
+    too_many = files + [("references", ("x.pdf", b"%PDF", "application/pdf"))]
+    assert client.post("/api/v1/studio/draft", data={"prompt": "x"}, files=too_many).status_code == 400
+    bad = {"references": ("a.exe", b"MZ", "application/octet-stream")}
     assert client.post("/api/v1/studio/draft", data={"prompt": "x"}, files=bad).status_code == 400
 
 

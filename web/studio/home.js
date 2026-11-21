@@ -221,43 +221,56 @@
     state.file = f || null;
     renderFileBar();
   }
-  // แม่แบบ Word (เช่น โครงการปีก่อน): ใช้คู่กับไฟล์ต้นเรื่อง
-  //  fill  = ใส่ข้อมูลจากต้นเรื่องลงไฟล์แม่แบบ ได้ไฟล์ Word รูปแบบเดิม (ตรวจทีละจุดก่อนดาวน์โหลด)
-  //  guide = ร่างในระบบ (หน้าแก้ไข) โดยให้ AI ทำตามหัวข้อ/ตาราง/สำนวนของแม่แบบ
-  function setTemplate(f) {
-    if (f && !/\.docx$/i.test(f.name)) { toast('แม่แบบต้องเป็นไฟล์ Word (.docx)', 'error'); return; }
-    if (f && f.size > 4 * 1024 * 1024) { toast('แม่แบบใหญ่เกิน 4 MB — ลบรูปภาพในไฟล์ออกก่อน', 'error'); return; }
-    state.template = f || null;
+  // ต้นแบบ (≤ ๓ ไฟล์ PDF/Word/ภาพ): คู่มือการเขียน แบบฟอร์ม หรือหนังสือ/โครงการฉบับก่อนที่ได้รับอนุมัติ
+  //  guide = AI อ่านเทียบต้นแบบแล้วร่างในระบบ (หน้าแก้ไข) ตามรูปแบบนั้น ด้วยเนื้อหาจากต้นเรื่อง
+  //  fill  = มีต้นแบบเป็น Word: ใส่ข้อมูลจากต้นเรื่องลงไฟล์ Word นั้น ได้ไฟล์รูปแบบเดิม (ต้นแบบอื่นใช้เป็นแนวทาง)
+  const MAX_REFS = 3, REF_RE = /\.(pdf|docx|txt|png|jpe?g|tiff?)$/i;
+  state.refs = [];
+  const refDocx = () => state.refs.find(f => /\.docx$/i.test(f.name)) || null;
+  const refsSize = () => state.refs.reduce((n, f) => n + f.size, 0);
+  function addRefs(files) {
+    for (const f of files) {
+      if (!REF_RE.test(f.name)) { toast(`ต้นแบบรองรับ PDF, Word, TXT และรูปภาพ (${f.name})`, 'error'); continue; }
+      if (state.refs.length >= MAX_REFS) { toast(`แนบต้นแบบได้ไม่เกิน ${toThai(MAX_REFS)} ไฟล์`, 'warn'); break; }
+      if (refsSize() + f.size > 4 * 1024 * 1024) { toast('ต้นแบบรวมกันใหญ่เกิน 4 MB — ใช้ไฟล์ที่เล็กลง', 'error'); break; }
+      if (!state.refs.some(r => r.name === f.name && r.size === f.size)) state.refs.push(f);
+    }
+    state.templateMode = refDocx() && state.refs.length === 1 ? 'fill' : 'guide';
     renderFileBar();
   }
   function renderFileBar() {
     const bar = $('file-bar');
-    bar.hidden = !state.file && !state.template;
-    const chip = (cls, icon, label, f, removeId) => `
+    bar.hidden = !state.file && !state.refs.length;
+    const chip = (cls, icon, label, f, removeAttr) => `
       <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg ${cls} text-xs text-slate-700 shadow-xs animate-fadeIn">
         <i class="fa-regular ${icon} text-sm"></i>${label}
-        <span class="font-medium text-slate-800 max-w-[16rem] truncate">${esc(f.name)}</span>
+        <span class="font-medium text-slate-800 max-w-[14rem] truncate">${esc(f.name)}</span>
         <span class="text-[10px] text-slate-400">(${fmtSize(f.size)})</span>
-        <button type="button" id="${removeId}" class="text-slate-400 hover:text-rose-500 ml-1 p-0.5" aria-label="ลบไฟล์แนบ"><i class="fa-solid fa-xmark text-xs"></i></button>
+        <button type="button" ${removeAttr} class="text-slate-400 hover:text-rose-500 ml-1 p-0.5" aria-label="ลบไฟล์แนบ ${esc(f.name)}"><i class="fa-solid fa-xmark text-xs"></i></button>
       </div>`;
-    bar.innerHTML = (state.file ? chip('bg-emerald-50 border border-emerald-200/80', fileIcon(state.file.name) + ' text-emerald-600', '<span class="text-[10px] text-emerald-700">ต้นเรื่อง</span>', state.file, 'btn-remove-file') : '')
-      + (state.template ? chip('bg-blue-50 border border-blue-200/80', 'fa-file-word text-blue-600', '<span class="text-[10px] text-blue-700">แม่แบบ</span>', state.template, 'btn-remove-template')
-        + `<label class="inline-flex items-center gap-1.5 text-xs text-slate-600">ผลลัพธ์
+    const docx = refDocx();
+    bar.innerHTML = (state.file ? chip('bg-emerald-50 border border-emerald-200/80', fileIcon(state.file.name) + ' text-emerald-600', '<span class="text-[10px] text-emerald-700">ต้นเรื่อง</span>', state.file, 'id="btn-remove-file"') : '')
+      + state.refs.map((f, i) => chip('bg-blue-50 border border-blue-200/80', fileIcon(f.name) + ' text-blue-600', '<span class="text-[10px] text-blue-700">ต้นแบบ</span>', f, `data-remove-ref="${i}"`)).join('')
+      + (!state.refs.length ? '' : docx
+        ? `<label class="inline-flex items-center gap-1.5 text-xs text-slate-600">ผลลัพธ์
             <select id="template-mode" class="rounded-lg border-slate-300 text-xs py-1 pr-7">
-              <option value="fill" ${state.templateMode !== 'guide' ? 'selected' : ''}>ไฟล์ Word ตามแม่แบบ (คงรูปแบบเดิม)</option>
-              <option value="guide" ${state.templateMode === 'guide' ? 'selected' : ''}>ร่างในระบบ โดยใช้แม่แบบเป็นแนวทาง</option>
-            </select></label>` : '');
+              <option value="guide" ${state.templateMode !== 'fill' ? 'selected' : ''}>ร่างในระบบ ตามรูปแบบต้นแบบ</option>
+              <option value="fill" ${state.templateMode === 'fill' ? 'selected' : ''}>ไฟล์ Word ตาม ${esc(docx.name.slice(0, 30))} (คงรูปแบบเดิม)</option>
+            </select></label>`
+        : '<span class="text-[11px] text-slate-500">AI อ่านเทียบต้นแบบก่อน แล้วร่างในระบบตามรูปแบบนั้น</span>');
     if (state.file) $('btn-remove-file').addEventListener('click', () => { $('file-input').value = ''; setFile(null); });
-    if (state.template) {
-      $('btn-remove-template').addEventListener('click', () => { $('template-input').value = ''; setTemplate(null); });
-      $('template-mode').addEventListener('change', (e) => { state.templateMode = e.target.value; });
-    }
+    bar.querySelectorAll('[data-remove-ref]').forEach(btn => btn.addEventListener('click', () => {
+      state.refs.splice(+btn.dataset.removeRef, 1);
+      state.templateMode = refDocx() && state.refs.length === 1 ? 'fill' : 'guide';
+      renderFileBar();
+    }));
+    $('template-mode')?.addEventListener('change', (e) => { state.templateMode = e.target.value; });
     syncExamples();
   }
   $('btn-attach').addEventListener('click', () => $('file-input').click());
   $('file-input').addEventListener('change', (e) => setFile(e.target.files[0]));
   $('btn-attach-template').addEventListener('click', () => $('template-input').click());
-  $('template-input').addEventListener('change', (e) => setTemplate(e.target.files[0]));
+  $('template-input').addEventListener('change', (e) => { addRefs([...e.target.files]); e.target.value = ''; });
 
   const form = $('prompt-form');
   let dragDepth = 0;
@@ -399,7 +412,7 @@
     $('prompt-form').setAttribute('aria-busy', String(on));
     $('prompt').readOnly = on;
     ['btn-submit', 'btn-attach', 'btn-attach-template', 'doc-type', 'unit', 'btn-classify'].forEach((id) => { $(id).disabled = on; });
-    $('prompt-form').querySelectorAll('[data-example], #btn-remove-file, #btn-remove-template, #template-mode').forEach((b) => { b.disabled = on; });
+    $('prompt-form').querySelectorAll('[data-example], #btn-remove-file, [data-remove-ref], #template-mode').forEach((b) => { b.disabled = on; });
     $('prompt-form').classList.toggle('opacity-70', on);
   }
 
@@ -415,11 +428,13 @@
     const prompt = $('prompt').value.trim();
     if (!prompt && !state.file) { $('prompt').focus(); toast('พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องก่อน', 'warn'); return; }
     // แม่แบบ + "ไฟล์ Word ตามแม่แบบ": AI อ่านต้นเรื่องแล้วเสนอข้อความใหม่ลงแม่แบบ → ตรวจในหน้าต่างแม่แบบ
-    if (state.template && state.templateMode !== 'guide') {
-      if (state.file && state.file.size + state.template.size > 4 * 1024 * 1024) {
-        toast('ไฟล์ต้นเรื่องรวมแม่แบบใหญ่เกิน 4 MB — เลือก "ร่างในระบบ" หรือใช้ไฟล์ที่เล็กลง', 'error'); return;
+    if (refDocx() && state.templateMode === 'fill') {
+      if ((state.file?.size || 0) + refsSize() > 4 * 1024 * 1024) {
+        toast('ไฟล์ต้นเรื่องรวมต้นแบบใหญ่เกิน 4 MB — เลือก "ร่างในระบบ" หรือใช้ไฟล์ที่เล็กลง', 'error'); return;
       }
-      window.GovDocWordTemplate.run({ template: state.template, source: state.file, prompt, secret: state.secret });
+      const template = refDocx();
+      window.GovDocWordTemplate.run({ template, source: state.file, prompt, secret: state.secret,
+        references: state.refs.filter(f => f !== template) });
       return;
     }
     setBusy(true);
@@ -442,7 +457,7 @@
       } else if (state.file) {
         fd.append('file', state.file);
       }
-      if (state.template) fd.append('template', state.template);
+      state.refs.forEach(f => fd.append('references', f));
       const res = await api.draft(fd);
       finishProgress(res.steps);
       if (!res.document) {
@@ -470,7 +485,7 @@
   $('prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); } });
 
   $('btn-new').addEventListener('click', () => {
-    $('prompt').value = ''; $('file-input').value = ''; $('template-input').value = ''; state.template = null; setFile(null);
+    $('prompt').value = ''; $('file-input').value = ''; state.refs = []; setFile(null);
     if (state.busy) return;
     $('progress').hidden = true; $('error-box').hidden = true; setSidebar(false); syncExamples(); $('prompt').focus();
   });
