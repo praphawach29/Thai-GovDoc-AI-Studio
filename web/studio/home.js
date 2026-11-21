@@ -219,20 +219,45 @@
     if (f && f.size > 50 * 1024 * 1024) { toast('ไฟล์ใหญ่เกิน 50 MB', 'error'); return; }
     if (f && !/\.(pdf|docx|txt|png|jpe?g|tiff?)$/i.test(f.name)) { toast('รองรับ PDF, DOCX, TXT และรูปภาพ', 'error'); return; }
     state.file = f || null;
+    renderFileBar();
+  }
+  // แม่แบบ Word (เช่น โครงการปีก่อน): ใช้คู่กับไฟล์ต้นเรื่อง
+  //  fill  = ใส่ข้อมูลจากต้นเรื่องลงไฟล์แม่แบบ ได้ไฟล์ Word รูปแบบเดิม (ตรวจทีละจุดก่อนดาวน์โหลด)
+  //  guide = ร่างในระบบ (หน้าแก้ไข) โดยให้ AI ทำตามหัวข้อ/ตาราง/สำนวนของแม่แบบ
+  function setTemplate(f) {
+    if (f && !/\.docx$/i.test(f.name)) { toast('แม่แบบต้องเป็นไฟล์ Word (.docx)', 'error'); return; }
+    if (f && f.size > 4 * 1024 * 1024) { toast('แม่แบบใหญ่เกิน 4 MB — ลบรูปภาพในไฟล์ออกก่อน', 'error'); return; }
+    state.template = f || null;
+    renderFileBar();
+  }
+  function renderFileBar() {
     const bar = $('file-bar');
-    bar.hidden = !state.file;
-    bar.innerHTML = state.file ? `
-      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200/80 text-xs text-slate-700 shadow-xs animate-fadeIn">
-        <i class="fa-regular ${fileIcon(state.file.name)} text-emerald-600 text-sm"></i>
-        <span class="font-medium text-slate-800 max-w-[16rem] truncate">${esc(state.file.name)}</span>
-        <span class="text-[10px] text-slate-400">(${fmtSize(state.file.size)})</span>
-        <button type="button" id="btn-remove-file" class="text-slate-400 hover:text-rose-500 ml-1 p-0.5" aria-label="ลบไฟล์แนบ"><i class="fa-solid fa-xmark text-xs"></i></button>
-      </div>` : '';
+    bar.hidden = !state.file && !state.template;
+    const chip = (cls, icon, label, f, removeId) => `
+      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg ${cls} text-xs text-slate-700 shadow-xs animate-fadeIn">
+        <i class="fa-regular ${icon} text-sm"></i>${label}
+        <span class="font-medium text-slate-800 max-w-[16rem] truncate">${esc(f.name)}</span>
+        <span class="text-[10px] text-slate-400">(${fmtSize(f.size)})</span>
+        <button type="button" id="${removeId}" class="text-slate-400 hover:text-rose-500 ml-1 p-0.5" aria-label="ลบไฟล์แนบ"><i class="fa-solid fa-xmark text-xs"></i></button>
+      </div>`;
+    bar.innerHTML = (state.file ? chip('bg-emerald-50 border border-emerald-200/80', fileIcon(state.file.name) + ' text-emerald-600', '<span class="text-[10px] text-emerald-700">ต้นเรื่อง</span>', state.file, 'btn-remove-file') : '')
+      + (state.template ? chip('bg-blue-50 border border-blue-200/80', 'fa-file-word text-blue-600', '<span class="text-[10px] text-blue-700">แม่แบบ</span>', state.template, 'btn-remove-template')
+        + `<label class="inline-flex items-center gap-1.5 text-xs text-slate-600">ผลลัพธ์
+            <select id="template-mode" class="rounded-lg border-slate-300 text-xs py-1 pr-7">
+              <option value="fill" ${state.templateMode !== 'guide' ? 'selected' : ''}>ไฟล์ Word ตามแม่แบบ (คงรูปแบบเดิม)</option>
+              <option value="guide" ${state.templateMode === 'guide' ? 'selected' : ''}>ร่างในระบบ โดยใช้แม่แบบเป็นแนวทาง</option>
+            </select></label>` : '');
     if (state.file) $('btn-remove-file').addEventListener('click', () => { $('file-input').value = ''; setFile(null); });
+    if (state.template) {
+      $('btn-remove-template').addEventListener('click', () => { $('template-input').value = ''; setTemplate(null); });
+      $('template-mode').addEventListener('change', (e) => { state.templateMode = e.target.value; });
+    }
     syncExamples();
   }
   $('btn-attach').addEventListener('click', () => $('file-input').click());
   $('file-input').addEventListener('change', (e) => setFile(e.target.files[0]));
+  $('btn-attach-template').addEventListener('click', () => $('template-input').click());
+  $('template-input').addEventListener('change', (e) => setTemplate(e.target.files[0]));
 
   const form = $('prompt-form');
   let dragDepth = 0;
@@ -373,8 +398,8 @@
     state.busy = on;
     $('prompt-form').setAttribute('aria-busy', String(on));
     $('prompt').readOnly = on;
-    ['btn-submit', 'btn-attach', 'doc-type', 'unit', 'btn-classify'].forEach((id) => { $(id).disabled = on; });
-    $('prompt-form').querySelectorAll('[data-example], #btn-remove-file').forEach((b) => { b.disabled = on; });
+    ['btn-submit', 'btn-attach', 'btn-attach-template', 'doc-type', 'unit', 'btn-classify'].forEach((id) => { $(id).disabled = on; });
+    $('prompt-form').querySelectorAll('[data-example], #btn-remove-file, #btn-remove-template, #template-mode').forEach((b) => { b.disabled = on; });
     $('prompt-form').classList.toggle('opacity-70', on);
   }
 
@@ -389,6 +414,14 @@
     if (state.busy) return;
     const prompt = $('prompt').value.trim();
     if (!prompt && !state.file) { $('prompt').focus(); toast('พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องก่อน', 'warn'); return; }
+    // แม่แบบ + "ไฟล์ Word ตามแม่แบบ": AI อ่านต้นเรื่องแล้วเสนอข้อความใหม่ลงแม่แบบ → ตรวจในหน้าต่างแม่แบบ
+    if (state.template && state.templateMode !== 'guide') {
+      if (state.file && state.file.size + state.template.size > 4 * 1024 * 1024) {
+        toast('ไฟล์ต้นเรื่องรวมแม่แบบใหญ่เกิน 4 MB — เลือก "ร่างในระบบ" หรือใช้ไฟล์ที่เล็กลง', 'error'); return;
+      }
+      window.GovDocWordTemplate.run({ template: state.template, source: state.file, prompt, secret: state.secret });
+      return;
+    }
     setBusy(true);
     $('error-box').hidden = true;
     const upload = !!state.file && (await auth.serverMode());
@@ -409,6 +442,7 @@
       } else if (state.file) {
         fd.append('file', state.file);
       }
+      if (state.template) fd.append('template', state.template);
       const res = await api.draft(fd);
       finishProgress(res.steps);
       if (!res.document) {
@@ -436,7 +470,7 @@
   $('prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); } });
 
   $('btn-new').addEventListener('click', () => {
-    $('prompt').value = ''; $('file-input').value = ''; setFile(null);
+    $('prompt').value = ''; $('file-input').value = ''; $('template-input').value = ''; state.template = null; setFile(null);
     if (state.busy) return;
     $('progress').hidden = true; $('error-box').hidden = true; setSidebar(false); syncExamples(); $('prompt').focus();
   });

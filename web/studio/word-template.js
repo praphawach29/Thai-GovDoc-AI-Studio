@@ -15,6 +15,21 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) close(); });
   $('wt-file').addEventListener('change', () => { proposal = null; $('wt-review').hidden = true; });
 
+  // เรียกจากช่องแชทหน้าแรก (แนบต้นเรื่อง + แม่แบบ): ใส่ไฟล์/คำสั่งในหน้าต่างนี้แล้วให้ AI เสนอทันที
+  const asFiles = (f) => { const dt = new DataTransfer(); if (f) dt.items.add(f); return dt.files; };
+  window.GovDocWordTemplate = {
+    run({ template, source, prompt, secret }) {
+      open();
+      $('wt-file').files = asFiles(template);
+      $('wt-source-file').files = asFiles(source);
+      $('wt-prompt').value = prompt || '';
+      $('wt-source').value = '';
+      $('wt-secret').value = secret === 'normal' ? 'normal' : 'secret';
+      proposal = null; $('wt-review').hidden = true;
+      $('wt-form').requestSubmit();
+    },
+  };
+
   function busy(btn, on, label) {
     btn.disabled = on;
     if (on) { btn.dataset.html = btn.innerHTML; btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i><span>${label}</span>`; }
@@ -26,13 +41,16 @@
     const file = $('wt-file').files[0];
     if (!file) { $('wt-file').focus(); return; }
     if (!/\.docx$/i.test(file.name)) { toast('ใช้ได้เฉพาะไฟล์ .docx', 'error'); return; }
-    if (!$('wt-prompt').value.trim() && !$('wt-source').value.trim()) { toast('พิมพ์สิ่งที่ต้องการให้แก้ก่อน', 'warn'); $('wt-prompt').focus(); return; }
+    if (!$('wt-prompt').value.trim() && !$('wt-source').value.trim() && !$('wt-source-file').files[0]) {
+      toast('แนบไฟล์ต้นเรื่องหรือพิมพ์สิ่งที่ต้องการให้แก้ก่อน', 'warn'); $('wt-prompt').focus(); return;
+    }
     const fd = new FormData();
     fd.append('file', file);
+    if ($('wt-source-file').files[0]) fd.append('source', $('wt-source-file').files[0]);
     fd.append('prompt', $('wt-prompt').value);
     fd.append('source_text', $('wt-source').value);
     fd.append('secret', $('wt-secret').value);
-    busy($('wt-propose'), true, 'AI กำลังอ่านแม่แบบ... (ราว ๑ นาที)');
+    busy($('wt-propose'), true, $('wt-source-file').files[0] ? 'AI กำลังอ่านต้นเรื่องและแม่แบบ... (ราว ๑–๒ นาที)' : 'AI กำลังอ่านแม่แบบ... (ราว ๑ นาที)');
     try {
       proposal = await api.wordTemplate.propose(fd);
       renderReview();

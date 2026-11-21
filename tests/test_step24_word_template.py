@@ -111,3 +111,48 @@ def test_api_rejects_bad_input():
     assert client.post("/api/v1/studio/word-template/propose",
                        data={"prompt": "x", "secret": "secret"}, files=files).status_code == 400     # ชั้นความลับไม่ส่ง AI
     assert client.post("/api/v1/studio/word-template/build", data={"edits": "[1]"}, files=files).status_code == 400
+
+
+# ---------------------------------------------------------------- ช่องแชท: ต้นเรื่อง + แม่แบบ ทำงานร่วมกัน
+def test_template_block_guides_format_not_facts():
+    from core.studio import template_block
+
+    assert template_block("") == ""
+    block = template_block("ชื่อโครงการ ...\n๑. หลักการและเหตุผล", "โครงการปี 2570.docx")
+    assert "<template>" in block and "โครงการปี 2570.docx" in block and "ห้ามคัดลอก" in block
+
+
+def test_project_template_picks_project_form():
+    from core.models import DocType
+    from core.studio import choose_output_form
+
+    tpl = "ชื่อโครงการ ก\n๑. หลักการและเหตุผล\n๒. วัตถุประสงค์\n๓. เป้าหมาย\n๖. แผนปฏิบัติการ\n๙. ประโยชน์ที่คาดว่าจะได้รับ"
+    form, why = choose_output_form(None, "ร่างให้ปี 2571", has_source_file=True, classified=DocType.EXTERNAL,
+                                   source_text="หนังสือขออนุมัติจัดกิจกรรม", template_text=tpl)
+    assert form == "project" and "แม่แบบ" in why
+
+
+def test_draft_accepts_template_and_rejects_non_docx():
+    files = {"template": ("แม่แบบ.docx", _template(), "application/octet-stream")}
+    res = client.post("/api/v1/studio/draft", data={"prompt": "เขียนหนังสือภายนอกขอใช้สนามกีฬา"}, files=files)
+    assert res.status_code == 200, res.text
+    bad = {"template": ("แม่แบบ.pdf", b"%PDF", "application/pdf")}
+    assert client.post("/api/v1/studio/draft", data={"prompt": "x"}, files=bad).status_code == 400
+
+
+def test_propose_reads_source_file_into_prompt(monkeypatch):
+    seen = {}
+
+    def fake_structured_call(system, prompt, schema, config, timeout_s=25.0, max_tokens=2000):
+        seen["prompt"] = prompt
+        return TemplateEdits(edits=[TemplateEdit(id="p1", text="ปีงบประมาณ\t2572")], summary="ok", notes="")
+
+    monkeypatch.setattr(word_template, "structured_call", fake_structured_call)
+    monkeypatch.setattr(word_template, "llm_config", lambda s: type("C", (), {"any_provider": True})())
+    monkeypatch.setattr(word_template, "read_source_text", lambda path, cfg, secret: ("ต้นเรื่อง: ปีงบประมาณ 2572", ""))
+    files = {"file": ("แม่แบบ.docx", _template(), "application/octet-stream"),
+             "source": ("ต้นเรื่อง.pdf", b"%PDF-1.4", "application/pdf")}
+    res = client.post("/api/v1/studio/word-template/propose", data={"prompt": ""}, files=files)
+    assert res.status_code == 200, res.text
+    assert res.json()["source_name"] == "ต้นเรื่อง.pdf"
+    assert "ต้นเรื่อง: ปีงบประมาณ 2572" in seen["prompt"] and "<source>" in seen["prompt"]

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from core.issuing_units import apply_issuing_unit, pick_unit
 from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, Signer, UrgencyLevel, parse_form_key
 from core.profile_manager import get_user_profile
+from core.extractor import extract_text_from_docx
 from core.fact_check import check_facts
 from core.signers import OrgSigner, fill_document_signers
 from core.studio import (
@@ -147,6 +148,7 @@ async def studio_draft(
     source_path: Optional[str] = Form(None),     # โหมด Supabase: ไฟล์ที่อัปโหลดตรงเข้า Storage แล้ว
     source_name: Optional[str] = Form(None),
     unit_key: Optional[str] = Form(None),        # หน่วยออกหนังสือ (ไม่ระบุ = หน่วยตั้งต้น)
+    template: Optional[UploadFile] = File(None),  # แม่แบบ Word ของหน่วยงาน (เช่น โครงการปีก่อน) ใช้เป็นแนวทางรูปแบบ
     settings: Settings = Depends(get_settings),
     user: Optional[CurrentUser] = Depends(get_current_user),
 ):
@@ -181,6 +183,11 @@ async def studio_draft(
             client.upload(settings.source_bucket, path, data, source_store.MIME_BY_SUFFIX[saved_path.suffix])
             stored = (path, file.filename, data)
 
+    template_text, template_name = "", ""
+    if template is not None and template.filename:
+        template_text = await read_template_text(template, settings)
+        template_name = Path(template.filename).name
+
     # ผู้รับและชื่อผู้พิจารณาของหน่วยที่เลือก ช่วยให้ AI เขียนข้อพิจารณาได้ตรงขั้นการเสนอ
     unit = pick_unit(load_units(user, settings), unit_key)
     try:
@@ -196,6 +203,8 @@ async def studio_draft(
             # สำนวนจากหนังสือฉบับจริงของหน่วยงาน (คลังตัวอย่าง) — โหมด Supabase เท่านั้น
             find_examples=example_finder(client) if user is not None else None,
             profile=load_org_profile(user, settings),
+            template_text=template_text,
+            template_name=template_name,
         )
     finally:
         if user is not None and saved_path is not None:
@@ -216,6 +225,20 @@ async def studio_draft(
             ctx=response.context, secret=secret,
         )
     return response
+
+
+async def read_template_text(template: UploadFile, settings: Settings) -> str:
+    """ข้อความของแม่แบบ Word (ไม่เก็บไฟล์ — อ่านในหน่วยความจำแล้วลบไฟล์ชั่วคราว)"""
+    if Path(template.filename or "").suffix.lower() != ".docx":
+        raise HTTPException(status_code=400, detail="แม่แบบต้องเป็นไฟล์ Word (.docx)")
+    path = await save_upload(template, settings)
+    try:
+        text = extract_text_from_docx(str(path))
+    finally:
+        path.unlink(missing_ok=True)
+    if text.startswith("Error extracting DOCX"):
+        raise HTTPException(status_code=400, detail="อ่านไฟล์แม่แบบไม่ได้ (ไฟล์เสียหรือมีรหัสผ่าน)")
+    return text
 
 
 @router.post("/api/v1/studio/blank", response_model=GovDocumentSchema)

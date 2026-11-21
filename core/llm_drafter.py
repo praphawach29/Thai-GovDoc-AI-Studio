@@ -601,7 +601,8 @@ def draft_content_with_llm(
         recipient, review_party, title = vault.mask(recipient), vault.mask(review_party), vault.mask(title)
         result.masked = vault.summary()
     if project:
-        prompt = build_project_prompt(instruction=instruction, source_text=source, agency=title, assemble=_assemble)
+        prompt = build_project_prompt(instruction=instruction, source_text=source, agency=title, assemble=_assemble,
+                                      examples=examples)
     else:
         prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
                                    recipient=recipient, review_party=review_party, examples=examples, kind=kind,

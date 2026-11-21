@@ -5,12 +5,15 @@
 
 import json
 from pathlib import Path
+from typing import Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from core.docx_template import MAX_SEGMENTS, apply_edits, segments
+from core.studio import read_source_text
+from server.deps import save_upload
 from core.llm_drafter import structured_call
 from core.models import SecretLevel
 from core.security import cloud_ai_allowed
@@ -47,11 +50,13 @@ async def propose(
     file: UploadFile = File(...),
     prompt: str = Form(""),
     source_text: str = Form(""),
+    source: Optional[UploadFile] = File(None),      # ไฟล์ต้นเรื่อง (PDF/Word/ภาพ) — AI อ่านแล้วใส่ข้อมูลลงแม่แบบ
     secret: SecretLevel = Form(SecretLevel.NORMAL),
     settings: Settings = Depends(get_settings),
 ):
     """AI เสนอข้อความใหม่ของย่อหน้าที่ต้องเปลี่ยน (ยังไม่สร้างไฟล์)"""
-    if not prompt.strip() and not source_text.strip():
+    has_source = source is not None and bool(source.filename)
+    if not prompt.strip() and not source_text.strip() and not has_source:
         raise HTTPException(status_code=400, detail="พิมพ์สิ่งที่ต้องการให้แก้ เช่น \"ปรับเป็นปีงบประมาณ 2572\"")
     if not cloud_ai_allowed(secret):
         raise HTTPException(status_code=400, detail="เอกสารชั้นความลับ ไม่ส่งให้ AI ภายนอก — แก้ในไฟล์ Word โดยตรง")
@@ -60,6 +65,17 @@ async def propose(
     config = llm_config(settings)
     if not config.any_provider:
         raise HTTPException(status_code=503, detail="ยังไม่ได้ตั้งค่า AI")
+    source_name = ""
+    if has_source:
+        path = await save_upload(source, settings)
+        try:
+            text, error = read_source_text(str(path), config, secret)
+        finally:
+            path.unlink(missing_ok=True)
+        if error:
+            raise HTTPException(status_code=400, detail=f"อ่านไฟล์ต้นเรื่องไม่สำเร็จ: {error}")
+        source_name = Path(source.filename).name
+        source_text = "\n\n".join(x for x in (text, source_text) if x.strip())
 
     def call(system, text):
         return structured_call(system, text, TemplateEdits, config, timeout_s=90.0, max_tokens=16000)
@@ -68,7 +84,7 @@ async def propose(
         result = propose_edits(segs, prompt, source_text, call)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=f"AI ไม่ตอบ: {exc}")
-    return {**result.model_dump(), "segment_count": len(segs)}
+    return {**result.model_dump(), "segment_count": len(segs), "source_name": source_name}
 
 
 @router.post("/build")

@@ -109,10 +109,12 @@ PROJECT_PROMPT = """ชนิดเอกสาร: แบบเสนอโค�
 เลขข้อในข้อความใช้เลขอารบิก (ระบบแปลงเป็นเลขไทยตามการตั้งค่า) ไม่ใช้ markdown"""
 
 
-def build_project_prompt(*, instruction: str, source_text: str, agency: str = "", assemble=None) -> str:
-    """prompt ของแบบเสนอโครงการ — assemble = core.llm_drafter._assemble (ส่งเข้ามากัน import วน)"""
+def build_project_prompt(*, instruction: str, source_text: str, agency: str = "", assemble=None,
+                         examples: str = "") -> str:
+    """prompt ของแบบเสนอโครงการ — assemble = core.llm_drafter._assemble (ส่งเข้ามากัน import วน)
+    examples = แม่แบบ Word ของหน่วยงาน (core.studio.template_block) ว่างได้"""
     head = PROJECT_PROMPT + (f"\nหน่วยงานของผู้ใช้ (ใช้ถ้าต้นเรื่องไม่ระบุ): {agency}" if agency else "")
-    return assemble(head, instruction, source_text, "")
+    return assemble(head, instruction, source_text, examples)
 
 
 def _tidy(text: str) -> str:
