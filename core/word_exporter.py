@@ -526,6 +526,8 @@ def export_govdoc_to_docx(
             _build_stamp_doc(doc, data, garuda_path, profile)
         elif data.is_formal:
             _build_formal_doc(doc, data, garuda_path, profile)
+        elif data.is_project:
+            _build_project_doc(doc, data, profile)
         elif data.kind not in (DocumentKind.EXTERNAL_LETTER, DocumentKind.INTERNAL_MEMO):
             _build_special_doc(doc, data, fmt_date, fmt_number, garuda_path, options, profile)
         elif data.sections is not None:
@@ -864,6 +866,178 @@ def _build_formal_doc(doc: Document, data: GovDocumentSchema, garuda_path: Optio
         pf.space_before = Pt(3 * 18 if index == 0 else 0)      # ว่าง 3 บรรทัดสำหรับลายมือชื่อ
         pf.space_after, pf.line_spacing = Pt(0), 1.0
         _set_run_thai_font(p.add_run(line))
+
+    _add_page_number_header(doc, profile.page_number_style)
+
+
+def _grid_table(doc: Document, widths_cm, rows: int):
+    """ตารางเส้นทึบ ความกว้างคอลัมน์คงที่ (แบบเสนอโครงการ)"""
+    tbl = doc.add_table(rows=rows, cols=len(widths_cm))
+    tbl.style = doc.styles["Table Grid"]
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl.autofit = False
+    layout = OxmlElement("w:tblLayout")
+    layout.set(qn("w:type"), "fixed")
+    tbl._tbl.tblPr.append(layout)
+    # ระยะในเซลล์ซ้าย-ขวา 0.1 ซม. (ค่าเดิมของ Word 0.19 ซม. ทำให้ช่องเดือน "ต.ค." ไม่พอ) — เท่ากับ inset ใน project.typ
+    margins = parse_xml(f'<w:tblCellMar {nsdecls("w")}><w:left w:w="57" w:type="dxa"/>'
+                        f'<w:right w:w="57" w:type="dxa"/></w:tblCellMar>')
+    tbl._tbl.tblPr.append(margins)
+    for row in tbl.rows:
+        for cell, w in zip(row.cells, widths_cm):
+            cell.width = Cm(w)
+    return tbl
+
+
+def _cell_text(cell, text: str, *, bold: bool = False, align=WD_ALIGN_PARAGRAPH.LEFT, size: float = 0,
+               indent_cm: float = 0.0, fill: Optional[str] = None):
+    """ใส่ข้อความในเซลล์ (หลายบรรทัด = หลายย่อหน้า) ตัดคำไทยด้วย ZWSP"""
+    from core.project import TABLE_PT
+
+    size = size or TABLE_PT
+    cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP if align == WD_ALIGN_PARAGRAPH.LEFT else WD_ALIGN_VERTICAL.CENTER
+    for i, part in enumerate((text or "").split("\n")):
+        p = cell.paragraphs[0] if i == 0 else cell.add_paragraph()
+        p.alignment = align
+        pf = p.paragraph_format
+        pf.space_before, pf.space_after, pf.line_spacing = Pt(0), Pt(0), 1.0
+        if indent_cm:
+            pf.left_indent = Cm(indent_cm)
+        if part:
+            _set_run_thai_font(p.add_run(insert_zwsp(part)), size_pt=size, bold=bold)
+    if fill:
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), fill)
+        cell._tc.get_or_add_tcPr().append(shd)
+
+
+def _repeat_header(row) -> None:
+    """แถวหัวตารางพิมพ์ซ้ำทุกหน้าเมื่อตารางยาวข้ามหน้า"""
+    el = OxmlElement("w:tblHeader")
+    el.set(qn("w:val"), "true")
+    row._tr.get_or_add_trPr().append(el)
+
+
+def _build_project_doc(doc: Document, data: GovDocumentSchema, profile: LayoutProfile):
+    """แบบเสนอโครงการ กทม. — ส่วนเดียวกับ templates/typst/project.typ (ข้อมูลจาก core.project.project_view)"""
+    from core.project import (BUDGET_COLS_CM, HEAD_LABEL_CM, KPI_COLS_CM, PLAN_FILL, PLAN_STEP_CM, RISK_COLS_CM,
+                              SIGN_LEFT_CM, TABLE_PT, ProjectData, project_view)
+
+    view = project_view(data.subject, data.project or ProjectData(), data.use_thai_numerals)
+    C, L, R = WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.RIGHT
+
+    for label, value in view["head"]:
+        _label_paragraph(doc, label, value, HEAD_LABEL_CM, space_before_pt=0)
+    rule = doc.add_paragraph()
+    rule.paragraph_format.space_before, rule.paragraph_format.space_after = Pt(0), Pt(0)
+    rule.paragraph_format.line_spacing = Pt(8)
+    _apply_bottom_border(rule, val="dashed", sz=6)
+
+    def para(text: str, *, bold=False, underline=False, indent=0.0, before=0.0, align=None):
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.space_before, pf.space_after, pf.line_spacing = Pt(before), Pt(0), 1.0
+        pf.first_line_indent = Cm(indent)
+        if align is None:
+            _apply_thai_distributed(p)
+        else:
+            p.alignment = align
+        run = p.add_run(insert_zwsp(text))
+        _set_run_thai_font(run, bold=bold)
+        run.underline = underline
+        return p
+
+    def gap(pt: float):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before, p.paragraph_format.space_after = Pt(0), Pt(0)
+        p.paragraph_format.line_spacing = Pt(pt)
+
+    for b in view["blocks"]:
+        kind = b["type"]
+        # หัวข้อติดกับส่วนถัดไป (ไม่ค้างท้ายหน้าโดยที่ตารางขึ้นหน้าใหม่)
+        if kind == "heading":
+            para(b["text"], bold=True, before=6, align=L).paragraph_format.keep_with_next = True
+        elif kind == "sub":
+            para(b["text"], bold=True, indent=2.5, align=L).paragraph_format.keep_with_next = True
+        elif kind == "usub":
+            para(b["text"], underline=True, indent=2.5, align=L).paragraph_format.keep_with_next = True
+        elif kind == "lines":
+            for line in b["lines"]:
+                para(line["text"], indent=line["indent"])
+        elif kind == "plan":
+            gap(4)
+            widths = [PLAN_STEP_CM] + [(TEXT_WIDTH_CM - PLAN_STEP_CM) / 12] * 12
+            tbl = _grid_table(doc, widths, 2 + len(b["rows"]))
+            _cell_text(tbl.cell(0, 0).merge(tbl.cell(1, 0)), "ขั้นตอนการดำเนินงาน", bold=True, align=C)
+            _cell_text(tbl.cell(0, 1).merge(tbl.cell(0, 12)), f"ปีงบประมาณ พ.ศ. {b['year']}", bold=True, align=C)
+            for m, label in enumerate(b["months"]):
+                _cell_text(tbl.cell(1, m + 1), label, bold=True, align=C, size=TABLE_PT - 2)
+            for r, row in enumerate(b["rows"], 2):
+                _cell_text(tbl.cell(r, 0), row["step"])
+                for m, on in enumerate(row["months"]):
+                    _cell_text(tbl.cell(r, m + 1), "", align=C, fill=PLAN_FILL if on else None)
+            for r in (0, 1):
+                _repeat_header(tbl.rows[r])
+        elif kind == "budget":
+            gap(4)
+            rows = b["rows"]
+            tbl = _grid_table(doc, BUDGET_COLS_CM, 2 + len(rows))
+            for c, h in enumerate(b["heads"]):
+                _cell_text(tbl.cell(0, c), h, bold=True, align=C)
+            _repeat_header(tbl.rows[0])
+            for i, row in enumerate(rows, 1):
+                if row["span"] > 0:
+                    cell = tbl.cell(i, 0)
+                    if row["span"] > 1:
+                        cell = cell.merge(tbl.cell(i + row["span"] - 1, 0))
+                    _cell_text(cell, row["activity"])
+                _cell_text(tbl.cell(i, 1), row["item"], indent_cm=(row["level"] - 1) * 0.4)
+                _cell_text(tbl.cell(i, 2), row["amount"], align=R)
+                _cell_text(tbl.cell(i, 3), row["law"])
+            last = len(rows) + 1
+            _cell_text(tbl.cell(last, 0).merge(tbl.cell(last, 1)), b["total_label"], bold=True, align=C)
+            _cell_text(tbl.cell(last, 2), b["total"], bold=True, align=R)
+            gap(4)
+        elif kind == "risks":
+            gap(4)
+            tbl = _grid_table(doc, RISK_COLS_CM, 2 + len(b["rows"]))
+            _cell_text(tbl.cell(0, 0).merge(tbl.cell(1, 0)), "ความเสี่ยง", bold=True, align=C)
+            _cell_text(tbl.cell(0, 1).merge(tbl.cell(0, 3)), "การประเมินความเสี่ยง", bold=True, align=C)
+            _cell_text(tbl.cell(0, 4).merge(tbl.cell(1, 4)), "แนวทางการบริหารความเสี่ยง", bold=True, align=C)
+            for c, h in enumerate(("โอกาสที่จะเกิด", "ผลกระทบ", "ระดับของความเสี่ยง"), 1):
+                _cell_text(tbl.cell(1, c), h, bold=True, align=C)
+            for r in (0, 1):
+                _repeat_header(tbl.rows[r])
+            for i, row in enumerate(b["rows"], 2):
+                _cell_text(tbl.cell(i, 0), row["risk"])
+                _cell_text(tbl.cell(i, 1), row["likelihood"], align=C)
+                _cell_text(tbl.cell(i, 2), row["impact"], align=C)
+                _cell_text(tbl.cell(i, 3), row["level"], align=C)
+                _cell_text(tbl.cell(i, 4), row["mitigation"])
+        elif kind == "kpis":
+            gap(2)
+            tbl = _grid_table(doc, KPI_COLS_CM, 1 + len(b["rows"]))
+            for c, h in enumerate(b["heads"]):
+                _cell_text(tbl.cell(0, c), h, bold=True, align=C)
+            _repeat_header(tbl.rows[0])
+            cols = (("indicator", L), ("target", C), ("kind", C), ("method", L), ("period", C))
+            for i, row in enumerate(b["rows"], 1):
+                for c, (key, al) in enumerate(cols):
+                    _cell_text(tbl.cell(i, c), row[key], align=al)
+            gap(2)
+
+    for signer in view["signers"]:
+        for index, key in enumerate(("line", "name", "position")):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            pf = p.paragraph_format
+            pf.left_indent = Cm(SIGN_LEFT_CM)
+            pf.space_before = Pt(1.5 / 2.54 * 72 if index == 0 else 0)
+            pf.space_after, pf.line_spacing = Pt(0), 1.0
+            pf.keep_with_next = index < 2          # ลงชื่อ/ชื่อ/ตำแหน่ง อยู่หน้าเดียวกัน
+            _set_run_thai_font(p.add_run(signer[key]))
 
     _add_page_number_header(doc, profile.page_number_style)
 

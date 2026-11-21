@@ -148,7 +148,44 @@
     head_intro: 'หัวข้อ (ว่าง = ไม่แสดง)', head_law: 'หัวข้อ (ว่าง = ไม่แสดง)', head_facts: 'หัวข้อ (ว่าง = ไม่แสดง)',
     head_consideration: 'หัวข้อ (ว่าง = ไม่แสดง)',
   };
-  const REFINABLE = new Set(['paragraph_reason', 'paragraph_details', 'paragraph_purpose', 'memo_intro', 'memo_facts', 'memo_consideration', 'memo_request', 'subject']);
+  // ---------- แบบเสนอโครงการ (kind = project): ช่อง "pj:<ทาง>" ผูกกับ d.project (core/project.py) ----------
+  const isProject = () => kindKey() === 'project';
+  const PJ_INT = new Set(['likelihood', 'impact']);
+  const arabic = (s) => String(s ?? '').replace(/[๐-๙]/g, c => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(c)));
+  const fmtAmount = (n) => n == null ? '' : Math.abs(n - Math.round(n)) < 0.005
+    ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const parseAmount = (s) => { const m = arabic(s).replace(/[,\s]/g, '').match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+  function pjField(key) {
+    const path = key.slice(3).split('.'), last = path[path.length - 1];
+    const parent = (d) => path.slice(0, -1).reduce((o, k) => o?.[k], d.project);
+    return {
+      get: (d) => {
+        const v = parent(d)?.[last];
+        if (last === 'amount') return fmtAmount(v);
+        if (PJ_INT.has(last)) return v ? String(v) : '';
+        return v ?? '';
+      },
+      set: (d, v) => {
+        const o = parent(d); if (!o) return;
+        if (last === 'amount') o[last] = parseAmount(v);
+        else if (PJ_INT.has(last)) { const n = parseInt(arabic(v), 10); o[last] = n >= 1 && n <= 5 ? n : 0; }
+        else o[last] = v;
+      },
+    };
+  }
+  const fieldDef = (key) => FIELDS[key] || (key.startsWith('pj:') ? pjField(key) : { get: () => '', set: () => {} });
+  const PJ_LABEL = {
+    agency: 'หน่วยงาน', fiscal_year: 'ปีงบประมาณ', rationale: 'หลักการและเหตุผล', objectives: 'วัตถุประสงค์', targets: 'เป้าหมาย',
+    project_type: 'ประเภทโครงการ', alignment: 'ความสอดคล้องกับยุทธศาสตร์/แผน', project_format: 'รูปแบบโครงการ',
+    schedule: 'ระยะเวลาและสถานที่', budget_title: 'หัวตารางงบประมาณ', budget_note: 'แหล่งงบประมาณ (โดยเบิกจ่ายจาก...)',
+    benefits: 'ประโยชน์ที่คาดว่าจะได้รับ', monitoring: 'การติดตามความก้าวหน้า', assessment: 'การประเมินผลโครงการ',
+    proposer_name: 'ชื่อผู้เสนอโครงการ', proposer_position: 'ตำแหน่งผู้เสนอโครงการ', approver_name: 'ชื่อผู้อนุมัติโครงการ',
+    approver_position: 'ตำแหน่งผู้อนุมัติโครงการ', step: 'ขั้นตอน', activity: 'กิจกรรม', item: 'รายการ', amount: 'จำนวนเงิน',
+    law: 'ระเบียบ', risk: 'ความเสี่ยง', likelihood: 'โอกาส ๑–๕', impact: 'ผลกระทบ ๑–๕', mitigation: 'แนวทาง',
+    indicator: 'ตัวชี้วัด', target: 'ค่าเป้าหมาย', kind: 'ประเภท', method: 'วิธีการ', period: 'ระยะเวลา',
+  };
+  const labelOf = (key) => FIELD_LABEL[key] || (key.startsWith('pj:') ? PJ_LABEL[key.split('.').pop().slice(key.includes('.') ? 0 : 3)] || '' : '');
+  const REFINABLE = new Set(['pj:rationale', 'pj:objectives', 'pj:targets', 'pj:project_format', 'pj:benefits', 'pj:monitoring', 'pj:assessment', 'paragraph_reason', 'paragraph_details', 'paragraph_purpose', 'memo_intro', 'memo_facts', 'memo_consideration', 'memo_request', 'subject']);
 
   // แสดงข้อความ: แปลงเลขไทย + เน้น placeholder เป็นชิป
   function displayHTML(text) {
@@ -162,7 +199,7 @@
     return out + esc(s.slice(last));
   }
   const field = (key, cls = '', empty = '', tag = 'span') =>
-    `<${tag} class="editable ${cls}" data-field="${key}" data-empty="${esc(empty || '[คลิกเพื่อพิมพ์ ' + (FIELD_LABEL[key] || '') + ']')}"></${tag}>`;
+    `<${tag} class="editable ${cls}" data-field="${key}" data-empty="${esc(empty || '[คลิกเพื่อพิมพ์ ' + (labelOf(key) || '') + ']')}"></${tag}>`;
   // ย่อหน้าเนื้อความ: ทุกบรรทัดเป็นย่อหน้าของตัวเอง ระยะย่อหน้าตามเลขข้อ (๑. 2.5 ซม., ๑.๑ 3.5 ซม., ๑.๑.๑ 4.5 ซม.)
   // ผู้ใช้ปรับเองได้ด้วย Tab / Shift+Tab (แท็บนำหน้า N ตัว = ระดับ N) — ตรงกับ core/memo_layout.py
   const block = (key, cls = '') =>
@@ -172,7 +209,12 @@
   const tabCount = (line) => line.match(/^\t*/)[0].length;
   // บันทึกข้อความ: "ข้อ ๑"/"มาตรา" ที่ยกมาอยู่ระดับ ๒ (core/memo_layout) — ชนิดอื่นใช้เฉพาะเลข ๑.๑ (core/doc_forms.line_level)
   const RE_L2_FORM = /^[0-9๐-๙]+\.[0-9๐-๙]+/;
-  const autoLevel = (line) => { const s = line.trim(); return RE_L3.test(s) ? 3 : (isMemo() ? RE_L2 : RE_L2_FORM).test(s) ? 2 : 1; };
+  const RE_L4 = /^[0-9๐-๙]+\.[0-9๐-๙]+\.[0-9๐-๙]+\.[0-9๐-๙]+/;
+  const autoLevel = (line) => {
+    const s = line.trim();
+    if (kindKey() === 'project') return RE_L4.test(s) ? 3 : RE_L3.test(s) ? 2 : 1;
+    return RE_L3.test(s) ? 3 : (isMemo() ? RE_L2 : RE_L2_FORM).test(s) ? 2 : 1;
+  };
   const lineLevel = (line) => Math.min(tabCount(line), MAX_LEVEL) || autoLevel(line);
   const indentOf = (line) => `${2.5 + (lineLevel(line) - 1)}cm`;
   const lineDiv = (line, inner) => `<div class="ln" style="text-indent:${indentOf(line)}">${inner || '<br>'}</div>`;
@@ -207,7 +249,7 @@
     restyleLines(el);
   }
   let lastLineField = null;
-  const refineBtn = (key) => `<button type="button" data-refine="${key}" class="no-print absolute -right-[1.7cm] top-0 w-7 h-7 rounded-full bg-white border border-emerald-200 text-emerald-600 shadow-xs opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-emerald-50 transition font-sans text-xs" title="เกลาสำนวน ${FIELD_LABEL[key]}"><i class="fa-solid fa-wand-magic-sparkles"></i></button>`;
+  const refineBtn = (key) => `<button type="button" data-refine="${key}" class="no-print absolute -right-[1.7cm] top-0 w-7 h-7 rounded-full bg-white border border-emerald-200 text-emerald-600 shadow-xs opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-emerald-50 transition font-sans text-xs" title="เกลาสำนวน ${labelOf(key)}"><i class="fa-solid fa-wand-magic-sparkles"></i></button>`;
   const labelRow = (label, key, extra = '') =>
     `<div class="flex items-baseline gap-2 ${extra}"><span class="doc-bold shrink-0">${label}</span>${field(key, 'flex-1 dotted-fill')}</div>`;
 
@@ -301,10 +343,151 @@
   }
   const d_details = () => st.doc.paragraph_details != null;
 
+  // ---------- แบบเสนอโครงการ กทม. — ลำดับเดียวกับ core/project.project_view ----------
+  const FY_MONTHS = ['ต.ค.', 'พ.ย.', 'ธ.ค.', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.'];
+  const itemLevel = (item) => {
+    const tabs = tabCount(item || ''); if (tabs) return Math.min(tabs, 6);
+    const s = (item || '').trim(); return RE_L3.test(s) ? 3 : RE_L2_FORM.test(s) ? 2 : 1;
+  };
+  // รวมเงิน = รายการย่อยสุดที่มีเงิน (ยอดหมวดที่เป็นผลรวมไม่นับซ้ำ) — core/project.budget_total
+  function budgetTotal(rows) {
+    let total = 0, found = false;
+    rows.forEach((r, i) => {
+      if (r.amount == null) return;
+      const lvl = itemLevel(r.item);
+      let child = false;
+      for (let j = i + 1; j < rows.length && itemLevel(rows[j].item) > lvl; j++) if (rows[j].amount != null) { child = true; break; }
+      if (!child) { total += r.amount; found = true; }
+    });
+    return found ? total : null;
+  }
+  const DIGITS = ['', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า'], PLACES = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน'];
+  function readGroup(n, higher) {
+    const ds = String(n); let out = '';
+    [...ds].forEach((ch, i) => {
+      const d = +ch, place = ds.length - i - 1;
+      if (!d) return;
+      if (place === 1 && d === 1) out += 'สิบ';
+      else if (place === 1 && d === 2) out += 'ยี่สิบ';
+      else if (place === 0 && d === 1 && (higher || ds.length > 1)) out += 'เอ็ด';
+      else out += DIGITS[d] + PLACES[place];
+    });
+    return out;
+  }
+  const readInt = (n) => n >= 1e6 ? readInt(Math.floor(n / 1e6)) + 'ล้าน' + (n % 1e6 ? readGroup(n % 1e6, true) : '') : readGroup(n, false);
+  function bahtText(amount) {
+    if (amount == null) return '';
+    const sat = Math.round(Math.abs(amount) * 100), baht = Math.floor(sat / 100), st_ = sat % 100;
+    if (!baht && !st_) return 'ศูนย์บาทถ้วน';
+    return (baht ? readInt(baht) + 'บาท' : '') + (st_ ? readInt(st_) + 'สตางค์' : 'ถ้วน');
+  }
+  function riskLevel(l, i) {
+    if (!(l >= 1 && l <= 5 && i >= 1 && i <= 5)) return '';
+    const s = l * i; return s <= 2 ? 'น้อย' : s <= 6 ? 'ปานกลาง' : s <= 10 ? 'สูง' : 'สูงมาก';
+  }
+  const pjCell = (key, cls = '') => field(key, 'block pj-cell ' + cls, '…', 'div');
+  const pjDel = (list, i) => `<button type="button" data-pj-del="${list}:${i}" class="no-print pj-del" title="ลบแถวนี้" aria-label="ลบแถวนี้"><i class="fa-solid fa-xmark"></i></button>`;
+  const pjAdd = (list, label) => `<button type="button" data-pj-add="${list}" class="no-print pj-add"><i class="fa-solid fa-plus"></i>${label}</button>`;
+  function projectSheetHTML() {
+    const p = st.doc.project || {};
+    const H = (t) => `<div class="pj-heading">${esc(num(t))}</div>`;
+    const S = (t) => `<div class="indent-25 doc-bold">${esc(num(t))}</div>`;
+    const U = (t) => `<div class="indent-25"><span class="underline underline-offset-4">${esc(num(t))}</span></div>`;
+    const B = (k) => block('pj:' + k, 'justify-thai');
+    const year = (String(p.fiscal_year || '').match(/[0-9๐-๙]{4}/) || ['…'])[0];
+    const plan = (p.plan || []).map((s, i) => `<tr><td>${pjCell(`pj:plan.${i}.step`)}</td>${FY_MONTHS.map((_, m) =>
+      `<td data-pj-month="${i}:${m}" class="pj-month ${(s.months || []).includes(m) ? 'pj-on' : ''}" title="คลิกเพื่อแรเงา/ยกเลิกเดือน${FY_MONTHS[m]}"></td>`).join('').replace(/<\/td>$/, `${pjDel('plan', i)}</td>`)}</tr>`).join('');
+    const rows = p.budget || [];
+    const spans = {}; let start = 0;
+    rows.forEach((r, i) => { if (i === 0 || (r.activity || '').trim()) { start = i; spans[i] = 1; } else spans[start]++; });
+    const total = budgetTotal(rows);
+    const budget = rows.map((r, i) => `<tr>${spans[i] ? `<td rowspan="${spans[i]}">${pjCell(`pj:budget.${i}.activity`)}</td>` : ''}
+        <td data-pj-item="${i}" style="padding-left:calc(3pt + ${(itemLevel(r.item) - 1) * 0.4}cm)">${pjCell(`pj:budget.${i}.item`)}</td>
+        <td>${pjCell(`pj:budget.${i}.amount`, 'text-right')}</td><td>${pjCell(`pj:budget.${i}.law`)}${pjDel('budget', i)}</td></tr>`).join('');
+    const risks = (p.risks || []).map((r, i) => `<tr><td>${pjCell(`pj:risks.${i}.risk`)}</td>
+        <td>${pjCell(`pj:risks.${i}.likelihood`, 'text-center')}</td><td>${pjCell(`pj:risks.${i}.impact`, 'text-center')}</td>
+        <td class="text-center" data-pj-level="${i}">${esc(riskLevel(r.likelihood, r.impact))}</td><td>${pjCell(`pj:risks.${i}.mitigation`)}${pjDel('risks', i)}</td></tr>`).join('');
+    const kpis = (p.kpis || []).map((k, i) => `<tr>${['indicator', 'target', 'kind', 'method', 'period'].map((c, ci) =>
+      `<td>${pjCell(`pj:kpis.${i}.${c}`, [1, 2, 4].includes(ci) ? 'text-center' : '')}${ci === 4 ? pjDel('kpis', i) : ''}</td>`).join('')}</tr>`).join('');
+    const signer = (who, role) => `
+      <div class="ml-[6cm] mt-[1.5cm] text-center">
+        <div>ลงชื่อ${'.'.repeat(45)}${role}</div>
+        <div class="flex justify-center gap-1"><span>(</span>${field(`pj:${who}_name`, 'min-w-[5cm]', 'ชื่อ-นามสกุล')}<span>)</span></div>
+        <div class="flex justify-center gap-1"><span>ตำแหน่ง</span>${field(`pj:${who}_position`, 'min-w-[5cm]')}</div>
+      </div>`;
+    return `${stamps()}
+      <div class="pj-head"><span class="doc-bold">ชื่อโครงการ</span>${field('subject', 'block')}</div>
+      <div class="pj-head"><span class="doc-bold">หน่วยงาน</span>${field('pj:agency', 'block')}</div>
+      <div class="pj-head"><span class="doc-bold">ปีงบประมาณ</span>${field('pj:fiscal_year', 'block')}</div>
+      <div class="pj-rule" aria-hidden="true"></div>
+      ${H('1. หลักการและเหตุผล')}${B('rationale')}
+      ${H('2. วัตถุประสงค์')}${B('objectives')}
+      ${H('3. เป้าหมาย')}${B('targets')}
+      ${H('4. ลักษณะโครงการ')}${S('ประเภทโครงการ')}${B('project_type')}
+      ${S('ความสอดคล้องหรือเชื่อมโยงกับยุทธศาสตร์/แผน')}${B('alignment')}${S('รูปแบบโครงการ')}${B('project_format')}
+      ${H('5. ระยะเวลาและสถานที่ดำเนินการ')}${B('schedule')}
+      ${H('6. แผนปฏิบัติการ')}
+      <table class="pj-table"><colgroup><col style="width:5.6cm">${'<col>'.repeat(12)}</colgroup>
+        <thead><tr><th rowspan="2">ขั้นตอนการดำเนินงาน</th><th colspan="12" data-pj-year>ปีงบประมาณ พ.ศ. ${esc(num(year))}</th></tr>
+        <tr>${FY_MONTHS.map(m => `<th class="pj-mo">${m}</th>`).join('')}</tr></thead><tbody>${plan}</tbody></table>
+      ${pjAdd('plan', 'เพิ่มขั้นตอน')}
+      ${H('7. งบประมาณ')}${block('pj:budget_title', 'indent-25')}
+      <table class="pj-table"><colgroup><col style="width:3.2cm"><col style="width:7cm"><col style="width:2.6cm"><col style="width:3.2cm"></colgroup>
+        <thead><tr><th>กิจกรรม</th><th>รายการค่าใช้จ่าย</th><th>จำนวนเงิน (บาท)</th><th>กฎหมาย ระเบียบที่เกี่ยวข้อง</th></tr></thead>
+        <tbody>${budget}<tr class="pj-total"><td colspan="2" class="text-center" data-pj-total-label>${esc(totalLabel(total))}</td>
+        <td class="text-right" data-pj-total>${esc(num(fmtAmount(total)))}</td><td></td></tr></tbody></table>
+      ${pjAdd('budget', 'เพิ่มรายการ')} ${pjAdd('budget-activity', 'เพิ่มกิจกรรมใหม่')}
+      <div class="mt-1">${B('budget_note')}</div>
+      ${H('8. ความเสี่ยงของโครงการและแนวทางการบริหารความเสี่ยง')}
+      <table class="pj-table"><colgroup><col style="width:4.2cm"><col style="width:1.9cm"><col style="width:1.9cm"><col style="width:2cm"><col style="width:6cm"></colgroup>
+        <thead><tr><th rowspan="2">ความเสี่ยง</th><th colspan="3">การประเมินความเสี่ยง</th><th rowspan="2">แนวทางการบริหารความเสี่ยง</th></tr>
+        <tr><th>โอกาสที่จะเกิด</th><th>ผลกระทบ</th><th>ระดับของความเสี่ยง</th></tr></thead><tbody>${risks}</tbody></table>
+      ${pjAdd('risks', 'เพิ่มความเสี่ยง')}
+      ${H('9. ประโยชน์ที่คาดว่าจะได้รับ')}${B('benefits')}
+      ${H('10. การติดตามประเมินผล')}${U('10.1 ตัวชี้วัดความสำเร็จ')}
+      <table class="pj-table"><colgroup><col style="width:4cm"><col style="width:2.3cm"><col style="width:2.3cm"><col style="width:4.9cm"><col style="width:2.5cm"></colgroup>
+        <thead><tr><th>ตัวชี้วัด</th><th>ค่าเป้าหมาย</th><th>ประเภทตัวชี้วัด</th><th>วิธีการคำนวณ/เครื่องมือในการใช้วัด</th><th>ระยะเวลา</th></tr></thead>
+        <tbody>${kpis}</tbody></table>
+      ${pjAdd('kpis', 'เพิ่มตัวชี้วัด')}
+      ${U('10.2 การติดตามความก้าวหน้า')}${B('monitoring')}
+      ${U('10.3 การประเมินผลโครงการ')}${B('assessment')}
+      ${signer('proposer', 'ผู้เสนอโครงการ')}
+      ${signer('approver', 'ผู้อนุมัติโครงการ')}`;
+  }
+  const totalLabel = (total) => 'รวมเป็นเงินทั้งสิ้น' + (total != null ? ` (${bahtText(total)})` : '');
+  // หลังแก้ช่องหนึ่ง: อัปเดตส่วนที่คำนวณจากช่องอื่นโดยไม่สร้างกระดาษใหม่ (คงเคอร์เซอร์ในช่องถัดไป)
+  function refreshProject() {
+    const p = st.doc.project; if (!p) return;
+    const rows = p.budget || [], total = budgetTotal(rows);
+    const lbl = sheet.querySelector('[data-pj-total-label]'), amt = sheet.querySelector('[data-pj-total]');
+    if (lbl) lbl.textContent = totalLabel(total);
+    if (amt) amt.textContent = num(fmtAmount(total));
+    rows.forEach((r, i) => {
+      const td = sheet.querySelector(`[data-pj-item="${i}"]`);
+      if (td) td.style.paddingLeft = `calc(3pt + ${(itemLevel(r.item) - 1) * 0.4}cm)`;
+    });
+    (p.risks || []).forEach((r, i) => {
+      const td = sheet.querySelector(`[data-pj-level="${i}"]`);
+      if (td) td.textContent = riskLevel(r.likelihood, r.impact);
+    });
+    const year = sheet.querySelector('[data-pj-year]');
+    if (year) year.textContent = `ปีงบประมาณ พ.ศ. ${num((String(p.fiscal_year || '').match(/[0-9๐-๙]{4}/) || ['…'])[0])}`;
+  }
+  // แถวใหม่ของตารางโครงการ (เลขข้อต่อจากแถวสุดท้าย)
+  function pjNewRow(p, list) {
+    const n = (p[list === 'budget-activity' ? 'budget' : list] || []).length + 1;
+    if (list === 'plan') return ['plan', { step: `${n}. [✏️ ระบุขั้นตอนการดำเนินงาน]`, months: [] }];
+    if (list === 'budget') return ['budget', { activity: '', item: '[✏️ ระบุรายการค่าใช้จ่าย]', amount: null, law: '' }];
+    if (list === 'budget-activity') return ['budget', { activity: '[✏️ ระบุกิจกรรม]', item: '1. [✏️ ระบุรายการค่าใช้จ่าย]', amount: null, law: '' }];
+    if (list === 'risks') return ['risks', { risk: `${n}. [✏️ ระบุความเสี่ยง]`, likelihood: 0, impact: 0, mitigation: '[✏️ ระบุแนวทาง]' }];
+    return ['kpis', { indicator: `${n}. [✏️ ระบุตัวชี้วัด]`, target: '', kind: '', method: '', period: '' }];
+  }
+
   function sheetHTML() {
     const d = st.doc;
     if (isStamp()) return stampSheetHTML();
     if (isFormal()) return formalSheetHTML();
+    if (isProject()) return projectSheetHTML();
     const refs = d.references != null, atts = d.attachments != null;
     if (isMemo()) {
       const law = d.memo_law != null;
@@ -362,12 +545,12 @@
   function fillFields() {
     $('sheet').querySelectorAll('[data-field]').forEach((el) => {
       if (el === document.activeElement) return;
-      const v = FIELDS[el.dataset.field].get(st.doc);
+      const v = fieldDef(el.dataset.field).get(st.doc);
       el.innerHTML = el.classList.contains('lines') ? linesHTML(v) : displayHTML(v);
       el.contentEditable = st.editOn ? 'true' : 'false';
       el.spellcheck = false;
       el.setAttribute('role', 'textbox');
-      el.setAttribute('aria-label', FIELD_LABEL[el.dataset.field] || el.dataset.field);
+      el.setAttribute('aria-label', labelOf(el.dataset.field) || el.dataset.field);
       if (el.classList.contains('block')) el.setAttribute('aria-multiline', 'true');
     });
     fitOneLine();
@@ -393,7 +576,7 @@
     const el = e.target.closest('[data-field]');
     if (!el || !st.editOn) return;
     // ระหว่างพิมพ์ แสดงข้อความดิบ (ไม่มีชิป) เพื่อให้แก้ placeholder ได้ตรง ๆ
-    const raw = FIELDS[el.dataset.field].get(st.doc);
+    const raw = fieldDef(el.dataset.field).get(st.doc);
     if (el.classList.contains('lines')) { el.innerHTML = linesHTML(raw, true); lastLineField = el; } else el.textContent = raw;
     // ถ้าทั้งช่องเป็น placeholder ให้เลือกทั้งหมดเพื่อพิมพ์ทับได้ทันที
     // (ช่องที่มีข้อความอื่นด้วย ไม่เลือกให้ — กันกดปุ่มแล้ว placeholder กลางย่อหน้าหายโดยไม่ตั้งใจ)
@@ -421,12 +604,13 @@
     if (!el) return;
     const key = el.dataset.field;
     const value = el.innerText.replace(/ /g, ' ').replace(/\n{3,}/g, '\n\n').trimEnd();
-    if (value !== FIELDS[key].get(st.doc)) {
-      commit(d => FIELDS[key].set(d, value), { rerender: false });
+    if (value !== fieldDef(key).get(st.doc)) {
+      commit(d => fieldDef(key).set(d, value), { rerender: false });
     }
-    const shown = FIELDS[key].get(st.doc);
+    const shown = fieldDef(key).get(st.doc);
     el.innerHTML = el.classList.contains('lines') ? linesHTML(shown) : displayHTML(shown);
     if (el.classList.contains('one-line')) fitOneLine();
+    if (key.startsWith('pj:')) refreshProject();
     renderTodo();
   });
   sheet.addEventListener('keydown', (e) => {
@@ -462,6 +646,33 @@
   sheet.addEventListener('click', (e) => {
     const b = e.target.closest('[data-refine]');
     if (b) openRefine(b.dataset.refine, b);
+    if (!st.editOn || !st.doc.project) return;
+    const m = e.target.closest('[data-pj-month]');
+    if (m) {
+      const [i, mo] = m.dataset.pjMonth.split(':').map(Number);
+      commit((d) => {
+        const s = d.project.plan[i]; if (!s) return;
+        const set = new Set(s.months || []);
+        set.has(mo) ? set.delete(mo) : set.add(mo);
+        s.months = [...set].sort((a, c) => a - c);
+      });
+      return;
+    }
+    const add = e.target.closest('[data-pj-add]');
+    if (add) {
+      commit((d) => { const [list, row] = pjNewRow(d.project, add.dataset.pjAdd); (d.project[list] ||= []).push(row); });
+      return;
+    }
+    const del = e.target.closest('[data-pj-del]');
+    if (del) {
+      const [list, i] = del.dataset.pjDel.split(':');
+      commit((d) => {
+        const rows = d.project[list]; if (!rows) return;
+        // ลบแถวแรกของกิจกรรม: ชื่อกิจกรรมย้ายไปแถวถัดไปของกิจกรรมเดียวกัน
+        if (list === 'budget' && rows[+i]?.activity && rows[+i + 1] && !rows[+i + 1].activity) rows[+i + 1].activity = rows[+i].activity;
+        rows.splice(+i, 1);
+      });
+    }
   });
 
   // ---------- ตั้งค่าเอกสาร (ฟอนต์ / เลขไทย / หัวข้อเสริม) ----------
@@ -481,7 +692,7 @@
   ];
   function renderToggles() {
     // หนังสือประทับตราไม่มีอ้างถึง/สิ่งที่ส่งมาด้วยในแบบ — อ้างในข้อความแทน
-    const items = isStamp() || isFormal() ? [] : OPTIONAL.filter(o => !o.memoOnly || isMemo());
+    const items = isStamp() || isFormal() || isProject() ? [] : OPTIONAL.filter(o => !o.memoOnly || isMemo());
     $('section-toggles').innerHTML = items.map((o) => `
       <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
         <input type="checkbox" data-opt="${o.key}" ${st.doc[o.key] != null ? 'checked' : ''} class="rounded border-slate-300 text-brand-600 focus:ring-0 w-3.5 h-3.5">
@@ -490,7 +701,7 @@
     const on = items.filter(o => st.doc[o.key] != null).length;
     $('section-count').textContent = `เปิด ${toThai(on)}/${toThai(items.length)}`;
     // ผู้ลงนามแต่ละคน: ใช้ตราประทับชื่อ-ตำแหน่งหรือไม่ (ชื่อที่แสดง = ตำแหน่ง ถ้ายังไม่มีใช้ลำดับ)
-    const signers = isStamp() ? [] : [{ key: 'main', position: st.doc.signatory_position, stamp: !!st.doc.signatory_stamp },
+    const signers = isStamp() || isProject() ? [] : [{ key: 'main', position: st.doc.signatory_position, stamp: !!st.doc.signatory_stamp },
       ...(isMemo() ? (st.doc.co_signers || []).slice(0, 3).map((c, i) => ({ key: String(i), position: c.position, stamp: !!c.stamp })) : [])];
     $('signer-toggles').innerHTML = signers.map((sg, i) => `
       <label class="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-900">
@@ -708,7 +919,8 @@
     $('version-count').textContent = toThai(st.versions.length + 1);
     const words = [d.subject, d.paragraph_reason, d.paragraph_details, d.paragraph_purpose, d.memo_law].filter(Boolean).join(' ');
     $('footer-words').textContent = `ความยาว ${toThai(words.replace(/\s+/g, '').length)} ตัวอักษร`;
-    $('footer-format').textContent = `${DOC_TYPE_LABEL[kindKey()]} · A4 · ${FONT_LABEL[d.font_family || 'it9']} ๑๖ pt · ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`;
+    $('footer-format').textContent = `${DOC_TYPE_LABEL[kindKey()]} · A4 · ${FONT_LABEL[d.font_family || 'it9']} ๑๖ pt · `
+      + (isProject() ? 'ตาราง ๑๔ pt (รูปแบบการเขียนโครงการ กทม.)' : `ครุฑ ${isMemo() ? '๑.๕ ซม. มุมซ้าย' : '๓ ซม. กึ่งกลาง'}`);
     renderSaveState('saved');
     fitToolbar();
   }
@@ -731,7 +943,7 @@
     const factItems = facts.map((f, i) => `
       <div class="p-3 rounded-xl bg-white border border-amber-200 text-xs space-y-2">
         <div class="flex items-start gap-2.5"><i class="fa-solid fa-magnifying-glass-chart text-amber-600 mt-0.5"></i>
-          <span><span class="font-medium text-slate-800">${esc(FIELD_LABEL[f.field] || f.field)}: <span class="font-body">${esc(num(f.text))}</span></span>
+          <span><span class="font-medium text-slate-800">${esc(labelOf(f.field) || f.field)}: <span class="font-body">${esc(num(f.text))}</span></span>
           <span class="block text-slate-500 mt-0.5">${esc(f.message)}</span></span></div>
         <div class="flex gap-2 pl-6">
           <button type="button" data-fact-source="${i}" class="px-2 py-1 rounded-md border border-slate-300 hover:bg-slate-50">ดูในต้นเรื่อง</button>
@@ -1542,9 +1754,9 @@
   // ---------- เกลาสำนวน ----------
   function openRefine(key, anchor) {
     const pop = $('refine-pop');
-    const text = FIELDS[key].get(st.doc);
+    const text = fieldDef(key).get(st.doc);
     st.refine = { key, result: null };
-    $('refine-field').textContent = '· ' + FIELD_LABEL[key];
+    $('refine-field').textContent = '· ' + labelOf(key);
     $('refine-before').textContent = text;
     $('refine-after-wrap').hidden = true;
     $('refine-apply').disabled = true;
@@ -1563,7 +1775,7 @@
     if (!b || !st.refine) return;
     b.disabled = true;
     try {
-      const res = await api.refine(FIELDS[st.refine.key].get(st.doc), b.dataset.cmd);
+      const res = await api.refine(fieldDef(st.refine.key).get(st.doc), b.dataset.cmd);
       st.refine.result = res.refined;
       $('refine-after').textContent = res.refined;
       $('refine-after-wrap').hidden = false;
@@ -1575,7 +1787,7 @@
   $('refine-apply').addEventListener('click', () => {
     const { key, result } = st.refine || {};
     if (result == null) return;
-    commit(d => FIELDS[key].set(d, result));
+    commit(d => fieldDef(key).set(d, result));
     closeRefine();
     const el = sheet.querySelector(`[data-field="${key}"]`);
     el?.classList.add('flash-ok'); setTimeout(() => el?.classList.remove('flash-ok'), 2300);
@@ -1597,12 +1809,13 @@
     if (act === 'lint') { showLeft(); selectTab('checks'); runCheck(); }
     if (act === 'print') window.print();
     if (act === 'formal') {
-      const keys = isMemo() ? ['memo_intro', 'memo_facts', 'memo_consideration', 'memo_request'] : ['paragraph_reason', 'paragraph_details', 'paragraph_purpose'];
+      const keys = isProject() ? ['pj:rationale', 'pj:objectives', 'pj:targets', 'pj:benefits']
+        : isMemo() ? ['memo_intro', 'memo_facts', 'memo_consideration', 'memo_request'] : ['paragraph_reason', 'paragraph_details', 'paragraph_purpose'];
       try {
-        const results = await Promise.all(keys.map(k => api.refine(FIELDS[k].get(st.doc), 'formal')));
+        const results = await Promise.all(keys.map(k => api.refine(fieldDef(k).get(st.doc), 'formal')));
         const changed = results.filter(r => r.refined !== r.original).length;
         if (!changed) { toast('ทุกย่อหน้าเป็นทางการอยู่แล้ว'); return; }
-        commit(d => keys.forEach((k, i) => FIELDS[k].set(d, results[i].refined)));
+        commit(d => keys.forEach((k, i) => fieldDef(k).set(d, results[i].refined)));
         toast(`ปรับ ${toThai(changed)} ย่อหน้าแล้ว — กดเลิกทำได้ถ้าไม่ต้องการ`);
       } catch (err) { toast(err.message, 'error'); }
     }

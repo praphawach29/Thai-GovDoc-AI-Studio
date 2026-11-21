@@ -52,10 +52,21 @@ class DraftContent(BaseModel):
     )
 
 
-def _strict_schema() -> dict:
-    schema = DraftContent.model_json_schema()
-    schema["additionalProperties"] = False
-    schema["required"] = list(DraftContent.model_fields)
+def _strict_schema(model=None) -> dict:
+    """JSON schema โหมดเข้มงวดของ Claude: ปิด additionalProperties และบังคับทุกช่องทุกระดับ (รวม $defs ของตาราง)"""
+    schema = (model or DraftContent).model_json_schema()
+
+    def close(node):
+        if isinstance(node, dict):
+            if node.get("type") == "object" or "properties" in node:
+                node["additionalProperties"] = False
+                node["required"] = list(node.get("properties", {}))
+            for v in node.values():
+                close(v)
+        elif isinstance(node, list):
+            for v in node:
+                close(v)
+    close(schema)
     return schema
 
 
@@ -333,7 +344,8 @@ def _claude_create(client, kwargs: dict):
         raise
 
 
-def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftContent:
+def _call_claude(prompt: str, config: LLMConfig, timeout_s: float, schema=None) -> DraftContent:
+    schema = schema or DraftContent
     client = _anthropic_client(config, timeout_s)
     kwargs = dict(
         model=config.claude_model,
@@ -341,7 +353,7 @@ def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
         output_config={"effort": config.claude_effort,
-                       "format": {"type": "json_schema", "schema": _strict_schema()}},
+                       "format": {"type": "json_schema", "schema": _strict_schema(schema)}},
     )
     if config.claude_model in _FALLBACK_MODELS:
         # ถ้าโมเดลปฏิเสธด้วยเหตุผลด้านความปลอดภัย ให้ Anthropic สลับไปโมเดลสำรองในคำขอเดียวกัน
@@ -352,7 +364,7 @@ def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
     if response.stop_reason == "max_tokens":
         raise RuntimeError("คำตอบยาวเกินกำหนด")
     text = next((b.text for b in response.content if b.type == "text"), "")
-    return DraftContent.model_validate_json(text)
+    return schema.model_validate_json(text)
 
 
 def _gemini_generate(client, model: str, contents, **config_kwargs):
@@ -375,20 +387,22 @@ def _gemini_generate(client, model: str, contents, **config_kwargs):
         raise
 
 
-def _call_gemini(prompt: str, config: LLMConfig, timeout_s: float) -> DraftContent:
+def _call_gemini(prompt: str, config: LLMConfig, timeout_s: float, schema=None) -> DraftContent:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=config.gemini_api_key,
                           http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
+    schema = schema or DraftContent
     response = _gemini_generate(client, config.gemini_model, prompt, system_instruction=SYSTEM_PROMPT,
-                                response_mime_type="application/json", response_schema=DraftContent)
-    if isinstance(getattr(response, "parsed", None), DraftContent):
+                                response_mime_type="application/json", response_schema=schema)
+    if isinstance(getattr(response, "parsed", None), schema):
         return response.parsed
-    return DraftContent.model_validate_json(response.text or "")
+    return schema.model_validate_json(response.text or "")
 
 
-def structured_call(system: str, prompt: str, schema, config: "LLMConfig", timeout_s: float = 25.0):
+def structured_call(system: str, prompt: str, schema, config: "LLMConfig", timeout_s: float = 25.0,
+                    max_tokens: int = 2000):
     """คำขอเล็ก ๆ ที่ตอบเป็น JSON ตาม schema (pydantic) — ลองตามลำดับผู้ให้บริการ (Gemini → Claude)
     คืนวัตถุตาม schema หรือ raise ถ้าทุกตัวล้มเหลว / ไม่มีคีย์"""
     vault = PiiVault() if config.mask_pii else None
@@ -396,7 +410,8 @@ def structured_call(system: str, prompt: str, schema, config: "LLMConfig", timeo
         prompt = vault.mask(prompt)
     errors = []
     for name in config.provider_order:
-        result = _structured_once(name, system, prompt, schema, config, timeout_s, errors)
+        extra = (max_tokens,) if max_tokens != 2000 else ()      # ค่าเริ่มต้นเรียกแบบเดิม
+        result = _structured_once(name, system, prompt, schema, config, timeout_s, errors, *extra)
         if result is not None:
             return _unmask_model(result, vault) if vault is not None and vault.total else result
     raise RuntimeError("; ".join(errors) or "ไม่ได้ตั้งค่า AI")
@@ -415,7 +430,7 @@ def _unmask_model(obj, vault: PiiVault):
     return type(obj).model_validate(walk(obj.model_dump()))
 
 
-def _structured_once(name, system, prompt, schema, config, timeout_s, errors):
+def _structured_once(name, system, prompt, schema, config, timeout_s, errors, max_tokens=2000):
     """เรียกผู้ให้บริการหนึ่งตัว; ไม่มีคีย์หรือไม่สำเร็จคืน None (สาเหตุต่อท้าย errors)"""
     try:
         if name == "gemini" and config.gemini_api_key:
@@ -444,7 +459,7 @@ def _structured_once(name, system, prompt, schema, config, timeout_s, errors):
             closed(sch)
             client = _anthropic_client(config, timeout_s)
             response = _claude_create(client, dict(
-                model=config.claude_model, max_tokens=2000, system=system,
+                model=config.claude_model, max_tokens=max_tokens, system=system,
                 messages=[{"role": "user", "content": prompt}],
                 output_config={"effort": "low", "format": {"type": "json_schema", "schema": sch}},
             ))
@@ -543,17 +558,27 @@ def draft_content_with_llm(
     kind: Optional[DocumentKind] = None,
     title: str = "",
 ) -> LLMDraftResult:
-    """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)"""
+    """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)
+    kind = PROJECT → ตอบเป็น ProjectContent (แบบเสนอโครงการ มีตาราง) แทน DraftContent; title = หน่วยงานของผู้ใช้"""
+    from functools import partial
+
+    from core.project_ai import ProjectContent, build_project_prompt, clean_project
+
+    project = kind == DocumentKind.PROJECT
+    schema = ProjectContent if project else DraftContent
     result = LLMDraftResult()
     if not cloud_ai_allowed(secret):
         result.skipped_reason = "เอกสารชั้นความลับ ไม่ส่งให้ AI ภายนอก"
         return result
     if providers is None:
         available = {}
+        # หนังสือทั่วไปเรียกฟังก์ชันเดิมตรง ๆ; โครงการผูก schema ของโครงการ (ตอบเป็นตาราง)
+        claude_call = partial(_call_claude, schema=schema) if project else _call_claude
+        gemini_call = partial(_call_gemini, schema=schema) if project else _call_gemini
         if config.anthropic_api_key:
-            available["claude"] = ("claude", config.claude_model, _call_claude)
+            available["claude"] = ("claude", config.claude_model, claude_call)
         if config.gemini_api_key:
-            available["gemini"] = ("gemini", config.gemini_model, _call_gemini)
+            available["gemini"] = ("gemini", config.gemini_model, gemini_call)
         # เวลาเหลือน้อย (เช่น อ่านไฟล์สแกนไปนานแล้ว) และไม่มีตัวที่ควรใช้ต่อ ให้ Gemini ซึ่งเร็วกว่าลองก่อน
         budget = config.total_timeout_s if budget_s is None else budget_s
         if prefer is None and budget < 35 and "gemini" in available and "gemini" not in avoid:
@@ -575,8 +600,12 @@ def draft_content_with_llm(
         instruction, source = vault.mask(instruction), vault.mask(source)
         recipient, review_party, title = vault.mask(recipient), vault.mask(review_party), vault.mask(title)
         result.masked = vault.summary()
-    prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
-                               recipient=recipient, review_party=review_party, examples=examples, kind=kind, title=title)
+    if project:
+        prompt = build_project_prompt(instruction=instruction, source_text=source, agency=title, assemble=_assemble)
+    else:
+        prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
+                                   recipient=recipient, review_party=review_party, examples=examples, kind=kind,
+                                   title=title)
 
     deadline = clock() + (config.total_timeout_s if budget_s is None else budget_s)
     for index, (name, model, call) in enumerate(providers):
@@ -589,7 +618,8 @@ def draft_content_with_llm(
         budget = remaining if is_last else min(config.claude_timeout_s, remaining - 10)
         started = clock()
         try:
-            content = _clean(call(prompt, config, budget))
+            raw = call(prompt, config, budget)
+            content = clean_project(raw) if isinstance(raw, ProjectContent) else _clean(raw)
             if vault is not None and vault.total:
                 content = _unmask_model(content, vault)
         except Exception as exc:  # สลับไปตัวถัดไปเสมอ — เหตุผลบันทึกไว้แสดงในขั้นตอน
@@ -604,6 +634,10 @@ def draft_content_with_llm(
 
 def apply_draft_content(doc: GovDocumentSchema, content: DraftContent) -> GovDocumentSchema:
     """ใส่เนื้อความจาก AI ลงในร่างตามกฎ (โครง หัวหนังสือ และช่องที่ AI เว้นว่างคงเดิม)"""
+    from core.project_ai import ProjectContent, apply_project_content
+
+    if isinstance(content, ProjectContent):
+        return apply_project_content(doc, content)
     updated = doc.model_copy(deep=True)
     if content.subject:
         updated.subject = content.subject

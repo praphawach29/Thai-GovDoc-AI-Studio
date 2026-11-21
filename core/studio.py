@@ -166,13 +166,16 @@ def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema
         contact_email=p.contact_email,
     )
     if kind is not None and not internal:
-        doc = apply_form(doc, kind, issuer=p.dept_name)
+        doc = apply_form(doc, kind, issuer=issuer_for(kind, p))
     return doc
 
 
 DOC_TYPE_THAI = {DocType.INTERNAL: "บันทึกข้อความ (หนังสือภายใน)", DocType.EXTERNAL: "หนังสือภายนอก"}
 # คำในคำสั่งที่บอกชนิดอื่น (ตรวจก่อนบันทึก/ภายนอก) — เรียงจากเฉพาะเจาะจงที่สุด
 _ASK_FORMS = (
+    # แบบเสนอโครงการ: วลีที่บอกว่าจะ "เขียน/ทำโครงการ" (ไม่ใช่ "ตามโครงการ..." ที่อ้างถึงในต้นเรื่อง)
+    ("project", ("เขียนโครงการ", "ร่างโครงการ", "จัดทำโครงการ", "ทำโครงการ", "แบบเสนอโครงการ", "เสนอโครงการ",
+                 "ทำเป็นโครงการ", "รูปแบบโครงการ", "โครงการปีงบประมาณ")),
     ("stamp_letter", ("หนังสือประทับตรา", "ประทับตราแทนการลงชื่อ", "ประทับตราส่วนราชการ")),
     # คำสั่ง: เฉพาะวลีที่บอกว่าจะ "ออกคำสั่ง" (ไม่ใช่ "ตามคำสั่ง..." ที่อ้างถึงในต้นเรื่อง)
     ("regulation", ("ร่างระเบียบ", "ออกระเบียบ", "วางระเบียบ", "จัดทำระเบียบ", "ทำระเบียบ")),
@@ -206,14 +209,29 @@ def requested_form(prompt: str) -> Optional[str]:
     return asked.value if asked is not None else None
 
 
+# หัวข้อของแบบเสนอโครงการ กทม. — ต้นเรื่องที่มีครบหลายหัวข้อคือ "โครงการ" (เช่น โครงการปีก่อนที่จะปรับเป็นปีใหม่)
+_PROJECT_MARKERS = ("ชื่อโครงการ", "หลักการและเหตุผล", "วัตถุประสงค์", "เป้าหมาย", "แผนปฏิบัติการ",
+                    "ประโยชน์ที่คาดว่าจะได้รับ", "การติดตามและประเมินผล", "การติดตามประเมินผล", "ตัวชี้วัด")
+
+
+def looks_like_project(source_text: str) -> bool:
+    """ต้นเรื่องเป็นแบบเสนอโครงการหรือไม่ (มีหัวข้อของแบบโครงการอย่างน้อย ๕ หัวข้อ รวม "หลักการและเหตุผล")"""
+    text = (source_text or "").replace(" ", "")
+    hits = sum(1 for m in _PROJECT_MARKERS if m in text)
+    return "หลักการและเหตุผล" in text and hits >= 5
+
+
 def choose_output_form(hint: Optional[str], prompt: str, *, has_source_file: bool,
-                       classified: DocType) -> tuple:
-    """ประเภทที่จะร่างเป็นคีย์: ผู้ใช้เลือก > คำสั่งที่พิมพ์ > มีไฟล์ต้นเรื่อง = บันทึกข้อความ > ตัวจำแนก"""
+                       classified: DocType, source_text: str = "") -> tuple:
+    """ประเภทที่จะร่างเป็นคีย์: ผู้ใช้เลือก > คำสั่งที่พิมพ์ > ต้นเรื่องเป็นแบบโครงการ = โครงการ
+    > มีไฟล์ต้นเรื่อง = บันทึกข้อความ > ตัวจำแนก"""
     if hint:
         return hint, "ผู้ใช้เลือกเอง"
     asked = requested_form(prompt)
     if asked is not None:
         return asked, "ตามคำสั่งที่พิมพ์"
+    if has_source_file and looks_like_project(source_text):
+        return "project", "ต้นเรื่องเป็นแบบเสนอโครงการ จึงร่างเป็นโครงการตามรูปแบบ กทม. (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
     doc_type, why = choose_output_type(None, prompt, has_source_file=has_source_file, classified=classified)
     return doc_type.value, why
 
@@ -231,6 +249,16 @@ def choose_output_type(hint: Optional[DocType], prompt: str, *, has_source_file:
         # ต้นเรื่องที่รับเข้ามา (มักเป็นหนังสือภายนอก) ต้องเสนอผู้บังคับบัญชาด้วยบันทึกข้อความก่อน
         return DocType.INTERNAL, "ต้นเรื่องรับเข้า จึงร่างบันทึกเสนอตามสายงาน (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
     return classified, "จำแนกจากเนื้อหา (เปลี่ยนประเภทได้ในหน้าแก้ไข)"
+
+
+def issuer_for(kind: DocumentKind, profile: UserProfileSchema) -> str:
+    """ชื่อส่วนราชการที่ใส่ในแบบ: โครงการ = "<กอง> <สำนัก>" (หน่วยงานที่รับผิดชอบ) / แบบอื่น = ชื่อสำนัก"""
+    if kind == DocumentKind.PROJECT:
+        division, dept = (profile.division_name or "").strip(), (profile.dept_name or "").strip()
+        if not division or division in dept:
+            return dept
+        return f"{division} {dept}".strip()
+    return profile.dept_name
 
 
 def classic_kind(kind: DocumentKind) -> bool:
@@ -312,7 +340,8 @@ def start_draft(
     cls = classify_source_document(ctx)
     result.classification = cls
     form, why = choose_output_form(form_hint or (doc_type_hint.value if doc_type_hint else None), prompt,
-                                   has_source_file=bool(file_path), classified=cls.doc_type)
+                                   has_source_file=bool(file_path), classified=cls.doc_type,
+                                   source_text=ctx.raw_text or "")
     doc_type, kind = FORM_KEYS[form]
     result.steps.append(StudioStep(
         key="classify", label="เลือกประเภทหนังสือที่จะร่าง",
@@ -330,7 +359,7 @@ def start_draft(
         contact_tel=profile.contact_tel,
         secret=secret,
     )
-    doc = apply_form(doc, kind, issuer=profile.dept_name)
+    doc = apply_form(doc, kind, issuer=issuer_for(kind, profile))
     doc.urgency = urgency
     doc.secret = secret
     doc.contact_fax = profile.contact_fax or doc.contact_fax
@@ -345,7 +374,7 @@ def start_draft(
         ai = draft_content_with_llm(
             doc_type=doc.doc_type,
             kind=kind,
-            title=doc.special_title or "",
+            title=(doc.project.agency if doc.project else doc.special_title) or "",
             budget_s=min(llm.total_timeout_s, max(0.0, request_budget - (time.monotonic() - started))),
             instruction=prompt if file_path else "",
             source_text=ctx.raw_text or "",
@@ -376,7 +405,9 @@ def start_draft(
     result.check = check_document(doc)
     result.check.facts = check_facts(result.document, source_text_of(ctx.raw_text, prompt if file_path else ""))
     result.steps.append(StudioStep(
-        key="draft", label="ร่างหนังสือตามโครงสร้าง ๓ ภาค" if classic_kind(kind) else f"ร่าง{FORM_LABELS[form]}ตามแบบในระเบียบ",
+        key="draft", label=("ร่างหนังสือตามโครงสร้าง ๓ ภาค" if classic_kind(kind)
+                            else "ร่างโครงการตามรูปแบบการเขียนโครงการ กทม." if kind == DocumentKind.PROJECT
+                            else f"ร่าง{FORM_LABELS[form]}ตามแบบในระเบียบ"),
         detail=f"เหลือจุดที่ต้องระบุ {len(result.check.placeholders)} จุด",
     ))
     return result

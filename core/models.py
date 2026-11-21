@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
+from core.project import ProjectData, project_texts
 from core.thai_segmenter import to_thai_numerals
 
 
@@ -55,6 +56,7 @@ class DocumentKind(str, Enum):
     REGULATION = "regulation"                # ระเบียบ (แบบที่ ๕)
     BYLAW = "bylaw"                          # ข้อบังคับ (แบบที่ ๖)
     ANNOUNCEMENT = "announcement"            # ประกาศ (แบบที่ ๗)
+    PROJECT = "project"                      # แบบเสนอโครงการ กรุงเทพมหานคร (ไม่ใช่หนังสือตามระเบียบงานสารบรรณ)
 
     def thai_label(self) -> str:
         return {
@@ -62,6 +64,7 @@ class DocumentKind(str, Enum):
             DocumentKind.REGULATION: "ระเบียบ (แบบ 5)",
             DocumentKind.BYLAW: "ข้อบังคับ (แบบ 6)",
             DocumentKind.ANNOUNCEMENT: "ประกาศ (แบบ 7)",
+            DocumentKind.PROJECT: "แบบเสนอโครงการ (กทม.)",
             DocumentKind.EXTERNAL_LETTER: "หนังสือภายนอก (แบบ 1)",
             DocumentKind.INTERNAL_MEMO: "หนังสือภายใน / บันทึกข้อความ (แบบ 2)",
             DocumentKind.STAMP_LETTER: "หนังสือประทับตรา (แบบ 3)",
@@ -84,6 +87,7 @@ FORM_KEYS: Dict[str, Tuple[DocType, DocumentKind]] = {
     "announcement": (DocType.EXTERNAL, DocumentKind.ANNOUNCEMENT),
     "regulation": (DocType.EXTERNAL, DocumentKind.REGULATION),
     "bylaw": (DocType.EXTERNAL, DocumentKind.BYLAW),
+    "project": (DocType.EXTERNAL, DocumentKind.PROJECT),
 }
 FORM_LABELS: Dict[str, str] = {
     "internal": "บันทึกข้อความ (หนังสือภายใน)",
@@ -93,6 +97,7 @@ FORM_LABELS: Dict[str, str] = {
     "announcement": "ประกาศ",
     "regulation": "ระเบียบ",
     "bylaw": "ข้อบังคับ",
+    "project": "โครงการ",
 }
 # ชนิดที่จัดหน้าแบบ "หัวกลาง" (ครุฑ · ชื่อเอกสาร · ที่ · เรื่อง/ว่าด้วย · เส้นคั่น · ข้อความ · ... ณ วันที่ · ผู้ลงนาม)
 FORMAL_KINDS = frozenset({DocumentKind.ORDER, DocumentKind.REGULATION, DocumentKind.BYLAW, DocumentKind.ANNOUNCEMENT})
@@ -564,6 +569,9 @@ class GovDocumentSchema(BaseModel):
     sections: Optional[List[DocumentSection]] = Field(
         None, description="ลำดับหัวข้อเอกสารแบบอิสระ (None = ใช้ฟิลด์มาตรฐานเดิม)"
     )
+    project: Optional[ProjectData] = Field(
+        None, description="แบบเสนอโครงการ (kind=project): หัวข้อ ๑–๑๐ และตาราง — ชื่อโครงการอยู่ใน subject"
+    )
     edit_status: Literal["draft", "editing", "saved"] = Field(
         default="draft", description="สถานะการแก้ไข: ฉบับร่าง/กำลังแก้ไข/บันทึกแล้ว"
     )
@@ -685,6 +693,11 @@ class GovDocumentSchema(BaseModel):
         return self.kind == DocumentKind.STAMP_LETTER
 
     @property
+    def is_project(self) -> bool:
+        """แบบเสนอโครงการ กทม. — ไม่มีส่วนหัวหนังสือ (ที่ วันที่ เรียน) และเนื้อความอยู่ใน project"""
+        return self.kind == DocumentKind.PROJECT
+
+    @property
     def is_formal(self) -> bool:
         """คำสั่ง / ระเบียบ / ข้อบังคับ / ประกาศ — ไม่มีคำขึ้นต้น คำลงท้าย และส่วนราชการเจ้าของเรื่อง"""
         return self.kind in FORMAL_KINDS
@@ -773,6 +786,12 @@ class GovDocumentSchema(BaseModel):
         for idx, co in enumerate(self.co_signers or [], 2):
             if not co.stamp:
                 text_fields += [(f"ชื่อผู้ลงนาม ({idx})", co.name), (f"ตำแหน่งผู้ลงนาม ({idx})", co.position)]
+        if self.is_project:
+            # แบบเสนอโครงการ: ชื่อโครงการ + ทุกช่องของโครงการ (ไม่มีส่วนหัว/ท้ายของหนังสือ)
+            text_fields = [("ชื่อโครงการ", self.subject)] + project_texts(self.project or ProjectData())
+            p = self.project or ProjectData()
+            text_fields += [("ชื่อผู้เสนอโครงการ", p.proposer_name), ("ตำแหน่งผู้เสนอโครงการ", p.proposer_position),
+                            ("ชื่อผู้อนุมัติโครงการ", p.approver_name), ("ตำแหน่งผู้อนุมัติโครงการ", p.approver_position)]
         if self.is_formal:
             # คำสั่ง/ประกาศ/ระเบียบ/ข้อบังคับ ไม่พิมพ์ช่องเหล่านี้ — ไม่นับเป็นจุดต้องระบุ
             hidden = {"ส่วนราชการ", "คำขึ้นต้น", "คำลงท้าย", "กลุ่มงานเจ้าของเรื่อง", "โทรศัพท์"}

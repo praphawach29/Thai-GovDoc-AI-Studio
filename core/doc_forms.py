@@ -182,10 +182,32 @@ def to_formal(doc: GovDocumentSchema, kind: DocumentKind, issuer: Optional[str] 
     return d
 
 
+def to_project(doc: GovDocumentSchema, agency: Optional[str] = None) -> GovDocumentSchema:
+    """แบบเสนอโครงการ กทม.: ชื่อโครงการ = subject, ส่วนอื่นเป็นโครงเปล่าใน doc.project
+    ไม่มีส่วนหัว/ท้ายของหนังสือ (ที่ วันที่ เรียน คำลงท้าย) — ช่องเหล่านั้นว่างไว้"""
+    from core.project import blank_project
+
+    d = doc.model_copy(deep=True)
+    d.kind = DocumentKind.PROJECT
+    d.doc_type = DocType.EXTERNAL
+    d.project = blank_project(agency=(agency or "").strip())
+    d.subject = "โครงการ[✏️ ระบุชื่อโครงการ]"
+    d.salutation = ""
+    d.closing = ""
+    d.references = None
+    d.attachments = None
+    d.co_signers = None
+    d.paragraph_reason = d.paragraph_details = d.paragraph_purpose = ""
+    d.memo_intro = d.memo_facts = d.memo_law = d.memo_consideration = d.memo_request = None
+    return d
+
+
 def apply_form(doc: GovDocumentSchema, kind: DocumentKind, issuer: Optional[str] = None) -> GovDocumentSchema:
     """แปลงร่างตามกฎ (หนังสือภายนอก) เป็นชนิดที่เลือก — ชนิดเดิม (ภายนอก/บันทึก) คืนค่าเดิม
     issuer = ชื่อส่วนราชการ (ไม่มีที่อยู่/โทรศัพท์) จากโปรไฟล์หน่วยงาน
     เนื้อความเป็นโครงของชนิดนั้น (ร่างตามกฎของหนังสือภายนอกใช้กับแบบอื่นไม่ได้) — AI เขียนทับเมื่อร่างสำเร็จ"""
+    if kind == DocumentKind.PROJECT:
+        return to_project(doc, agency=issuer)
     if kind == DocumentKind.STAMP_LETTER:
         d = to_stamp_letter(doc, sender=issuer)
     elif kind in FORMAL:

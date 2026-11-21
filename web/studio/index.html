@@ -150,6 +150,7 @@
               <option value="announcement">ประกาศ</option>
               <option value="regulation">ระเบียบ</option>
               <option value="bylaw">ข้อบังคับ</option>
+              <option value="project">โครงการ (แบบ กทม.)</option>
             </select>
           </label>
           <label class="min-w-0 inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-within:border-slate-300 text-sm font-medium transition cursor-pointer" title="หน่วยออกหนังสือ: กำหนดส่วนราชการและรูปแบบเลขที่ของบันทึกข้อความ">
@@ -201,8 +202,12 @@
           <option value="announcement">ประกาศ</option>
           <option value="regulation">ระเบียบ</option>
           <option value="bylaw">ข้อบังคับ</option>
+          <option value="project">โครงการ (แบบ กทม.)</option>
         </select>
       </label>
+      <button type="button" id="btn-word-template" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition" title="แนบไฟล์ Word ฉบับเดิม ให้ AI แก้ข้อความโดยคงรูปแบบ ตาราง และระยะเดิมทั้งหมด">
+        <i class="fa-regular fa-file-word text-blue-600"></i><span>ใช้ Word เป็นแม่แบบ</span>
+      </button>
       <button type="button" data-open="templates" class="flex items-center gap-2 px-3.5 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium shadow-xs transition">
         <i class="fa-regular fa-clone text-amber-600"></i><span>คลังแม่แบบ</span>
       </button>
@@ -275,10 +280,37 @@
   </div>
 </div>
 
+<!-- ===== Modal: ใช้ไฟล์ Word เป็นแม่แบบ (word-template.js) ===== -->
+<div id="modal-wt" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="wt-title" hidden>
+  <div class="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden animate-fadeIn">
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+      <h3 id="wt-title" class="text-base font-semibold text-slate-900"><i class="fa-regular fa-file-word text-blue-600 mr-2"></i>ใช้ไฟล์ Word เป็นแม่แบบ</h3>
+      <button type="button" data-close class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60" aria-label="ปิด"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="wt-form" class="flex-1 overflow-y-auto p-5 space-y-4 text-sm">
+      <p class="text-xs text-slate-500">ระบบคงรูปแบบของไฟล์เดิมทั้งหมด (ฟอนต์ ตาราง ระยะ ตัวหนา ครุฑ) — AI แก้เฉพาะข้อความในย่อหน้าที่มีอยู่
+        แล้วให้คุณตรวจทุกจุดก่อนดาวน์โหลด · เพิ่มย่อหน้า/แถวตารางใหม่ไม่ได้ (ทำต่อใน Word)</p>
+      <label class="block"><span class="font-medium text-slate-700">ไฟล์ Word แม่แบบ (.docx)</span>
+        <input id="wt-file" type="file" accept=".docx" required class="mt-1 block w-full text-xs file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700"></label>
+      <label class="block"><span class="font-medium text-slate-700">ต้องการให้แก้อะไร</span>
+        <textarea id="wt-prompt" rows="3" class="mt-1 w-full rounded-xl border-slate-300 text-sm" placeholder="เช่น ปรับเป็นโครงการปีงบประมาณ 2572 ระยะเวลา พ.ย. 71 – พ.ค. 72"></textarea></label>
+      <label class="block"><span class="font-medium text-slate-700">ข้อมูลใหม่ที่จะใส่ <span class="font-normal text-slate-400">(ไม่บังคับ — วางข้อความจากต้นเรื่อง)</span></span>
+        <textarea id="wt-source" rows="3" class="mt-1 w-full rounded-xl border-slate-300 text-sm"></textarea></label>
+      <div class="flex items-center justify-between gap-3">
+        <label class="flex items-center gap-2 text-xs text-slate-600"><span>ชั้นความลับ</span>
+          <select id="wt-secret" class="rounded-lg border-slate-300 text-xs py-1"><option value="normal">ปกติ</option><option value="secret">ลับ (ไม่ส่งให้ AI)</option></select></label>
+        <button id="wt-propose" type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"><i class="fa-solid fa-wand-magic-sparkles"></i><span>ให้ AI เสนอการแก้</span></button>
+      </div>
+      <section id="wt-review" class="space-y-3 border-t border-slate-100 pt-4" hidden></section>
+    </form>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="auth.js"></script>
 <script src="studio.js"></script>
 <script src="source-viewer.js"></script>
 <script src="home.js"></script>
+<script src="word-template.js"></script>
 </body>
 </html>
