@@ -184,6 +184,8 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
    ต้นแบบนำเสนอผู้มีอำนาจคนใด ให้เสนอผู้มีอำนาจคนเดียวกันเมื่อคำขอเป็นแบบเดียวกัน
    คำขอที่ต้นแบบไม่มี ให้ร่างตามแนวเดียวกัน; คำขอในต้นแบบที่เรื่องใหม่ไม่มี ให้ตัดออก
    ห้ามมอบหมายหน่วยงานที่ต้นเรื่องไม่ได้ขอความอนุเคราะห์ (เช่น ต้นแบบมีสำนักการแพทย์ แต่เรื่องใหม่ไม่ได้ขอ = ไม่ใส่)
+12. ตัวเลขใน <source> ที่ตามด้วย [ลายมือ] คือเลขที่อ่านจากลายมือ/ตรายาง (อาจคลาด) — เมื่อนำไปใช้ให้คัดลอกพร้อมป้าย
+   ตรงตัว เช่น "ที่ กท ๐๒๐๐/๕๗๕๙[ลายมือ]" ระบบจะเปลี่ยนเป็นจุดให้ผู้ใช้ตรวจเอง
 """
 
 
@@ -723,6 +725,12 @@ OCR_PROMPT = (
     "คำที่อ่านไม่ออกให้เขียนว่า [อ่านไม่ออก] ห้ามเดาหรือเติมข้อความที่ไม่มีในภาพ "
     "ขึ้นต้นแต่ละหน้าด้วยบรรทัด '--- หน้าที่ N ---' ตอบเป็นข้อความล้วน ไม่ต้องอธิบายเพิ่ม"
 )
+# ต้นเรื่องที่จะร่างหนังสือ: ตัวเลขลายมือ/ตรายางอ่านคลาดบ่อย (แต่ละรอบได้เลขต่างกัน) — ติดป้ายไว้ให้ระบบเว้นเป็นจุดตรวจ
+# ป้ายนี้แปลงเป็น [✏️ ...] ในร่างโดย core/handwriting.py
+OCR_HANDWRITING = (
+    " ตัวเลขที่เขียนด้วยลายมือหรือประทับด้วยตรายาง (เช่น เลขที่หนังสือในเกษียน เลขรับ) "
+    "ให้ต่อท้ายตัวเลขนั้นทันทีด้วย [ลายมือ] เช่น 'ที่ กท ๐๒๐๐/๕๗๕๙[ลายมือ]' ตัวเลขที่พิมพ์ไม่ต้องใส่"
+)
 OcrProvider = Callable[[list, LLMConfig, float], str]
 
 
@@ -735,11 +743,11 @@ def _jpeg_b64(image) -> str:
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
 
 
-def _ocr_claude(images: list, config: LLMConfig, timeout_s: float) -> str:
+def _ocr_claude(images: list, config: LLMConfig, timeout_s: float, prompt: str = OCR_PROMPT) -> str:
     client = _anthropic_client(config, timeout_s)
     content = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": _jpeg_b64(img)}}
                for img in images]
-    content.append({"type": "text", "text": OCR_PROMPT})
+    content.append({"type": "text", "text": prompt})
     kwargs = dict(model=config.claude_model, max_tokens=16000,
                   messages=[{"role": "user", "content": content}],
                   output_config={"effort": "low"})          # ถอดข้อความไม่ต้องคิดลึก เร็วกว่า
@@ -751,7 +759,7 @@ def _ocr_claude(images: list, config: LLMConfig, timeout_s: float) -> str:
     return "".join(b.text for b in response.content if b.type == "text").strip()
 
 
-def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float) -> str:
+def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float, prompt: str = OCR_PROMPT) -> str:
     from google import genai
     from google.genai import types
 
@@ -761,7 +769,7 @@ def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float) -> str:
 
     parts = [types.Part.from_bytes(data=base64.standard_b64decode(_jpeg_b64(img)), mime_type="image/jpeg")
              for img in images]
-    response = _gemini_generate(client, config.gemini_model, [*parts, OCR_PROMPT])
+    response = _gemini_generate(client, config.gemini_model, [*parts, prompt])
     return (response.text or "").strip()
 
 
@@ -779,16 +787,26 @@ def ocr_images_with_llm(
     budget_s: float = 25.0,
     providers: Optional[List[Tuple[str, str, OcrProvider]]] = None,
     clock: Callable[[], float] = time.monotonic,
+    mark_handwriting: bool = False,
 ) -> LLMOcrResult:
     """ถอดข้อความจากภาพทุกหน้าในคำขอเดียว ตามลำดับ provider_order (ค่าเริ่มต้น Gemini แล้ว Claude)
-    ผู้เรียกต้องตรวจชั้นความลับก่อนเรียก (เอกสารลับห้ามส่งออก)"""
+    ผู้เรียกต้องตรวจชั้นความลับก่อนเรียก (เอกสารลับห้ามส่งออก)
+    mark_handwriting = ติดป้าย [ลายมือ] หลังตัวเลขลายมือ/ตรายาง (ต้นเรื่องที่จะร่างหนังสือ)"""
+    from functools import partial
+
     result = LLMOcrResult()
     if providers is None:
+        def with_prompt(fn):
+            import inspect
+
+            takes_prompt = "prompt" in inspect.signature(fn).parameters   # ตัวแทนในชุดทดสอบรับ ๓ อาร์กิวเมนต์
+            return partial(fn, prompt=OCR_PROMPT + OCR_HANDWRITING) if mark_handwriting and takes_prompt else fn
+
         available = {}
         if config.gemini_api_key:
-            available["gemini"] = ("gemini", config.gemini_model, _ocr_gemini)
+            available["gemini"] = ("gemini", config.gemini_model, with_prompt(_ocr_gemini))
         if config.anthropic_api_key:
-            available["claude"] = ("claude", config.claude_model, _ocr_claude)
+            available["claude"] = ("claude", config.claude_model, with_prompt(_ocr_claude))
         providers = _ordered(config, available)
     if not images or not providers:
         return result

@@ -15,6 +15,7 @@ from core.ai_drafter import draft_from_context_rule_based
 from core.classifier import ClassificationResult, classify_source_document
 from core.extractor import extract_from_raw_text, extract_source_document
 from core.fact_check import FactIssue, check_facts, source_text_of
+from core.handwriting import flag_handwritten, strip_tags
 from core.linter import LintResult, lint_gov_document
 import logging
 import re
@@ -356,7 +357,7 @@ def start_draft(
     ocr_attempts = []
 
     def ai_ocr(images):
-        ocr = ocr_images_with_llm(images, llm, budget_s=llm.ocr_timeout_s)
+        ocr = ocr_images_with_llm(images, llm, budget_s=llm.ocr_timeout_s, mark_handwriting=True)
         ocr_attempts.extend(ocr.attempts)
         label = {"gemini": "Gemini", "claude": "Claude"}.get(ocr.provider, ocr.provider)
         return ocr.text, (f"{label} ({ocr.model})" if ocr.text else None)
@@ -470,10 +471,16 @@ def start_draft(
                     key="style", label="อ้างสำนวนจากตัวอย่างของหน่วย",
                     detail=f"{len(examples)} ฉบับ: " + " · ".join(f"เรื่อง{(e.get('subject') or '-')[:60]}" for e in examples)))
             # สรุปต้นเรื่องที่ AI เขียนมาพร้อมร่าง (ไม่เรียก AI เพิ่ม) แทนบรรทัดที่ตัดมาจากต้นเรื่อง
-            summary = _clean_summary(ai.content.source_summary)
+            summary = _clean_summary(strip_tags(ai.content.source_summary))
             if summary:
                 ctx.summary, ctx.summary_by_ai = summary, True
         result.steps.append(_ai_step(ai))
+    # ตัวเลขลายมือ/ตรายางที่ AI อ่าน (ติดป้ายตอนอ่านไฟล์) → จุดตรวจกับไฟล์สแกน
+    handwritten = flag_handwritten(doc, ctx.raw_text or "")
+    if handwritten:
+        result.steps.append(StudioStep(
+            key="handwriting", label="ตัวเลขลายมือในต้นเรื่อง",
+            detail=f"{handwritten} จุด เว้นเป็นจุดต้องระบุ — AI อ่านลายมือคลาดได้ เทียบกับไฟล์สแกน"))
     result.document = normalize_for_editor(doc)
     result.check = check_document(doc)
     result.check.facts = check_facts(result.document, source_text_of(ctx.raw_text, prompt if file_path else ""))
