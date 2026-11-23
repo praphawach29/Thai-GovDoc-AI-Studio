@@ -111,3 +111,13 @@ def test_top_request_used_only_at_last_unit():
     assert back.memo_request == units[1].request_text
     doc.memo_request_top = None
     assert apply_issuing_unit(doc, units[-1], units=units, replace_request=True).memo_request == units[-1].request_text
+
+
+def test_closing_written_by_ai_in_consideration_is_not_printed_twice():
+    content = _content("")
+    content = content.model_copy(update={"memo_consideration": "พิจารณาแล้ว เห็นควร\n๑. เห็นชอบ\nจึงเรียนมาเพื่อโปรดพิจารณานำเรียนผู้อำนวยการกองการกีฬาลงนามในหนังสือที่แนบ"})
+    doc = _memo()
+    doc.memo_request = "จึงเรียนมาเพื่อโปรดพิจารณานำเรียนผู้อำนวยการกองการกีฬาลงนามในหนังสือที่แนบ"
+    out = apply_draft_content(doc, content)
+    assert "จึงเรียนมาเพื่อ" not in out.memo_consideration and out.memo_consideration.endswith("๑. เห็นชอบ")
+    assert out.paragraph_purpose.count("จึงเรียนมาเพื่อ") == 1

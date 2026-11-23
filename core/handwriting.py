@@ -58,7 +58,8 @@ def flag_text(text: str, numbers: Set[str]) -> str:
             out.append(f"[✏️ ระบุเลขลายมือ (AI อ่านได้ {m.group(0)})]")
             last = m.end()
     out.append(text[last:])
-    return "".join(out).replace("\0", "")
+    # "๐๒๐๐/ ๒๖๙๔" (AI เว้นวรรคหลังทับ) → "๐๒๐๐/[✏️ ...]" ติดกันเหมือนเลขที่ปกติ
+    return re.sub(r"/\s+(\[✏️ ระบุเลขลายมือ)", r"/\1", "".join(out).replace("\0", ""))
 
 
 def flag_handwritten(doc: GovDocumentSchema, source: str) -> int:

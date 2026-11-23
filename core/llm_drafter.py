@@ -706,8 +706,14 @@ def apply_draft_content(doc: GovDocumentSchema, content: DraftContent) -> GovDoc
     if ref and updated.references is not None:
         updated.references = [ref if ref.startswith("หนังสือ") else f"หนังสือ{ref}"]
     if updated.doc_type == DocType.INTERNAL:
+        from core.memo_layout import split_consideration_and_request
+
         for key in ("memo_intro", "memo_facts", "memo_consideration"):
             value = getattr(content, key)
+            if key == "memo_consideration" and value:
+                # AI เขียน "จึงเรียนมาเพื่อ..." ท้ายข้อพิจารณาเองได้ — ภาคความประสงค์มาจากขั้นการเสนอ (memo_request)
+                # ตัดทิ้ง ไม่งั้นหนังสือพิมพ์ประโยคปิดท้ายสองครั้ง
+                value, _ = split_consideration_and_request(value, None)
             if value:
                 setattr(updated, key, value)
         # ข้อกฎหมายผ่านการตรวจกับต้นเรื่อง/ต้นแบบใน draft_content_with_llm แล้ว (ground_law)

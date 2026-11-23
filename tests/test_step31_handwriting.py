@@ -56,3 +56,7 @@ def test_ocr_prompt_marks_handwriting_only_when_asked(monkeypatch):
     ocr_images_with_llm(["img"], cfg, mark_handwriting=True)
     ocr_images_with_llm(["img"], cfg)
     assert OCR_HANDWRITING in seen[0] and OCR_HANDWRITING not in seen[1]
+
+
+def test_check_point_sits_right_after_slash():
+    assert flag_text("ที่ กท ๐๒๐๐/ ๒๖๙๔[ลายมือ] ลงวันที่", set()) == "ที่ กท ๐๒๐๐/[✏️ ระบุเลขลายมือ (AI อ่านได้ ๒๖๙๔)] ลงวันที่"
