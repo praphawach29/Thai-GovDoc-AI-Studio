@@ -475,6 +475,14 @@ def start_draft(
             if summary:
                 ctx.summary, ctx.summary_by_ai = summary, True
         result.steps.append(_ai_step(ai))
+        if ai.content is not None and ai.review_issues:
+            if ai.repaired:
+                left = len(ai.review_left)
+                detail = (f"พบ {len(ai.review_issues)} จุด · AI แก้แล้ว"
+                          + (f" · ยังเหลือ {left} จุด ตรวจในป้าย \"ต้องแก้\"" if left else " ครบทุกจุด"))
+            else:
+                detail = f"พบ {len(ai.review_issues)} จุด · ไม่ได้แก้อัตโนมัติ ({ai.review_skipped or 'AI แก้ไม่สำเร็จ'})"
+            result.steps.append(StudioStep(key="review", label="ตรวจร่างแล้วให้ AI แก้หนึ่งรอบ", ok=ai.repaired and not ai.review_left, detail=detail))
     # ตัวเลขลายมือ/ตรายางที่ AI อ่าน (ติดป้ายตอนอ่านไฟล์) → จุดตรวจกับไฟล์สแกน
     handwritten = flag_handwritten(doc, ctx.raw_text or "")
     if handwritten:

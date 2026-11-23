@@ -124,6 +124,11 @@ def _blank(text: str, span: Tuple[int, int]) -> str:
 
 def check_facts(doc: GovDocumentSchema, source_text: str, *, min_source_chars: int = 40) -> List[FactIssue]:
     """ข้อเท็จจริงในร่างที่หาในต้นเรื่องไม่เจอ (ไม่มีต้นเรื่อง = ไม่ตรวจ)"""
+    return check_fields(_fields(doc), source_text, min_source_chars=min_source_chars)
+
+
+def check_fields(fields: List[Tuple[str, str]], source_text: str, *, min_source_chars: int = 40) -> List[FactIssue]:
+    """เหมือน check_facts แต่รับ [(ชื่อช่อง, ข้อความ)] ตรง ๆ — ใช้ตรวจคำตอบของ AI ก่อนใส่ลงเอกสาร (core/draft_review)"""
     if len(normalize(source_text).strip()) < min_source_chars:
         return []
     src = _source_facts(source_text)
@@ -136,7 +141,9 @@ def check_facts(doc: GovDocumentSchema, source_text: str, *, min_source_chars: i
         seen.add((field_name, kind, key))
         issues.append(FactIssue(field=field_name, kind=kind, text=shown.strip(), message=message))
 
-    for name, raw in _fields(doc):
+    for name, raw in fields:
+        if not (raw or "").strip():
+            continue
         shown_text = _PLACEHOLDER.sub(lambda m: " " * len(m.group(0)), raw.replace("​", ""))
         t = normalize(shown_text)
         for m in _DATE.finditer(t):

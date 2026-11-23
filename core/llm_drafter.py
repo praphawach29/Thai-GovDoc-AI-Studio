@@ -147,6 +147,10 @@ class LLMDraftResult:
     masked: str = ""                         # ข้อมูลส่วนบุคคลที่ปิดก่อนส่ง เช่น "ชื่อ 2 · โทรศัพท์ 1"
     law_dropped: int = 0                     # บรรทัดข้อกฎหมายที่ตัดทิ้งเพราะไม่พบในต้นเรื่อง/ต้นแบบ
     top_request_ok: bool = True              # False = ตัดการอ้างอำนาจในภาคความประสงค์ขั้นสูงสุดเพราะไม่พบในแหล่ง
+    review_issues: List[str] = field(default_factory=list)   # ปัญหาที่ตรวจพบในร่างรอบแรก (core/draft_review)
+    review_left: List[str] = field(default_factory=list)     # ปัญหาที่ยังเหลือหลังรอบแก้
+    repaired: bool = False                   # AI แก้ตามผลตรวจแล้วหนึ่งรอบ
+    review_skipped: str = ""                 # พบปัญหาแต่ไม่ได้แก้ เพราะอะไร
 
 
 # ---------------------------------------------------------------- prompt
@@ -326,6 +330,7 @@ def build_user_prompt(
   (เช่น ส่งฉบับแก้ไขวันจัดงานมาใหม่ ให้เป็นข้อ ๒ และระบุว่าเปลี่ยนแปลงอะไรจากข้อ ๑)
   ในแต่ละข้อ ไล่การสั่งการตามเกษียนทีละขั้นตามลำดับจริง: ใครเสนอใคร (เลขที่/วันที่บันทึก) → ใครมอบหมายหน่วยใด
   ให้ทำอะไร (พิจารณาดำเนินการ / ทราบ / สำเนาส่งเพื่อทราบ) → ต่อลงมาจนถึงหน่วยผู้ร่าง ห้ามข้ามหรือสลับหน่วยที่ได้รับมอบหมาย
+  จบที่การมอบหมายมายังผู้รับบันทึกนี้หรือหน่วยผู้ร่าง — ไม่ต้องเขียนต่อว่าผู้รับบันทึกมอบเจ้าหน้าที่คนใด (ห้ามใส่ชื่อเจ้าหน้าที่)
   ไม่ต้องใส่วันที่ที่ลงนามสั่งการในเกษียนแต่ละขั้น (เว้นแต่ต้นแบบใส่) — ใส่เฉพาะเลขที่/วันที่ของหนังสือและบันทึก
   คำย่อในเกษียนเขียนเป็นคำเต็ม: "ลว. ๒๘ ก.ย. ๖๙" → "ลงวันที่ ๒๘ กันยายน ๒๕๖๙", ผว.กทม. → ผู้ว่าราชการกรุงเทพมหานคร,
   ป.กทม. → ปลัดกรุงเทพมหานคร, ลผว.กทม. → เลขานุการผู้ว่าราชการกรุงเทพมหานคร, ผอ.สนศ. → ผู้อำนวยการสำนักการศึกษา,
@@ -613,6 +618,7 @@ def draft_content_with_llm(
     """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)
     kind = PROJECT → ตอบเป็น ProjectContent (แบบเสนอโครงการ มีตาราง) แทน DraftContent; title = หน่วยงานของผู้ใช้
     law_sources = ข้อความที่ข้อกฎหมายต้องมีอยู่จริง (ต้นเรื่อง + ต้นแบบ) — ไม่ส่ง = ต้นเรื่องอย่างเดียว"""
+    from core.draft_review import remaining_ok, repair_prompt, review_memo, should_review
     from core.law_grounding import ground_citations, ground_law
     from functools import partial
 
@@ -649,6 +655,7 @@ def draft_content_with_llm(
     if len(source) > MAX_SOURCE_CHARS:
         source, result.truncated = source[:MAX_SOURCE_CHARS], True
     # ปิดข้อมูลส่วนบุคคลก่อนส่ง (ตัวอย่างสำนวนปิดด้วย mask_facts มาแล้ว)
+    unmasked_instruction, unmasked_recipient = instruction, recipient
     vault = PiiVault() if config.mask_pii else None
     if vault is not None:
         instruction, source = vault.mask(instruction), vault.mask(source)
@@ -662,6 +669,20 @@ def draft_content_with_llm(
                                    recipient=recipient, review_party=review_party, examples=examples, kind=kind,
                                    title=title)
 
+    def finish(raw):
+        """คำตอบดิบของ AI → ทำความสะอาด ใส่ข้อมูลส่วนบุคคลกลับ ตรวจข้อกฎหมาย/การอ้างอำนาจกับแหล่ง"""
+        content = clean_project(raw) if isinstance(raw, ProjectContent) else _clean(raw)
+        if vault is not None and vault.total:
+            content = _unmask_model(content, vault)
+        if isinstance(content, DraftContent):
+            grounding = "\n".join(x for x in (law_sources or source_text, unmasked_instruction) if x)
+            law, result.law_dropped = ground_law(content.memo_law, grounding)
+            top, result.top_request_ok = ground_citations(content.memo_request_top, grounding)
+            content = content.model_copy(update={"memo_law": law, "memo_request_top": top})
+        return content
+
+    review_source = "\n".join(x for x in (source_text, unmasked_instruction) if x)
+    memo = doc_type == DocType.INTERNAL and kind in (None, DocumentKind.INTERNAL_MEMO)
     deadline = clock() + (config.total_timeout_s if budget_s is None else budget_s)
     for index, (name, model, call) in enumerate(providers):
         remaining = deadline - clock()
@@ -674,20 +695,33 @@ def draft_content_with_llm(
         started = clock()
         try:
             raw = call(prompt, config, budget)
-            content = clean_project(raw) if isinstance(raw, ProjectContent) else _clean(raw)
-            if vault is not None and vault.total:
-                content = _unmask_model(content, vault)
-            if isinstance(content, DraftContent):
-                grounding = "\n".join(x for x in (law_sources or source_text, instruction) if x)
-                law, result.law_dropped = ground_law(content.memo_law, grounding)
-                top, result.top_request_ok = ground_citations(content.memo_request_top, grounding)
-                content = content.model_copy(update={"memo_law": law, "memo_request_top": top})
+            content = finish(raw)
         except Exception as exc:  # สลับไปตัวถัดไปเสมอ — เหตุผลบันทึกไว้แสดงในขั้นตอน
             _log_failure("draft", name, model, exc)
             result.attempts.append(LLMAttempt(name, model, False, _short_error(exc), round(clock() - started, 1)))
             continue
-        result.attempts.append(LLMAttempt(name, model, True, seconds=round(clock() - started, 1)))
+        first_s = clock() - started
+        result.attempts.append(LLMAttempt(name, model, True, seconds=round(first_s, 1)))
         result.content, result.provider, result.model = content, name, model
+        # ตรวจร่างแล้วให้ AI ตัวเดิมแก้หนึ่งรอบถ้าเวลาเหลือพอ — แก้ไม่สำเร็จ/หมดเวลา = ใช้ร่างรอบแรก
+        if isinstance(content, DraftContent) and should_review(content, memo):
+            result.review_issues = review_memo(content, review_source, recipient=unmasked_recipient)
+            remaining = deadline - clock()
+            if result.review_issues and remaining_ok(remaining, first_s):
+                # รายการปัญหาอาจมีข้อมูลจากต้นเรื่อง — ปิดด้วยรหัสเดียวกับคำขอแรก; ร่างรอบแรกส่งแบบที่ยังปิดอยู่ (raw)
+                issues = [vault.mask(x) for x in result.review_issues] if vault is not None else result.review_issues
+                started = clock()
+                try:
+                    fixed = finish(call(repair_prompt(prompt, raw.model_dump_json(), issues), config, remaining - 2))
+                    result.content, result.repaired = fixed, True
+                    result.review_left = review_memo(fixed, review_source, recipient=unmasked_recipient)
+                    result.attempts.append(LLMAttempt(name, model, True, "แก้ตามผลตรวจ", round(clock() - started, 1)))
+                except Exception as exc:
+                    _log_failure("repair", name, model, exc)
+                    result.attempts.append(LLMAttempt(name, model, False, "แก้ตามผลตรวจไม่สำเร็จ: " + _short_error(exc),
+                                                      round(clock() - started, 1)))
+            elif result.review_issues:
+                result.review_skipped = "เวลาไม่พอสำหรับรอบแก้"
         return result
     return result
 
