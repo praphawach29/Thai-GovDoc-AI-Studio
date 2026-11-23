@@ -113,7 +113,7 @@ def test_draft_passes_kind_to_prompt():
 
     def fake(prompt, config, timeout):
         seen["prompt"] = prompt
-        return DraftContent(subject="ขอเอกสาร", memo_intro="", memo_facts="", memo_consideration="",
+        return DraftContent(analysis="", memo_law="", subject="ขอเอกสาร", memo_intro="", memo_facts="", memo_consideration="",
                             paragraph_reason="ตามที่ ... นั้น", paragraph_details="", paragraph_purpose="จึงเรียนมาเพื่อโปรดทราบ",
                             reference="", source_summary="")
 

@@ -17,6 +17,7 @@ from core.extractor import extract_from_raw_text, extract_source_document
 from core.fact_check import FactIssue, check_facts, source_text_of
 from core.linter import LintResult, lint_gov_document
 import logging
+import re
 import time
 
 from core.llm_drafter import LLMConfig, apply_draft_content, draft_content_with_llm, ocr_images_with_llm
@@ -432,13 +433,27 @@ def start_draft(
             recipient=recipient if doc.doc_type == DocType.INTERNAL else "",
             review_party=review_party if doc.doc_type == DocType.INTERNAL else "",
             examples="\n\n".join(x for x in (references_block(references), few_shot_block(examples)) if x),
+            # ข้อกฎหมายคัดได้จากต้นเรื่องและต้นแบบที่แนบเท่านั้น (ตรวจทีละบรรทัดหลัง AI ตอบ)
+            law_sources="\n".join(x for x in (ctx.raw_text, template_text) if x),
         )
         result.ai_provider = ai.provider or None
         if ai.content is not None and references:
-            result.steps.append(StudioStep(key="template", label="อ่านเทียบต้นแบบที่แนบแล้วร่างตามรูปแบบ",
-                                           detail=" · ".join(n for n, _ in references)))
+            analysis = " ".join((getattr(ai.content, "analysis", "") or "").split())
+            result.steps.append(StudioStep(
+                key="template", label="วิเคราะห์เรื่องเทียบต้นแบบที่แนบแล้วร่างตามรูปแบบ",
+                detail=" · ".join([n for n, _ in references] + ([analysis[:400]] if analysis else []))))
         if ai.content is not None:
             doc = apply_draft_content(doc, ai.content)
+            if doc.doc_type == DocType.INTERNAL and (doc.memo_law or ai.law_dropped):
+                n_items = sum(1 for ln in (doc.memo_law or "").splitlines() if re.match(r"\s*[๐-๙0-9]+\.(?![๐-๙0-9])", ln))
+                detail = f"{n_items} ฉบับ คัดจากต้นเรื่อง/ต้นแบบ — ตรวจความเป็นปัจจุบันก่อนเสนอ" if doc.memo_law else "ไม่มี"
+                if ai.law_dropped:
+                    detail += f" · ตัด {ai.law_dropped} บรรทัดที่ไม่พบในต้นเรื่อง/ต้นแบบ"
+                result.steps.append(StudioStep(key="law", label="ข้อกฎหมาย", detail=detail))
+            # ต้นแบบบันทึกข้อความไม่มีหัวข้ออ้างถึง → ไม่ใส่อ้างถึง (เรื่องอยู่ในต้นเรื่องแล้ว)
+            if (doc.doc_type == DocType.INTERNAL and references
+                    and not any(re.search(r"(?m)^\s*อ้างถึง", t) for _, t in references)):
+                doc.references = None
             if examples:
                 result.style_examples = [StyleExampleRef(
                     id=str(e.get("id")), subject=e.get("subject") or "", doc_type=e.get("doc_type") or "",

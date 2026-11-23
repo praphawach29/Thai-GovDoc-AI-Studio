@@ -16,6 +16,7 @@ from core.models import DocType, SecretLevel
 from core.templates_library import PRESET_TEMPLATES
 
 CONTENT = DraftContent(
+    analysis="", memo_law="",
     subject="ขอความอนุเคราะห์ใช้อาคารกีฬา",
     memo_intro="๑. สมาคมกีฬา ได้มีหนังสือ ที่ [✏️ ระบุเลขที่] ขอใช้อาคาร",
     memo_facts="๑. ขอใช้อาคารวันที่ [✏️ ระบุวันที่]",

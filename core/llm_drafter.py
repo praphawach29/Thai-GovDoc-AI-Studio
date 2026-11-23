@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from core.models import DocType, DocumentKind, GovDocumentSchema, SecretLevel
 from core.pii_mask import PiiVault
@@ -34,8 +34,18 @@ _FALLBACK_MODELS = {"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "cl
 
 class DraftContent(BaseModel):
     """เนื้อความที่ AI เขียน — ช่องที่ไม่ใช้กับชนิดหนังสือนั้นให้เป็นข้อความว่าง"""
+    # ช่องแรก: ให้ AI วิเคราะห์เรื่องใหม่เทียบต้นแบบก่อนเขียน (ไม่พิมพ์ลงหนังสือ แสดงในขั้นตอน)
+    analysis: str = Field(
+        description="วิเคราะห์ก่อนร่าง (ไม่พิมพ์ลงหนังสือ) สั้น ๆ เป็นข้อ: คำขอแต่ละข้อของเรื่องใหม่ · "
+                    "ตรงกับข้อใดในต้นแบบ (ถ้ามี) · ต้องอาศัยข้อกฎหมาย/ระเบียบใดและใครมีอำนาจ (เห็นชอบ/อนุญาต/อนุมัติ) · "
+                    "ข้อเสนอที่ต้องมีในข้อพิจารณา ว่างได้ถ้าเรื่องง่าย",
+    )
     subject: str = Field(description="เรื่อง: สั้น กะทัดรัด ไม่ขึ้นต้นด้วยคำว่า 'เรื่อง'")
     memo_intro: str = Field(description="บันทึกข้อความ - ต้นเรื่อง")
+    memo_law: str = Field(
+        description="บันทึกข้อความ - ข้อกฎหมาย: คัดเฉพาะที่มีใน <source> หรือต้นแบบ <reference> ตรงตัว "
+                    "และเกี่ยวกับคำขอของเรื่องใหม่ ไม่มี = \"\"",
+    )
     memo_facts: str = Field(description="บันทึกข้อความ - ข้อเท็จจริง")
     memo_consideration: str = Field(description="บันทึกข้อความ - ข้อพิจารณาและเสนอแนะ")
     paragraph_reason: str = Field(description="หนังสือภายนอก - ภาคเหตุ")
@@ -50,6 +60,14 @@ class DraftContent(BaseModel):
         description="สรุปต้นเรื่อง ๓–๔ บรรทัดให้ผู้ใช้อ่านเร็ว (ใคร ขออะไร เมื่อไร/ที่ไหน ต้องทำอะไร) "
                     "ใช้เฉพาะข้อเท็จจริงในต้นเรื่อง ว่างได้ถ้าไม่มีต้นเรื่อง",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _optional_new_fields(cls, data):
+        """คำตอบที่ไม่มีช่องวิเคราะห์/ข้อกฎหมาย (โมเดลเก่า/ตัดคำตอบ) ยังใช้ได้ — schema ยังบังคับครบเพราะ Gemini ไม่รับ default"""
+        if isinstance(data, dict):
+            data = {"analysis": "", "memo_law": "", **data}
+        return data
 
 
 def _strict_schema(model=None) -> dict:
@@ -123,6 +141,7 @@ class LLMDraftResult:
     truncated: bool = False
     skipped_reason: str = ""                 # ไม่ได้เรียก AI เพราะอะไร (ไม่มีคีย์ / ชั้นความลับ)
     masked: str = ""                         # ข้อมูลส่วนบุคคลที่ปิดก่อนส่ง เช่น "ชื่อ 2 · โทรศัพท์ 1"
+    law_dropped: int = 0                     # บรรทัดข้อกฎหมายที่ตัดทิ้งเพราะไม่พบในต้นเรื่อง/ต้นแบบ
 
 
 # ---------------------------------------------------------------- prompt
@@ -132,7 +151,11 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
 กฎที่ต้องปฏิบัติ:
 1. ใช้เฉพาะข้อเท็จจริงที่มีในต้นเรื่องหรือคำสั่งของผู้ใช้ ห้ามแต่งชื่อบุคคล หน่วยงาน เลขที่หนังสือ วันที่ จำนวนเงิน หรือตัวเลขใดที่ไม่มีในต้นเรื่อง
 2. ข้อมูลที่จำเป็นแต่ไม่มีในต้นเรื่อง ให้เว้นเป็น [✏️ ระบุ...] เช่น [✏️ ระบุวันที่จัดงาน] เพื่อให้ผู้ใช้กรอกเอง
-3. ห้ามเขียนข้อกฎหมาย มาตรา หรือระเบียบที่ไม่ได้ยกมาในต้นเรื่อง (ผู้ใช้จะเลือกจากคลังกฎหมายที่ยืนยันแล้ว)
+3. ห้ามเขียนข้อกฎหมาย มาตรา ระเบียบ หรือหนังสือสั่งการที่ไม่ได้ยกมาใน <source> หรือในต้นแบบ <reference> ที่ผู้ใช้แนบ
+   (ต้นแบบคือหนังสือฉบับจริงที่ผ่านการอนุมัติแล้ว) — คัดชื่อกฎหมาย เลขมาตรา/ข้อ และข้อความตรงตัว ห้ามแต่งหรือสรุปใหม่
+   (แก้ได้เฉพาะคำที่สะกดเพี้ยนจากการอ่านไฟล์ เช่น สระ/วรรณยุกต์สลับที่ "อตั รา" → "อัตรา")
+   เลือกเฉพาะข้อที่เกี่ยวกับคำขอของเรื่องใหม่ (เช่น ขอใช้ตราสัญลักษณ์ → กฎหมายเครื่องหมายราชการ, ขอยกเว้นค่าใช้สถานที่ → ระเบียบเงินบำรุง)
+   ไม่มีทั้งสองแหล่ง = เว้นว่าง (ผู้ใช้จะเลือกจากคลังกฎหมายที่ยืนยันแล้ว)
 4. เขียนเฉพาะเนื้อความ ไม่ต้องเขียนส่วนราชการ ที่ วันที่ คำขึ้นต้น ชื่อหรือตำแหน่งผู้ลงนาม
 5. แยกข้อด้วยการขึ้นบรรทัดใหม่ ใช้เลขข้อแบบ "๑." และข้อย่อย "๑.๑" ไม่ใช้สัญลักษณ์ markdown (เช่น ** หรือ -)
 6. ตอบเป็น JSON ตาม schema เท่านั้น ช่องที่ไม่ใช้กับชนิดหนังสือนี้ให้เป็นข้อความว่าง ""
@@ -150,6 +173,12 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
 10. รหัสในวงเล็บเหลี่ยม เช่น [ชื่อ_1] [เลขบัตร_1] [โทร_1] [อีเมล_1] [บัญชี_1] [ที่อยู่_1] คือข้อมูลส่วนบุคคลที่ระบบปิดไว้
    รหัสเดียวกันคือคนหรือค่าเดียวกัน เมื่อต้องเขียนถึงให้คัดลอกรหัสตรงตัว (ไม่ต้องเติมคำนำหน้าชื่อ ไม่แปลงเลขในรหัสเป็นเลขไทย)
    ห้ามเดาค่าจริง ระบบจะใส่ค่าจริงกลับเอง
+11. ถ้ามีต้นแบบ <reference> ให้เขียนช่อง analysis ก่อน: เทียบคำขอแต่ละข้อของเรื่องใหม่กับต้นแบบ ว่าตรงกับข้อใด
+   ต้องอาศัยข้อกฎหมายใด ใครมีอำนาจ แล้วร่างทุกหัวข้อให้ "ครบและเรียงเหมือนต้นแบบ" (รวมหัวข้อข้อกฎหมาย
+   ข้อเสนอแยกเห็นชอบ/อนุญาต/อนุมัติ/มอบหมาย การอ้างข้อเท็จจริงเป็นเลขข้อ และสำนวนขึ้นต้น-ลงท้ายของแต่ละหัวข้อ)
+   ต้นแบบนำเสนอผู้มีอำนาจคนใด ให้เสนอผู้มีอำนาจคนเดียวกันเมื่อคำขอเป็นแบบเดียวกัน
+   คำขอที่ต้นแบบไม่มี ให้ร่างตามแนวเดียวกัน; คำขอในต้นแบบที่เรื่องใหม่ไม่มี ให้ตัดออก
+   ห้ามมอบหมายหน่วยงานที่ต้นเรื่องไม่ได้ขอความอนุเคราะห์ (เช่น ต้นแบบมีสำนักการแพทย์ แต่เรื่องใหม่ไม่ได้ขอ = ไม่ใส่)
 """
 
 
@@ -286,6 +315,7 @@ def build_user_prompt(
 เขียนช่องต่อไปนี้ (ช่อง paragraph_* ให้เป็น ""):
 - subject: เรื่อง
 - memo_intro (ต้นเรื่อง): ที่มาของเรื่อง เช่น "๑. [หน่วยงาน] ได้มีหนังสือ ที่ ... ลงวันที่ ... เรียน ... เรื่อง ... ขอ ..." แยกข้อถ้ามีหลายฉบับ
+- memo_law (ข้อกฎหมาย): ตามกฎข้อ ๓ — "๑. <ชื่อกฎหมาย> (เอกสาร ๑)" แล้วบรรทัดถัดไป "มาตรา/ข้อ <เลข> <ข้อความ>" ไม่มี = ""
 - memo_facts (ข้อเท็จจริง): รายละเอียดคำขอ วัน เวลา สถานที่ ผลการตรวจสอบหรือประสานงาน แยกเป็นข้อ
 - memo_consideration (ข้อพิจารณาและเสนอแนะ): ขึ้นต้นด้วย "{party}พิจารณาแล้ว เห็นว่า ..." แล้ว "จึงเห็นควร ..." แยกข้อเสนอเป็นข้อ ๑. ๑.๑ ได้
   ไม่ต้องเขียนประโยคปิดท้าย "จึงเรียนมาเพื่อ..." (ระบบเติมตามขั้นการเสนอ)"""
@@ -557,9 +587,12 @@ def draft_content_with_llm(
     examples: str = "",
     kind: Optional[DocumentKind] = None,
     title: str = "",
+    law_sources: Optional[str] = None,
 ) -> LLMDraftResult:
     """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)
-    kind = PROJECT → ตอบเป็น ProjectContent (แบบเสนอโครงการ มีตาราง) แทน DraftContent; title = หน่วยงานของผู้ใช้"""
+    kind = PROJECT → ตอบเป็น ProjectContent (แบบเสนอโครงการ มีตาราง) แทน DraftContent; title = หน่วยงานของผู้ใช้
+    law_sources = ข้อความที่ข้อกฎหมายต้องมีอยู่จริง (ต้นเรื่อง + ต้นแบบ) — ไม่ส่ง = ต้นเรื่องอย่างเดียว"""
+    from core.law_grounding import ground_law
     from functools import partial
 
     from core.project_ai import ProjectContent, build_project_prompt, clean_project
@@ -623,6 +656,10 @@ def draft_content_with_llm(
             content = clean_project(raw) if isinstance(raw, ProjectContent) else _clean(raw)
             if vault is not None and vault.total:
                 content = _unmask_model(content, vault)
+            if isinstance(content, DraftContent) and content.memo_law:
+                law, result.law_dropped = ground_law(
+                    content.memo_law, "\n".join(x for x in (law_sources or source_text, instruction) if x))
+                content = content.model_copy(update={"memo_law": law})
         except Exception as exc:  # สลับไปตัวถัดไปเสมอ — เหตุผลบันทึกไว้แสดงในขั้นตอน
             _log_failure("draft", name, model, exc)
             result.attempts.append(LLMAttempt(name, model, False, _short_error(exc), round(clock() - started, 1)))
@@ -651,7 +688,8 @@ def apply_draft_content(doc: GovDocumentSchema, content: DraftContent) -> GovDoc
             value = getattr(content, key)
             if value:
                 setattr(updated, key, value)
-        updated.memo_law = None
+        # ข้อกฎหมายผ่านการตรวจกับต้นเรื่อง/ต้นแบบใน draft_content_with_llm แล้ว (ground_law)
+        updated.memo_law = (content.memo_law or "").strip() or None
         updated.paragraph_reason = updated.memo_intro or updated.paragraph_reason
         updated.paragraph_details = updated.memo_facts or updated.paragraph_details
         updated.paragraph_purpose = "\n\n".join(
