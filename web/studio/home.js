@@ -35,6 +35,8 @@
       $('btn-signout').hidden = false;
       $('btn-signout').addEventListener('click', () => auth.signOut());
       const me = await api.me();
+      // เมนู "ผู้ใช้ในหน่วย" เฉพาะผู้ดูแล (API ตรวจสิทธิ์ซ้ำ)
+      document.querySelector('[data-open="users"]').hidden = me.role !== 'admin';
       const person = personName(me.full_name);
       const email = me.email || '';
       const local = email.split('@')[0];
@@ -1068,7 +1070,118 @@
     }
   }
 
-  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงาน' };
+  // ---------- ผู้ใช้ในหน่วย (เฉพาะผู้ดูแล): เชิญด้วยอีเมล → ผู้ถูกเชิญลงทะเบียนเองที่หน้าเข้าสู่ระบบ ----------
+  const ROLE_LABEL = { admin: 'ผู้ดูแล', clerk: 'ธุรการ', drafter: 'ผู้ร่าง', approver: 'ผู้อนุมัติ', disabled: 'ระงับการใช้งาน' };
+  const INVITE_STATE = { open: ['รอลงทะเบียน', 'bg-amber-50 text-amber-800'], used: ['ลงทะเบียนแล้ว', 'bg-emerald-50 text-emerald-800'],
+    expired: ['หมดอายุ', 'bg-slate-100 text-slate-500'], revoked: ['ยกเลิกแล้ว', 'bg-slate-100 text-slate-500'] };
+  const roleOptions = (current, withDisabled) => Object.entries(ROLE_LABEL)
+    .filter(([k]) => withDisabled || k !== 'disabled')
+    .map(([k, v]) => `<option value="${k}" ${k === current ? 'selected' : ''}>${v}</option>`).join('');
+  const thaiDate = (iso) => iso ? new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '';
+  let usData = { me: '', users: [], invites: [] };
+
+  async function renderUsers() {
+    const list = $('us-list'), invites = $('us-invites');
+    if (!list) return;
+    try { usData = await api.users.list(); }
+    catch (err) { list.innerHTML = `<p class="text-xs text-rose-700">${esc(err.message)}</p>`; invites.innerHTML = ''; return; }
+    list.innerHTML = usData.users.map((u) => {
+      const self = u.user_id === usData.me;
+      return `<div class="flex items-center gap-2 px-3 py-2.5 border rounded-xl bg-white text-xs ${u.role === 'disabled' ? 'border-slate-200 opacity-60' : 'border-slate-200'}">
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-slate-800 font-body text-sm truncate">${esc(u.full_name || u.email || '—')}${self ? ' <span class="text-[10px] font-normal text-slate-400">(คุณ)</span>' : ''}</div>
+          <div class="text-slate-500 truncate">${esc([u.full_name ? u.email : '', u.position, u.role === 'disabled' ? 'ระงับการใช้งาน' : ''].filter(Boolean).join(' · '))}</div>
+        </div>
+        <select data-us-role="${esc(u.user_id)}" ${self ? 'disabled title="เปลี่ยนบทบาทของตัวเองไม่ได้"' : ''} aria-label="บทบาทของ ${esc(u.full_name || u.email)}"
+          class="shrink-0 border border-slate-200 rounded-md bg-white py-1 pl-2 pr-7 text-xs focus:ring-0">${roleOptions(u.role, true)}</select>
+      </div>`;
+    }).join('') || '<p class="text-xs text-slate-400">ยังไม่มีผู้ใช้</p>';
+    const rows = usData.invites.filter(i => i.state !== 'used');
+    invites.innerHTML = rows.length ? rows.map((i) => {
+      const [label, cls] = INVITE_STATE[i.state] || [i.state, ''];
+      return `<div class="flex items-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded-xl text-xs">
+        <div class="flex-1 min-w-0">
+          <div class="text-slate-800 truncate">${esc(i.email)} <span class="text-slate-500">· ${esc(ROLE_LABEL[i.role] || i.role)}</span></div>
+          <div class="text-slate-500 truncate">${esc(i.full_name || '')}${i.state === 'open' ? ' · หมดอายุ ' + thaiDate(i.expires_at) : ''}</div>
+        </div>
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded ${cls}">${label}</span>
+        ${i.state === 'open' ? `<button type="button" data-us-revoke="${esc(i.id)}" class="shrink-0 px-2 h-7 rounded-md text-slate-500 hover:text-rose-600 hover:bg-rose-50">ยกเลิก</button>` : ''}
+      </div>`;
+    }).join('') : '<p class="text-xs text-slate-400">ไม่มีคำเชิญค้าง</p>';
+  }
+
+  async function onInvite(e) {
+    e.preventDefault();
+    const err = $('us-error');
+    const fields = { email: $('us-email').value.trim(), full_name: $('us-name').value.trim(), position: $('us-position').value.trim(), role: $('us-role').value };
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(fields.email)) { err.textContent = 'ใส่อีเมลให้ถูกต้อง'; err.hidden = false; $('us-email').focus(); return; }
+    err.hidden = true;
+    $('us-send').disabled = true;
+    try {
+      await api.users.invite(fields);
+      $('us-form').reset();
+      const link = new URL('login.html?mode=signup', location.href).href;
+      $('us-done').innerHTML = `เชิญ <b>${esc(fields.email)}</b> แล้ว — ส่งลิงก์นี้ให้ลงทะเบียนด้วยอีเมลนี้ (ใช้ได้ ๑๔ วัน):
+        <span class="block mt-1 font-mono break-all select-all">${esc(link)}</span>`;
+      $('us-done').hidden = false;
+      await renderUsers();
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    finally { $('us-send').disabled = false; }
+  }
+
+  async function onUsersChange(e) {
+    const sel = e.target.closest('[data-us-role]');
+    if (!sel) return;
+    const user = usData.users.find(u => u.user_id === sel.dataset.usRole);
+    const role = sel.value;
+    if (role === 'disabled' && !confirm(`ระงับการใช้งานของ ${user?.full_name || user?.email}? (เข้าระบบได้แต่ไม่เห็นข้อมูลใด เปิดใช้คืนได้ภายหลัง)`)) { sel.value = user.role; return; }
+    try { await api.users.setRole(sel.dataset.usRole, role); toast('เปลี่ยนเป็น ' + ROLE_LABEL[role] + ' แล้ว'); }
+    catch (ex) { toast(ex.message, 'error'); }
+    await renderUsers();
+  }
+
+  async function onUsersClick(e) {
+    const b = e.target.closest('[data-us-revoke]');
+    if (!b) return;
+    if (!confirm('ยกเลิกคำเชิญนี้? (อีเมลนี้จะลงทะเบียนเข้าหน่วยงานไม่ได้จนกว่าจะเชิญใหม่)')) return;
+    try { await api.users.revoke(b.dataset.usRevoke); toast('ยกเลิกคำเชิญแล้ว'); }
+    catch (ex) { toast(ex.message, 'error'); }
+    await renderUsers();
+  }
+
+  panels.users = async (body) => {
+    body.innerHTML = `
+      <p class="text-xs text-slate-500 mb-3">เชิญด้วยอีเมล แล้วให้ผู้ถูกเชิญเปิดหน้าเข้าสู่ระบบ กด <b>ลงทะเบียนด้วยคำเชิญ</b> ตั้งรหัสผ่านเอง —
+        ระบบผูกเข้าหน่วยงานพร้อมชื่อ ตำแหน่ง และบทบาทที่กำหนดให้อัตโนมัติ · ทุกคนในหน่วยงานเห็นร่างของกันและกัน</p>
+      <form id="us-form" class="mb-3 p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 text-xs space-y-2.5" novalidate>
+        <div class="font-semibold text-slate-800"><i class="fa-solid fa-user-plus text-emerald-700 mr-1"></i>เชิญผู้ใช้</div>
+        <label class="block"><span class="text-slate-600">อีเมล</span>
+          <input id="us-email" type="email" maxlength="254" autocomplete="off" placeholder="name@bangkok.go.th" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>
+        <div class="grid sm:grid-cols-2 gap-2.5">
+          <label class="block"><span class="text-slate-600">ชื่อ-นามสกุล</span>
+            <input id="us-name" type="text" maxlength="200" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-body focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>
+          <label class="block"><span class="text-slate-600">ตำแหน่ง</span>
+            <input id="us-position" type="text" maxlength="300" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-body focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>
+        </div>
+        <div class="flex flex-wrap items-end gap-2.5">
+          <label class="block"><span class="text-slate-600">บทบาท</span>
+            <select id="us-role" class="mt-1 block border border-slate-300 rounded-lg bg-white py-1.5 pl-2.5 pr-8 text-sm focus:ring-0">${roleOptions('drafter', false)}</select></label>
+          <button type="submit" id="us-send" class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-paper-plane"></i><span>เชิญ</span></button>
+        </div>
+        <p id="us-error" class="text-rose-700" hidden></p>
+        <p id="us-done" class="text-emerald-800 leading-relaxed" hidden></p>
+      </form>
+      <div class="text-xs font-semibold text-slate-500 mb-1.5">ผู้ใช้ในหน่วยงาน</div>
+      <div id="us-list" class="space-y-2 mb-4"><p class="text-xs text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลด...</p></div>
+      <div class="text-xs font-semibold text-slate-500 mb-1.5">คำเชิญ</div>
+      <div id="us-invites" class="space-y-2"></div>`;
+    await renderUsers();
+    $('us-form').addEventListener('submit', onInvite);
+    $('us-list').addEventListener('change', onUsersChange);
+    $('us-invites').addEventListener('click', onUsersClick);
+  };
+
+  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงาน', users: 'ผู้ใช้ในหน่วย' };
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => {
     const key = b.dataset.open;
     setSidebar(false);

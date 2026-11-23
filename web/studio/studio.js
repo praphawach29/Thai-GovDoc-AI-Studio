@@ -108,6 +108,13 @@
       update: (id, fields) => sendJSON('PATCH', '/signers/' + encodeURIComponent(id), fields).then(r => r.json()),
       remove: (id) => request('/signers/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json()),
     },
+    // ผู้ใช้ของหน่วยงาน (เฉพาะผู้ดูแล): เชิญด้วยอีเมล / ยกเลิกคำเชิญ / เปลี่ยนบทบาท-ระงับ
+    users: {
+      list: () => request('/users').then(r => r.json()),
+      invite: (fields) => postJSON('/users/invites', fields).then(r => r.json()),
+      revoke: (id) => request('/users/invites/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json()),
+      setRole: (userId, role) => sendJSON('PATCH', '/users/' + encodeURIComponent(userId), { role }).then(r => r.json()),
+    },
     health: () => fetch(API + '/health').then(r => r.ok),
     me: () => request('/me').then(r => r.json()),
     // โหมดเซิร์ฟเวอร์: อัปโหลดไฟล์ต้นเรื่องตรงเข้า Supabase Storage (ไม่ผ่าน API ซึ่งรับไฟล์ใหญ่ไม่ได้)

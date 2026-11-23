@@ -61,13 +61,30 @@
     if (error) throw new Error(error.message === 'Invalid login credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : error.message);
   }
 
+  // ลงทะเบียนด้วยอีเมลที่ได้รับเชิญ (migration 15: trigger ผูกเข้าหน่วยงานตามคำเชิญ)
+  // คืน true = เข้าสู่ระบบแล้ว, false = ต้องยืนยันอีเมลก่อน (โปรเจกต์เปิดการยืนยันอีเมล)
+  async function signUp(email, password) {
+    await loadConfig();
+    const { data, error } = await client.auth.signUp({
+      email, password, options: { emailRedirectTo: new URL(LOGIN_PAGE, location.href).href },
+    });
+    if (error) {
+      const m = error.message || '';
+      if (/already registered|already exists/i.test(m)) throw new Error('อีเมลนี้ลงทะเบียนไว้แล้ว — ใช้ "เข้าสู่ระบบ" แทน');
+      if (/signups? not allowed|disabled/i.test(m)) throw new Error('ระบบยังไม่เปิดให้ลงทะเบียน — แจ้งผู้ดูแลให้เปิด Email sign up ใน Supabase');
+      if (/password/i.test(m)) throw new Error('รหัสผ่านไม่ผ่านเงื่อนไขของระบบ: ' + m);
+      throw new Error(m);
+    }
+    return !!data.session;
+  }
+
   async function signOut() {
     if (client) await client.auth.signOut();
     goLogin();
   }
 
   window.GovDocAuth = {
-    ready, token, signIn, signOut,
+    ready, token, signIn, signUp, signOut,
     serverMode: async () => (await loadConfig()).auth_required,
     config: loadConfig,
   };
