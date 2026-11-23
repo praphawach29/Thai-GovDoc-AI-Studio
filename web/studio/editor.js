@@ -1954,6 +1954,18 @@
     }
   }
   new ResizeObserver(fitToolbar).observe($('toolbar'));
+  // ปุ่มที่โผล่ทีหลัง (เสนอขั้นถัดไป/ออกเลข/ชุดเสนอ) ข้อความป้าย "ต้องแก้" และฟอนต์ที่โหลดเสร็จ ไม่ได้เปลี่ยนขนาดแถบ
+  // ResizeObserver จึงไม่ทำงาน — จัดใหม่ทุกครั้งที่เนื้อหาในแถบเปลี่ยน (รวบเป็นครั้งเดียวต่อเฟรม)
+  let fitQueued = false;
+  const queueFit = () => {
+    if (fitQueued) return;
+    fitQueued = true;
+    requestAnimationFrame(() => { fitQueued = false; fitToolbar(); });
+  };
+  new MutationObserver(queueFit).observe($('toolbar'), {
+    subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class'],
+  });
+  document.fonts?.ready.then(queueFit);
 
   // ---------- เรนเดอร์ทั้งหมด ----------
   function renderAll() {

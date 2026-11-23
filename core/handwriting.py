@@ -50,8 +50,10 @@ def flag_text(text: str, numbers: Set[str]) -> str:
     for m in _NUMBER.finditer(text):
         if any(a <= m.start() < b for a, b in chips):
             continue
-        marked = text[m.end():m.end() + 1] == "\0"
-        if marked or _key(m.group(0)) in numbers:
+        key = _key(m.group(0))
+        # ป้ายที่ AI คัดมาด้วยใช้กฎเดียวกับต้นเรื่อง: ปีและเลข ๑–๒ หลัก (วันที่) ไม่ทำเป็นจุด — ตัดป้ายทิ้งเฉย ๆ
+        marked = text[m.end():m.end() + 1] == "\0" and len(key) >= _MIN_DIGITS and not _is_year(key)
+        if marked or key in numbers:
             out.append(text[last:m.start()])
             out.append(f"[✏️ ระบุเลขลายมือ (AI อ่านได้ {m.group(0)})]")
             last = m.end()

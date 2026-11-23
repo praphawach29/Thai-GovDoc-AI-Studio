@@ -23,6 +23,11 @@ def test_flag_text_turns_handwritten_numbers_into_check_points():
     assert "๒๘ กันยายน ๒๕๖๙" in out and "[ลายมือ]" not in out and "\0" not in out
 
 
+def test_tagged_years_and_days_copied_by_ai_are_not_check_points():
+    text = "ลงวันที่ ๒๘[ลายมือ] กันยายน ๒๕๖๙[ลายมือ] เรียน ปลัดฯ ที่ ๐๒๐๐/๖๖๘๒[ลายมือ]"
+    assert flag_text(text, set()) == "ลงวันที่ ๒๘ กันยายน ๒๕๖๙ เรียน ปลัดฯ ที่ ๐๒๐๐/[✏️ ระบุเลขลายมือ (AI อ่านได้ ๖๖๘๒)]"
+
+
 def test_flag_text_leaves_existing_chips_and_typed_numbers():
     text = "ที่ [✏️ ระบุเลขที่ ๕๗๕๙] หนังสือ ที่ สวปท.๑๔/๒๕๖๙"
     assert flag_text(text, {"5759"}) == text
