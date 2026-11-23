@@ -27,6 +27,30 @@ def _found(line: str, corpus: str) -> bool:
     return len(key) < _MIN_KEY or key[:_PREFIX] in corpus
 
 
+# ชื่อกฎหมาย/หนังสือสั่งการที่ยกมาในประโยคอ้างอำนาจ ("ระเบียบ" ที่อยู่ในชื่อ พ.ร.บ. ไม่นับเป็นฉบับใหม่)
+_CITE = re.compile(r"พระราชบัญญัติ|พระราชกฤษฎีกา|กฎกระทรวง|ข้อบัญญัติ|ประกาศ|คำสั่ง|(?<!พระราชบัญญัติ)ระเบียบ(?!และกฎหมาย)|หนังสือกรุงเทพมหานคร")
+_SECTION = re.compile(r"(?:มาตรา|ข้อ)\s*[\d๐-๙]+(?:\s*\([\d๐-๙]+\))?")
+
+
+def ground_citations(text: str, sources: str) -> Tuple[str, bool]:
+    """ประโยคที่อ้างกฎหมาย (เช่น ภาคความประสงค์ "อำนาจ...เป็นของผู้ว่าฯ ตาม พ.ร.บ. ... มาตรา ๔๙ (๒)")
+    ทุกการอ้าง (ชื่อกฎหมายจนถึงมาตรา/ข้อสุดท้ายของช่วงนั้น) ต้องมีในแหล่งตรงตัว
+    ไม่ผ่าน → ตัดตั้งแต่ "อำนาจ" ทิ้ง (ไม่มีคำนี้ = ทิ้งทั้งประโยค) คืน (ข้อความ, ผ่านทั้งหมดไหม)"""
+    text = (text or "").strip()
+    if not text:
+        return "", True
+    corpus = _norm(sources)
+    starts = [m.start() for m in _CITE.finditer(text)]
+    for i, start in enumerate(starts):
+        span = text[start:starts[i + 1] if i + 1 < len(starts) else len(text)]
+        sections = list(_SECTION.finditer(span))
+        span = span[:sections[-1].end()] if sections else span[:40]
+        if _norm(span) not in corpus:
+            cut = text.find("อำนาจ")
+            return (text[:cut].rstrip() if cut > 0 else ""), False
+    return text, True
+
+
 def ground_law(law: str, sources: str) -> Tuple[str, int]:
     """คืน (ข้อกฎหมายเฉพาะส่วนที่พบในแหล่ง, จำนวนบรรทัดที่ตัดทิ้ง)"""
     lines = [ln.rstrip() for ln in (law or "").splitlines() if ln.strip()]

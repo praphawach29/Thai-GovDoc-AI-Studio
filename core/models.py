@@ -613,6 +613,11 @@ class GovDocumentSchema(BaseModel):
     memo_law: Optional[str] = Field(default=None, description="ข้อกฎหมาย (ถ้ามี): กฎหมาย ระเบียบ หนังสือสั่งการ พร้อมมาตรา/ข้อที่เกี่ยวข้อง — ห้ามแต่งขึ้นเอง")
     memo_consideration: Optional[str] = Field(default=None, description="ข้อพิจารณาและเสนอแนะ: ความเห็นของหน่วยงานและข้อเสนอ (แยกข้อ ๑., ๑.๑ ได้)")
     memo_request: Optional[str] = Field(default=None, description="ภาคความประสงค์ เช่น 'จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดลงนามในหนังสือที่แนบ'")
+    memo_request_top: Optional[str] = Field(
+        default=None,
+        description="ภาคความประสงค์ของขั้นสูงสุดในสายเสนอ (เสนอปลัดฯ นำเรียนผู้ว่าฯ) ที่ AI ร่างตามต้นแบบ พร้อมอ้างอำนาจ "
+                    "— ใช้แทนข้อความมาตรฐานของหน่วยขั้นสุดท้ายเมื่อเสนอถึงขั้นนั้น (core/issuing_units)",
+    )
     memo_heading_style: Literal["bma", "numbered"] = Field(
         default="bma",
         description="รูปแบบหัวข้อบันทึกข้อความ: 'bma' = หัวข้อขีดเส้นใต้ ลำดับ ต้นเรื่อง-ข้อกฎหมาย-ข้อเท็จจริง-ข้อพิจารณาฯ, 'numbered' = ๑. ต้นเรื่อง ๒. ข้อเท็จจริง ๓. ข้อกฎหมาย ๔. ข้อพิจารณาฯ",

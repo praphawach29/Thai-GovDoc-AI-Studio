@@ -450,6 +450,14 @@ def start_draft(
                 if ai.law_dropped:
                     detail += f" · ตัด {ai.law_dropped} บรรทัดที่ไม่พบในต้นเรื่อง/ต้นแบบ"
                 result.steps.append(StudioStep(key="law", label="ข้อกฎหมาย", detail=detail))
+            # ภาคความประสงค์ขั้นสูงสุด (อ้างอำนาจ) มาจากต้นแบบเท่านั้น — ไม่มีต้นแบบใช้ข้อความมาตรฐานของหน่วย
+            if not references:
+                doc.memo_request_top = None
+            elif doc.memo_request_top or not ai.top_request_ok:
+                result.steps.append(StudioStep(
+                    key="top_request", label="ภาคความประสงค์ขั้นเสนอปลัดฯ ตามต้นแบบ",
+                    detail=("ใช้เมื่อกด \"เสนอขั้นถัดไป\" ถึงขั้นสูงสุด"
+                            + ("" if ai.top_request_ok else " · ตัดการอ้างอำนาจที่ไม่พบในต้นแบบออก"))))
             # ต้นแบบบันทึกข้อความไม่มีหัวข้ออ้างถึง → ไม่ใส่อ้างถึง (เรื่องอยู่ในต้นเรื่องแล้ว)
             if (doc.doc_type == DocType.INTERNAL and references
                     and not any(re.search(r"(?m)^\s*อ้างถึง", t) for _, t in references)):

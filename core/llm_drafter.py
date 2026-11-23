@@ -48,6 +48,10 @@ class DraftContent(BaseModel):
     )
     memo_facts: str = Field(description="บันทึกข้อความ - ข้อเท็จจริง")
     memo_consideration: str = Field(description="บันทึกข้อความ - ข้อพิจารณาและเสนอแนะ")
+    memo_request_top: str = Field(
+        description="บันทึกข้อความ - ภาคความประสงค์ของขั้นสูงสุด (เสนอปลัดฯ นำเรียนผู้ว่าฯ) ตามต้นแบบ "
+                    "พร้อมข้อที่ขอให้เห็นชอบ/อนุญาต/อนุมัติ/สั่งการ และอำนาจตามกฎหมาย ไม่มีต้นแบบ = \"\"",
+    )
     paragraph_reason: str = Field(description="หนังสือภายนอก - ภาคเหตุ")
     paragraph_details: str = Field(description="หนังสือภายนอก - ภาคข้อเท็จจริง (ว่างได้)")
     paragraph_purpose: str = Field(description="หนังสือภายนอก - ภาคความประสงค์")
@@ -66,7 +70,7 @@ class DraftContent(BaseModel):
     def _optional_new_fields(cls, data):
         """คำตอบที่ไม่มีช่องวิเคราะห์/ข้อกฎหมาย (โมเดลเก่า/ตัดคำตอบ) ยังใช้ได้ — schema ยังบังคับครบเพราะ Gemini ไม่รับ default"""
         if isinstance(data, dict):
-            data = {"analysis": "", "memo_law": "", **data}
+            data = {"analysis": "", "memo_law": "", "memo_request_top": "", **data}
         return data
 
 
@@ -142,6 +146,7 @@ class LLMDraftResult:
     skipped_reason: str = ""                 # ไม่ได้เรียก AI เพราะอะไร (ไม่มีคีย์ / ชั้นความลับ)
     masked: str = ""                         # ข้อมูลส่วนบุคคลที่ปิดก่อนส่ง เช่น "ชื่อ 2 · โทรศัพท์ 1"
     law_dropped: int = 0                     # บรรทัดข้อกฎหมายที่ตัดทิ้งเพราะไม่พบในต้นเรื่อง/ต้นแบบ
+    top_request_ok: bool = True              # False = ตัดการอ้างอำนาจในภาคความประสงค์ขั้นสูงสุดเพราะไม่พบในแหล่ง
 
 
 # ---------------------------------------------------------------- prompt
@@ -318,7 +323,12 @@ def build_user_prompt(
 - memo_law (ข้อกฎหมาย): ตามกฎข้อ ๓ — "๑. <ชื่อกฎหมาย> (เอกสาร ๑)" แล้วบรรทัดถัดไป "มาตรา/ข้อ <เลข> <ข้อความ>" ไม่มี = ""
 - memo_facts (ข้อเท็จจริง): รายละเอียดคำขอ วัน เวลา สถานที่ ผลการตรวจสอบหรือประสานงาน แยกเป็นข้อ
 - memo_consideration (ข้อพิจารณาและเสนอแนะ): ขึ้นต้นด้วย "{party}พิจารณาแล้ว เห็นว่า ..." แล้ว "จึงเห็นควร ..." แยกข้อเสนอเป็นข้อ ๑. ๑.๑ ได้
-  ไม่ต้องเขียนประโยคปิดท้าย "จึงเรียนมาเพื่อ..." (ระบบเติมตามขั้นการเสนอ)"""
+  ไม่ต้องเขียนประโยคปิดท้าย "จึงเรียนมาเพื่อ..." (ระบบเติมตามขั้นการเสนอ)
+- memo_request_top (ภาคความประสงค์ขั้นสูงสุด เสนอปลัดฯ): เขียนเฉพาะเมื่อต้นแบบ <reference> มีฉบับที่เสนอปลัดฯ/ผู้มีอำนาจ
+  ให้ใช้โครงประโยคเดียวกับต้นแบบ เช่น "จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดนำเรียน<ผู้มีอำนาจ> เพื่อโปรดพิจารณา
+  ให้ความเห็นชอบตามข้อ ๑.๑ อนุญาตตามข้อ ๑.๒ ... อำนาจในการ...เป็นของ<ผู้มีอำนาจ> ตาม<กฎหมาย มาตรา/ข้อ> ... และ<ผู้รับ>ได้โปรดสั่งการตามข้อ ๒"
+  เลขข้อต้องตรงกับ memo_consideration ของเรื่องใหม่; อ้างอำนาจได้เฉพาะกฎหมายและมาตรา/ข้อที่ต้นแบบอ้างไว้ (คัดตรงตัว)
+  และเฉพาะที่เกี่ยวกับข้อเสนอของเรื่องใหม่; ไม่มีต้นแบบ = \"\""""
     else:
         kind = f"""ชนิดหนังสือ: หนังสือภายนอก{(' ถึง ' + recipient) if recipient else ''}
 เขียนช่องต่อไปนี้ (ช่อง memo_* ให้เป็น ""):
@@ -592,7 +602,7 @@ def draft_content_with_llm(
     """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)
     kind = PROJECT → ตอบเป็น ProjectContent (แบบเสนอโครงการ มีตาราง) แทน DraftContent; title = หน่วยงานของผู้ใช้
     law_sources = ข้อความที่ข้อกฎหมายต้องมีอยู่จริง (ต้นเรื่อง + ต้นแบบ) — ไม่ส่ง = ต้นเรื่องอย่างเดียว"""
-    from core.law_grounding import ground_law
+    from core.law_grounding import ground_citations, ground_law
     from functools import partial
 
     from core.project_ai import ProjectContent, build_project_prompt, clean_project
@@ -656,10 +666,11 @@ def draft_content_with_llm(
             content = clean_project(raw) if isinstance(raw, ProjectContent) else _clean(raw)
             if vault is not None and vault.total:
                 content = _unmask_model(content, vault)
-            if isinstance(content, DraftContent) and content.memo_law:
-                law, result.law_dropped = ground_law(
-                    content.memo_law, "\n".join(x for x in (law_sources or source_text, instruction) if x))
-                content = content.model_copy(update={"memo_law": law})
+            if isinstance(content, DraftContent):
+                grounding = "\n".join(x for x in (law_sources or source_text, instruction) if x)
+                law, result.law_dropped = ground_law(content.memo_law, grounding)
+                top, result.top_request_ok = ground_citations(content.memo_request_top, grounding)
+                content = content.model_copy(update={"memo_law": law, "memo_request_top": top})
         except Exception as exc:  # สลับไปตัวถัดไปเสมอ — เหตุผลบันทึกไว้แสดงในขั้นตอน
             _log_failure("draft", name, model, exc)
             result.attempts.append(LLMAttempt(name, model, False, _short_error(exc), round(clock() - started, 1)))
@@ -690,6 +701,7 @@ def apply_draft_content(doc: GovDocumentSchema, content: DraftContent) -> GovDoc
                 setattr(updated, key, value)
         # ข้อกฎหมายผ่านการตรวจกับต้นเรื่อง/ต้นแบบใน draft_content_with_llm แล้ว (ground_law)
         updated.memo_law = (content.memo_law or "").strip() or None
+        updated.memo_request_top = (content.memo_request_top or "").strip() or None
         updated.paragraph_reason = updated.memo_intro or updated.paragraph_reason
         updated.paragraph_details = updated.memo_facts or updated.paragraph_details
         updated.paragraph_purpose = "\n\n".join(

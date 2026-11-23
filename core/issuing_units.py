@@ -109,12 +109,15 @@ def apply_issuing_unit(
         updated.signatory_stamp = signers[0].stamp
         updated.co_signers = signers[1:] or None
     updated.memo_consideration = _swap_review_party(updated.memo_consideration, unit, units)
-    if unit.request_text:
+    # ขั้นสูงสุดของสาย (หน่วยสุดท้าย) ใช้ภาคความประสงค์ที่ร่างตามต้นแบบพร้อมอ้างอำนาจ ถ้ามี
+    top = (doc.memo_request_top or "").strip()
+    request = top if top and units and unit.key == units[-1].key else unit.request_text
+    if request:
         # แทนเฉพาะภาคความประสงค์ที่ว่างหรือเป็นข้อความมาตรฐานของหน่วยอื่น (ไม่ทับข้อความที่ผู้ใช้เขียนเอง)
-        standard = {u.request_text.strip() for u in units if u.request_text}
+        standard = {u.request_text.strip() for u in units if u.request_text} | ({top} if top else set())
         current = (updated.memo_request or "").strip()
         if replace_request or not current or current in standard:
-            updated.memo_request = unit.request_text
+            updated.memo_request = request
     return updated
 
 
