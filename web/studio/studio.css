@@ -65,7 +65,7 @@
 /* Placeholder [✏️ ระบุ...] */
 /* inline-block: ย่อหน้ากระจายแบบไทย (inter-character) ไม่ยืดช่องไฟตัวอักษรในจุด — จุดยาวเคยถูกยืดเต็มบรรทัด */
 .ph-chip {
-  display: inline-block; line-height: 1.25; padding: 0 .3em; border-radius: 4px; border: 1px dashed #fcd34d;
+  display: inline-block; line-height: 1.25; text-indent: 0; /* inline-block รับย่อหน้าบรรทัดแรกของย่อหน้ามา → กล่องกว้างเกิน */ padding: 0 .3em; border-radius: 4px; border: 1px dashed #fcd34d;
   background: #fffbeb; color: #92400e; font-family: 'Prompt', sans-serif; font-size: 10pt;
   white-space: nowrap;
 }

@@ -131,6 +131,12 @@ def try_extract_ocr_multi_engine(
     return "", None
 
 
+def broken_text_layer(text: str) -> bool:
+    """ข้อความจากชั้นข้อความ PDF ที่ตัวอักษรไม่มีรหัส Unicode ("(cid:12)") มากจนอ่านไม่ได้"""
+    cids = text.count("(cid:")
+    return cids >= 5 and cids * 200 >= len(text)
+
+
 def extract_text_from_pdf(
     pdf_path: str, api_key: Optional[str] = None, allow_cloud: bool = True, ocr_fn=None
 ) -> Tuple[str, bool, int, Optional[str], bool, Optional[str], Optional[str]]:
@@ -179,7 +185,9 @@ def extract_text_from_pdf(
             pass
 
     digital_text = "\n\n".join(text_chunks).strip()
-    is_scanned = len(digital_text) < 50
+    # ชั้นข้อความเสีย (เช่น PDF ที่ระบบนี้ส่งออกด้วย TH SarabunIT๙ — สระ/วรรณยุกต์ไม่มีรหัส Unicode ออกมาเป็น "(cid:12)")
+    # ใช้อ่านไม่ได้ ให้อ่านจากภาพเหมือนไฟล์สแกน
+    is_scanned = len(digital_text) < 50 or broken_text_layer(digital_text)
 
     # 3. สร้างรูปภาพสำหรับพรีวิวและเตรียม OCR
     images = []

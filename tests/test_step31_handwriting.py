@@ -60,3 +60,10 @@ def test_ocr_prompt_marks_handwriting_only_when_asked(monkeypatch):
 
 def test_check_point_sits_right_after_slash():
     assert flag_text("ที่ กท ๐๒๐๐/ ๒๖๙๔[ลายมือ] ลงวันที่", set()) == "ที่ กท ๐๒๐๐/[✏️ ระบุเลขลายมือ (AI อ่านได้ ๒๖๙๔)] ลงวันที่"
+
+
+def test_broken_pdf_text_layer_is_read_as_scan():
+    from core.extractor import broken_text_layer
+    garbled = "บั(cid:2)นทึ(cid:5)กข้(cid:8)อความ ส่ว(cid:15) นราชการ สำนั(cid:4)กวัฒ(cid:4) นัธรรม ก(cid:12)ฬา " * 3
+    assert broken_text_layer(garbled)
+    assert not broken_text_layer("บันทึกข้อความ ส่วนราชการ สำนักวัฒนธรรม กีฬา และการท่องเที่ยว " * 40 + "(cid:3)")
