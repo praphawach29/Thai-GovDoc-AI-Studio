@@ -131,6 +131,24 @@ def check_document(doc: GovDocumentSchema) -> StudioCheck:
     return StudioCheck(placeholders=doc.find_placeholders(), lint=lint_gov_document(doc))
 
 
+def _left_detail(check: StudioCheck) -> str:
+    return f"เหลือจุดที่ต้องระบุ {len(check.placeholders)} จุด"
+
+
+def refresh_check(result: StudioDraftResult) -> StudioDraftResult:
+    """ตรวจเอกสารใหม่หลังแก้ภายหลัง (เช่น ใส่ค่าหน่วยออกหนังสือ/ผู้ลงนาม) — นับจุดที่ต้องระบุและ Linter
+    จากเอกสารฉบับสุดท้าย; ผลเทียบข้อเท็จจริงกับต้นเรื่อง (facts) คงไว้ เพราะเนื้อความไม่เปลี่ยน"""
+    if result.document is None:
+        return result
+    facts = result.check.facts if result.check else []
+    result.check = check_document(result.document)
+    result.check.facts = facts
+    for step in result.steps:
+        if step.key == "draft":
+            step.detail = _left_detail(result.check)
+    return result
+
+
 def create_blank_document(doc_type: DocType, profile: Optional[UserProfileSchema] = None,
                           kind: Optional[DocumentKind] = None) -> GovDocumentSchema:
     """เอกสารเปล่าพร้อม placeholder — ข้อมูลหน่วยงาน/ผู้ลงนามมาจากโปรไฟล์เท่านั้น
@@ -496,6 +514,6 @@ def start_draft(
         key="draft", label=("ร่างหนังสือตามโครงสร้าง ๓ ภาค" if classic_kind(kind)
                             else "ร่างโครงการตามรูปแบบการเขียนโครงการ กทม." if kind == DocumentKind.PROJECT
                             else f"ร่าง{FORM_LABELS[form]}ตามแบบในระเบียบ"),
-        detail=f"เหลือจุดที่ต้องระบุ {len(result.check.placeholders)} จุด",
+        detail=_left_detail(result.check),
     ))
     return result

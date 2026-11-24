@@ -113,6 +113,27 @@ def test_prompt_recipient_overrides_default_unit(client):
     assert body["unit_key"] == "culture-sports-bureau"
     assert body["document"]["salutation"] == "เรียน ปลัดกรุงเทพมหานคร"
     assert body["document"]["signatory_position"] == "ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว"
+    # จุดที่ต้องระบุนับจากฉบับที่ใส่ค่าหน่วยแล้ว: คำขึ้นต้นเป็นปลัดฯ แล้ว ไม่ค้างเป็น placeholder
+    placeholders = body["check"]["placeholders"]
+    assert not any(p.startswith("คำขึ้นต้น") for p in placeholders)
+    draft_step = next(s for s in body["steps"] if s["key"] == "draft")
+    assert draft_step["detail"] == f"เหลือจุดที่ต้องระบุ {len(placeholders)} จุด"
+
+
+def test_refresh_check_counts_unit_request_placeholder():
+    from core.studio import StudioDraftResult, StudioStep, check_document, refresh_check
+
+    units = default_issuing_units()
+    doc = PRESET_TEMPLATES["bma_cohost_request"].schema.model_copy(deep=True)
+    doc.memo_request_top = None
+    doc.memo_consideration = CONSIDERATION
+    before = check_document(doc)
+    result = StudioDraftResult(document=doc, check=before,
+                               steps=[StudioStep(key="draft", label="ร่าง", detail="เหลือจุดที่ต้องระบุ 0 จุด")])
+    result.document = apply_issuing_unit(doc, units[-1], DAY, units=units, replace_request=True)
+    refresh_check(result)
+    assert any(AUTHORITY_PLACEHOLDER in p for p in result.check.placeholders)
+    assert result.steps[0].detail == f"เหลือจุดที่ต้องระบุ {len(result.check.placeholders)} จุด"
 
 
 CONSIDERATION = """สำนักวัฒนธรรม กีฬา และการท่องเที่ยวพิจารณาแล้ว เห็นควร ดังนี้

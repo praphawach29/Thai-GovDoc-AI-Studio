@@ -20,6 +20,7 @@ from core.studio import (
     read_source_text,
     StudioDraftResult,
     check_document,
+    refresh_check,
     create_blank_document,
     normalize_for_editor,
     start_draft,
@@ -237,6 +238,8 @@ async def studio_draft(
         response.unit_key = unit.key if unit else unit_key
     elif response.document is not None:
         response.document = _fill_signers(response.document, user, settings, fresh=True)
+    # นับจุดที่ต้องระบุ/ตรวจระเบียบจากฉบับที่ใส่ค่าหน่วยและผู้ลงนามแล้ว (เดิมนับก่อน จึงไม่ตรงกับที่เห็น)
+    refresh_check(response)
     display_name = Path(file.filename).name if has_file else (Path(stored[1]).name if stored else None)
     if response.context is not None and display_name:
         response.context.source_filename = display_name
