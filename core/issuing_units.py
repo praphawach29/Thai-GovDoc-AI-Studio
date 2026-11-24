@@ -37,6 +37,23 @@ def pick_unit(units: Iterable[IssuingUnit], key: Optional[str] = None) -> Option
     return next((u for u in units if u.is_default), units[0] if units else None)
 
 
+def unit_named_in_prompt(units: Iterable[IssuingUnit], prompt: str) -> Optional[IssuingUnit]:
+    """หน่วยที่ผู้รับถูกระบุในคำสั่งว่า 'เสนอ <ผู้รับ>' หรือ 'ถึง <ผู้รับ>' (เช่น "ร่างบันทึกเสนอปลัดกรุงเทพมหานคร")
+
+    ไม่นับ 'เรียน ...' เพราะมักเป็นผู้รับของหนังสือต้นเรื่องที่ผู้ใช้วางมา; หลายหน่วยตรง = เอาที่ปรากฏก่อน
+    """
+    text = re.sub(r"[\s​]+", "", prompt or "")
+    best, best_pos = None, None
+    for unit in units:
+        recipient = re.sub(r"[\s​]+", "", unit.recipient or "")
+        if not recipient:
+            continue
+        m = re.search(r"(?:เสนอ|ถึง)" + re.escape(recipient), text)
+        if m and (best_pos is None or m.start() < best_pos):
+            best, best_pos = unit, m.start()
+    return best
+
+
 def next_unit(units: Iterable[IssuingUnit], key: str) -> Optional[IssuingUnit]:
     """หน่วยขั้นถัดไปในสายการเสนอ (หน่วยถัดไปในรายการ) หรือ None ถ้าเป็นขั้นสุดท้าย"""
     units = list(units)

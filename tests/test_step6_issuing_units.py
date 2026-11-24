@@ -8,7 +8,13 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from core.issuing_units import apply_issuing_unit, blank_day_date, format_doc_number, pick_unit
+from core.issuing_units import (
+    apply_issuing_unit,
+    blank_day_date,
+    format_doc_number,
+    pick_unit,
+    unit_named_in_prompt,
+)
 from core.linter import lint_gov_document
 from core.models import HANDWRITE_GAP, default_issuing_units, is_blank_doc_number
 from core.templates_library import PRESET_TEMPLATES
@@ -84,6 +90,26 @@ def test_draft_and_blank_use_selected_unit(client):
     blank = client.post("/api/v1/studio/blank", json={"doc_type": "internal"}).json()
     assert blank["dept_name"].startswith("กลุ่มงานส่งเสริมกีฬา โทร.")
     assert blank["doc_number"].endswith("/" + str(date.today().year + 543)) or blank["doc_number"].endswith("/2570")
+
+
+def test_unit_named_in_prompt():
+    units = default_issuing_units()
+    assert unit_named_in_prompt(units, "ร่างบันทึกข้อความเสนอปลัดกรุงเทพมหานคร").key == "culture-sports-bureau"
+    assert unit_named_in_prompt(units, "บันทึกถึง ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว").key == "sports-division"
+    # 'เรียน ...' ในหนังสือต้นเรื่องที่วางมาไม่นับ
+    assert unit_named_in_prompt(units, "หนังสือของสมาคม เรียน ปลัดกรุงเทพมหานคร ขอใช้สถานที่") is None
+    assert unit_named_in_prompt(units, "ขออนุมัติจัดอบรม") is None
+
+
+def test_prompt_recipient_overrides_default_unit(client):
+    res = client.post("/api/v1/studio/draft", data={
+        "prompt": "ร่างบันทึกข้อความเสนอปลัดกรุงเทพมหานคร ขออนุมัติจัดอบรมเจ้าหน้าที่ วันที่ ๑๐ ธันวาคม ๒๕๖๙",
+        "doc_type": "internal", "unit_key": "sport-promotion",
+    })
+    body = res.json()
+    assert body["unit_key"] == "culture-sports-bureau"
+    assert body["document"]["salutation"] == "เรียน ปลัดกรุงเทพมหานคร"
+    assert body["document"]["signatory_position"] == "ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว"
 
 
 # ---------------------------------------------------------------- API โหมด Supabase

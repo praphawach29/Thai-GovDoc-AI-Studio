@@ -471,7 +471,7 @@
       await openInEditor({
         doc: res.document, context: res.context, classification: res.classification,
         check: res.check, steps: res.steps, prompt, cloudBlocked: res.cloud_ai_blocked,
-        sourceName: state.file?.name || null, sourceFileId: res.source_file_id || null, unitKey: $('unit').value || null,
+        sourceName: state.file?.name || null, sourceFileId: res.source_file_id || null, unitKey: res.unit_key || $('unit').value || null,
         styleExamples: res.style_examples || [],
       });
     } catch (err) {
