@@ -115,6 +115,12 @@
       revoke: (id) => request('/users/invites/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json()),
       setRole: (userId, role) => sendJSON('PATCH', '/users/' + encodeURIComponent(userId), { role }).then(r => r.json()),
     },
+    // แจ้งปัญหา / ความเห็น (โหมดเซิร์ฟเวอร์): ผู้ดูแลเห็นทั้งหน่วยงาน คนอื่นเห็นของตัวเอง
+    feedback: {
+      send: (fields) => postJSON('/feedback', fields).then(r => r.json()),
+      list: (status) => request('/feedback' + (status ? '?status=' + encodeURIComponent(status) : '')).then(r => r.json()),
+      setStatus: (id, status) => sendJSON('PATCH', '/feedback/' + encodeURIComponent(id), { status }).then(r => r.json()),
+    },
     health: () => fetch(API + '/health').then(r => r.ok),
     me: () => request('/me').then(r => r.json()),
     // โหมดเซิร์ฟเวอร์: อัปโหลดไฟล์ต้นเรื่องตรงเข้า Supabase Storage (ไม่ผ่าน API ซึ่งรับไฟล์ใหญ่ไม่ได้)
@@ -285,5 +291,95 @@
     top_secret: { label: 'ลับที่สุด', cls: 'bg-rose-600 text-white border-rose-600' },
   };
 
-  window.GovDoc = { api, store, auth, toThai, esc, PH_RE, hasPlaceholder, relTime, download, toast, DOC_TYPE_LABEL, formKey, URGENCY, SECRET };
+  // ---------- แจ้งปัญหา: กล่องเดียวใช้ทั้งหน้าแรกและหน้าแก้ไข ----------
+  // ระบบแนบร่างที่เปิดอยู่ เวลา และข้อมูลประกอบให้เอง — ผู้ทดสอบเลือกระดับ หมวด แล้วเล่าสั้น ๆ
+  const FEEDBACK_RATING = [
+    ['ok', 'ใช้ได้เลย', 'fa-circle-check', 'text-emerald-700'],
+    ['minor', 'แก้นิดหน่อย', 'fa-pen', 'text-amber-700'],
+    ['major', 'แก้เยอะ', 'fa-triangle-exclamation', 'text-orange-700'],
+    ['broken', 'ใช้ไม่ได้ / ผิดพลาด', 'fa-circle-xmark', 'text-rose-700'],
+    ['idea', 'ข้อเสนอแนะ', 'fa-lightbulb', 'text-sky-700'],
+  ];
+  const FEEDBACK_CATEGORY = { content: 'เนื้อหาที่ AI ร่าง', layout: 'รูปแบบหน้ากระดาษ', export: 'ส่งออก Word / PDF', source: 'อ่านไฟล์ต้นเรื่อง',
+    speed: 'ช้า / ค้าง', ui: 'ใช้งานหน้าเว็บ', other: 'อื่น ๆ' };
+  function openFeedback({ documentId = null, page = '', context = {}, onSent = null } = {}) {
+    let box = document.getElementById('feedback-modal');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'feedback-modal';
+      box.className = 'fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm no-print';
+      box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'fb-title');
+      document.body.appendChild(box);
+    }
+    box.innerHTML = `
+      <form id="fb-form" class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden animate-fadeIn text-xs" novalidate>
+        <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <h3 id="fb-title" class="text-sm font-semibold text-slate-900"><i class="fa-solid fa-flag text-rose-600 mr-1"></i>แจ้งปัญหา / ความเห็น</h3>
+          <button type="button" data-fb-close class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60" aria-label="ปิด"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5 space-y-3.5">
+          <fieldset>
+            <legend class="text-slate-600 mb-1.5">${documentId ? 'ร่างฉบับนี้เป็นอย่างไร' : 'เรื่องที่จะแจ้ง'}</legend>
+            <div class="grid grid-cols-2 gap-1.5">${FEEDBACK_RATING.map(([k, label, icon, color]) => `
+              <label class="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer" data-fb-choice>
+                <input type="radio" name="fb-rating" value="${k}" class="sr-only">
+                <i class="fa-solid ${icon} ${color}"></i><span class="text-slate-800">${label}</span></label>`).join('')}
+            </div>
+          </fieldset>
+          <label class="block"><span class="text-slate-600">หมวด</span>
+            <select id="fb-category" class="mt-1 block w-full border border-slate-300 rounded-lg bg-white py-1.5 pl-2.5 pr-8 text-sm focus:ring-0">
+              ${Object.entries(FEEDBACK_CATEGORY).map(([k, v]) => `<option value="${k}" ${k === (documentId ? 'content' : 'other') ? 'selected' : ''}>${v}</option>`).join('')}
+            </select></label>
+          <label class="block"><span class="text-slate-600">เล่าสั้น ๆ ว่าเจออะไร / อยากให้เป็นอย่างไร</span>
+            <textarea id="fb-message" rows="4" maxlength="4000" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-body focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              placeholder="เช่น ภาคความประสงค์อ้างข้อ ๒ แต่ข้อพิจารณามีแค่ข้อ ๑"></textarea></label>
+          <p class="text-slate-500 leading-relaxed"><i class="fa-solid fa-paperclip mr-1"></i>ระบบแนบ${documentId ? 'ร่างฉบับนี้ ' : ''}เวลา และขั้นตอนที่ระบบทำให้อัตโนมัติ — ไม่ต้องจดเอง · อย่าใส่ข้อมูลส่วนบุคคลหรือเนื้อหาชั้นลับ</p>
+          <p id="fb-error" class="text-rose-700" hidden></p>
+        </div>
+        <div class="px-5 py-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/60">
+          <button type="button" data-fb-close class="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200/60">ยกเลิก</button>
+          <button type="submit" id="fb-send" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-paper-plane"></i><span>ส่ง</span></button>
+        </div>
+      </form>`;
+    box.hidden = false;
+    const close = () => { box.hidden = true; document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    box.onclick = (e) => { if (e.target === box || e.target.closest('[data-fb-close]')) close(); };
+    box.onchange = (e) => {
+      if (e.target.name !== 'fb-rating') return;
+      box.querySelectorAll('[data-fb-choice]').forEach((l) => {
+        const on = l.contains(e.target);
+        l.classList.toggle('border-slate-800', on); l.classList.toggle('bg-slate-100', on); l.classList.toggle('border-slate-200', !on);
+      });
+      if (e.target.value === 'ok' && !box.querySelector('#fb-message').value) box.querySelector('#fb-category').value = 'content';
+      if (e.target.value === 'idea') box.querySelector('#fb-category').value = 'other';
+    };
+    const err = box.querySelector('#fb-error');
+    box.querySelector('#fb-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const rating = box.querySelector('input[name="fb-rating"]:checked')?.value;
+      const message = box.querySelector('#fb-message').value.trim();
+      if (!rating) { err.textContent = 'เลือกก่อนว่าเป็นแบบไหน'; err.hidden = false; return; }
+      if (rating !== 'ok' && !message) { err.textContent = 'เล่าสั้น ๆ ก่อนส่ง'; err.hidden = false; box.querySelector('#fb-message').focus(); return; }
+      err.hidden = true;
+      const send = box.querySelector('#fb-send');
+      send.disabled = true;
+      try {
+        await api.feedback.send({
+          rating, category: box.querySelector('#fb-category').value, message, document_id: documentId, page,
+          context: { ...context, url: location.pathname + location.search, viewport: `${innerWidth}x${innerHeight}`,
+            user_agent: navigator.userAgent, sent_at: new Date().toISOString() },
+        });
+        close();
+        toast('ส่งแล้ว ขอบคุณครับ');
+        if (onSent) onSent();
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+      finally { send.disabled = false; }
+    };
+    setTimeout(() => box.querySelector('input[name="fb-rating"]')?.focus(), 0);
+  }
+
+  window.GovDoc = { api, store, auth, toThai, esc, PH_RE, hasPlaceholder, relTime, download, toast, DOC_TYPE_LABEL, formKey, URGENCY, SECRET,
+    openFeedback, FEEDBACK_RATING, FEEDBACK_CATEGORY };
 })();
