@@ -135,7 +135,7 @@ for p in d.paragraphs:
 
 ## 9. Deploy
 
-- branch งาน `claude/awesome-hopper-wi1sv4` = production branch ของ Vercel (push แล้วขึ้นเอง) — ห้าม push `master`, ไม่เปิด PR ถ้าไม่ได้ขอ
+- `master` = production branch ของ Vercel (ตั้งแต่ ๒๔ พ.ย. ๒๕๖๙ — merge แล้วขึ้นเว็บเองใน ~2–3 นาที) — ทำงานบน branch แยก แล้วเปิด PR เข้า `master` เมื่อผู้ใช้ขอ; ห้าม push `master` ตรง
 - Vercel project `prj_3XIFAg4IFlfIq7UW3fIucKFvQOt9`, region sin1, function ~249 MB (ใกล้เพดาน 250 MB — ไลบรารีใหม่ต้องเช็คขนาด)
 - Supabase project `fjnmptcnaehbyidsgphc`: migration ใหม่ให้ผู้ใช้รันใน SQL Editor เอง (agent ไม่มีสิทธิ์เขียน) — ส่งไฟล์ SQL + คำสั่งตรวจผลให้
 - ห้ามขอ service_role key / รหัสผ่าน; รหัสผ่านพิมพ์ใน SQL Editor แล้วลบทิ้ง

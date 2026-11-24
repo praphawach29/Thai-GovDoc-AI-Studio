@@ -11,7 +11,7 @@
 | ส่วน | ค่า |
 |---|---|
 | เว็บ | `https://thai-gov-doc-ai-studio.vercel.app/studio/` (Vercel, region sin1) |
-| Production branch | `claude/awesome-hopper-wi1sv4` — push แล้วขึ้นเว็บเอง (~2–3 นาที) ไม่ต้อง Promote |
+| Production branch | `master` (เปลี่ยนจาก `claude/awesome-hopper-wi1sv4` ซึ่งลบแล้ว เมื่อ ๒๔ พ.ย. ๒๕๖๙) — merge PR แล้วขึ้นเว็บเอง (~2–3 นาที) ไม่ต้อง Promote |
 | ฐานข้อมูล / ล็อกอิน / ไฟล์ | Supabase project `fjnmptcnaehbyidsgphc` (Auth, Postgres + RLS, Storage bucket `sources`) |
 | Migration ที่ติดตั้งแล้ว | 1–8: core schema, registry/audit, storage, document workspace, issuing units, unit chain, final files, legal sources (คลังกฎหมาย) · 9 purge documents (ถังขยะ) · 10 style examples (คลังตัวอย่าง) · 11 fix purge trigger · 12 org signers (ผู้ลงนามของหน่วย) · 13 registry numbering (ทะเบียนรับ-ส่ง/ออกเลข) · 14 org profile (ข้อมูลหน่วยงาน) · 15 org invites (ผู้ใช้ในหน่วย) — รันและตรวจแล้ว ๒๓ พ.ย. ๒๕๖๙ |
 | AI | Gemini `gemini-3.8-flash` ก่อน → สำรอง Claude `claude-opus-5-5` (effort medium); ตัวที่อ่านไฟล์ได้ร่างต่อจนจบ |
