@@ -1999,6 +1999,28 @@
     $('rail-avatar').title = p.signatory_name || '';
   }).catch(() => {});
 
+  // ---------- แจ้งปัญหา (โหมดเซิร์ฟเวอร์): ผูกกับร่างฉบับนี้ + ข้อมูลประกอบที่ผู้ทดสอบไม่ต้องจดเอง ----------
+  if (finalsEnabled) {
+    $('btn-feedback').hidden = false;
+    $('btn-feedback').addEventListener('click', () => {
+      const badge = $('todo-badge');
+      window.GovDoc.openFeedback({
+        documentId: entry.id,
+        page: 'editor',
+        context: {
+          doc_type: st.doc.doc_type, kind: formKey(st.doc), unit_key: entry.unitKey || '',
+          subject: String(st.doc.subject || '').slice(0, 200),
+          todo: badge.title || badge.textContent.trim(),
+          placeholders: (st.check?.placeholders || []).slice(0, 10),
+          steps: (entry.steps || []).map(s => `${s.ok === false ? '✗ ' : ''}${s.label}${s.detail ? ' · ' + s.detail : ''}`).slice(0, 15),
+          source_name: entry.sourceName || '',
+          versions: st.versions.length,
+        },
+      });
+    });
+    fitToolbar();
+  }
+
   renderAll();
   renderSource();
   setSourceView('text');

@@ -37,6 +37,7 @@
       const me = await api.me();
       // เมนู "ผู้ใช้ในหน่วย" เฉพาะผู้ดูแล (API ตรวจสิทธิ์ซ้ำ)
       document.querySelector('[data-open="users"]').hidden = me.role !== 'admin';
+      document.querySelector('[data-open="feedback"]').hidden = false;    // แจ้งปัญหา: ทุกคน (โหมดเซิร์ฟเวอร์)
       const person = personName(me.full_name);
       const email = me.email || '';
       const local = email.split('@')[0];
@@ -1181,7 +1182,75 @@
     $('us-invites').addEventListener('click', onUsersClick);
   };
 
-  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงาน', users: 'ผู้ใช้ในหน่วย' };
+  // ---------- แจ้งปัญหา / ความเห็น: ผู้ดูแลเห็นทั้งหน่วยงานและเปลี่ยนสถานะได้ คนอื่นเห็นของตัวเอง ----------
+  const { openFeedback, FEEDBACK_RATING, FEEDBACK_CATEGORY } = window.GovDoc;
+  const FB_STATUS = { new: ['ใหม่', 'bg-rose-50 text-rose-700'], seen: ['รับทราบ', 'bg-amber-50 text-amber-800'], done: ['แก้แล้ว', 'bg-emerald-50 text-emerald-800'] };
+  const fbRating = Object.fromEntries(FEEDBACK_RATING.map(([k, label, icon, color]) => [k, { label, icon, color }]));
+  const fbTime = (iso) => { try { return toThai(new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })); } catch (_) { return iso; } };
+  let fbFilter = 'new';
+
+  async function renderFeedback() {
+    const list = $('fb-list');
+    if (!list) return;
+    let data;
+    try { data = await api.feedback.list(); }
+    catch (err) { list.innerHTML = `<p class="text-xs text-rose-700">${esc(err.message)}</p>`; return; }
+    const tabs = $('fb-tabs');
+    tabs.hidden = !data.admin;
+    tabs.innerHTML = [['new', 'ใหม่'], ['seen', 'รับทราบ'], ['done', 'แก้แล้ว'], ['', 'ทั้งหมด']].map(([k, label]) =>
+      `<button type="button" data-fb-filter="${k}" class="px-2.5 py-1 rounded-full border ${fbFilter === k ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}">${label}${k ? ' ' + toThai(data.counts[k] || 0) : ''}</button>`).join('');
+    const items = data.admin && fbFilter ? data.items.filter(i => (i.status || 'new') === fbFilter) : data.items;
+    list.innerHTML = items.map((i) => {
+      const r = fbRating[i.rating] || { label: i.rating, icon: 'fa-circle', color: '' };
+      const [stLabel, stCls] = FB_STATUS[i.status || 'new'];
+      const doc = i.document_id
+        ? `<a href="editor.html?id=${encodeURIComponent(i.document_id)}" class="text-emerald-700 hover:underline truncate">${esc(i.document_subject || 'เปิดร่าง')}</a>` : '';
+      const attached = [i.context?.todo, ...(i.context?.steps || [])].filter(Boolean);
+      const steps = attached.length
+        ? `<details class="mt-1.5"><summary class="cursor-pointer text-slate-400 hover:text-slate-600">ข้อมูลที่ระบบแนบ</summary>
+             <ul class="mt-1 pl-4 list-disc text-slate-500 space-y-0.5">${attached.map(t => `<li>${esc(t)}</li>`).join('')}</ul></details>` : '';
+      const status = data.admin
+        ? `<select data-fb-status="${esc(i.id)}" aria-label="สถานะ" class="ml-auto border border-slate-200 rounded-md bg-white py-0.5 pl-2 pr-7 text-xs focus:ring-0">${Object.entries(FB_STATUS).map(([k, [l]]) => `<option value="${k}" ${k === (i.status || 'new') ? 'selected' : ''}>${l}</option>`).join('')}</select>`
+        : `<span class="ml-auto text-[10px] px-1.5 py-0.5 rounded ${stCls}">${stLabel}</span>`;
+      const meta = [data.admin ? esc(i.reporter || '') : '', fbTime(i.created_at), doc].filter(Boolean).join('<span>·</span>');
+      return `<div class="px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid ${r.icon} ${r.color}"></i>
+          <span class="font-semibold text-slate-800">${esc(r.label)}</span>
+          <span class="text-slate-400">· ${esc(FEEDBACK_CATEGORY[i.category] || i.category)}</span>
+          ${status}
+        </div>
+        ${i.message ? `<p class="mt-1.5 text-slate-700 font-body text-sm whitespace-pre-wrap break-words">${esc(i.message)}</p>` : ''}
+        <div class="mt-1.5 flex flex-wrap gap-x-2 text-slate-500">${meta}</div>
+        ${data.admin ? steps : ''}
+      </div>`;
+    }).join('') || `<p class="text-xs text-slate-400">${data.admin && fbFilter ? 'ไม่มีเรื่องในสถานะนี้' : 'ยังไม่มีเรื่องที่แจ้ง'}</p>`;
+  }
+
+  panels.feedback = async (body) => {
+    body.innerHTML = `
+      <div class="flex items-start gap-3 mb-3">
+        <p class="flex-1 text-xs text-slate-500 leading-relaxed">เจอปัญหาหรืออยากให้ปรับอะไร แจ้งได้ที่นี่ — ถ้าเกี่ยวกับร่างฉบับไหน ให้กด <b>แจ้งปัญหา</b> ในหน้าแก้ไขของร่างนั้น ระบบจะแนบร่างและขั้นตอนให้เอง</p>
+        <button type="button" id="fb-new" class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 text-white text-xs font-medium"><i class="fa-solid fa-flag"></i><span>แจ้งเรื่องใหม่</span></button>
+      </div>
+      <div id="fb-tabs" class="flex flex-wrap gap-1.5 mb-3 text-xs" hidden></div>
+      <div id="fb-list" class="space-y-2"><p class="text-xs text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลด...</p></div>`;
+    await renderFeedback();
+    $('fb-new').addEventListener('click', () => openFeedback({ page: 'home', onSent: renderFeedback }));
+    $('fb-tabs').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-fb-filter]');
+      if (b) { fbFilter = b.dataset.fbFilter; renderFeedback(); }
+    });
+    $('fb-list').addEventListener('change', async (e) => {
+      const sel = e.target.closest('[data-fb-status]');
+      if (!sel) return;
+      try { await api.feedback.setStatus(sel.dataset.fbStatus, sel.value); toast('เปลี่ยนเป็น ' + FB_STATUS[sel.value][0] + ' แล้ว'); }
+      catch (ex) { toast(ex.message, 'error'); }
+      renderFeedback();
+    });
+  };
+
+  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงาน', users: 'ผู้ใช้ในหน่วย', feedback: 'แจ้งปัญหา / ความเห็น' };
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => {
     const key = b.dataset.open;
     setSidebar(false);
