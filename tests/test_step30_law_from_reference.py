@@ -72,7 +72,7 @@ def test_memo_prompt_asks_for_law_and_analysis():
 
 
 # ---- ภาคความประสงค์ขั้นสูงสุด (เสนอปลัดฯ) อ้างอำนาจตามต้นแบบ ----
-from core.issuing_units import apply_issuing_unit  # noqa: E402
+from core.issuing_units import AUTHORITY_PLACEHOLDER, apply_issuing_unit  # noqa: E402
 from core.law_grounding import ground_citations  # noqa: E402
 from core.models import default_issuing_units  # noqa: E402
 
@@ -109,7 +109,12 @@ def test_top_request_used_only_at_last_unit():
     assert top.memo_request == TOP
     back = apply_issuing_unit(top, units[1], units=units)          # ย้อนลงมาขั้นกลาง = ข้อความมาตรฐาน
     assert back.memo_request == units[1].request_text
+    # ไม่มีต้นแบบ: ขั้นสูงสุดระบุข้อจากข้อพิจารณา แล้วเว้นช่องอ้างอำนาจให้กรอก
     doc.memo_request_top = None
+    auto = apply_issuing_unit(doc, units[-1], units=units, replace_request=True).memo_request
+    assert "ให้ความเห็นชอบตามข้อ ๑.๑" in auto and AUTHORITY_PLACEHOLDER in auto
+    # ข้อพิจารณาไม่มีข้อเห็นชอบ/อนุญาต/อนุมัติ = ข้อความมาตรฐานของหน่วย
+    doc.memo_consideration = "พิจารณาแล้ว เห็นควรแจ้งสมาคมทราบ"
     assert apply_issuing_unit(doc, units[-1], units=units, replace_request=True).memo_request == units[-1].request_text
 
 

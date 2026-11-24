@@ -9,10 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.issuing_units import (
+    AUTHORITY_PLACEHOLDER,
     apply_issuing_unit,
+    auto_top_request,
     blank_day_date,
     format_doc_number,
     pick_unit,
+    proposal_items,
     unit_named_in_prompt,
 )
 from core.linter import lint_gov_document
@@ -110,6 +113,50 @@ def test_prompt_recipient_overrides_default_unit(client):
     assert body["unit_key"] == "culture-sports-bureau"
     assert body["document"]["salutation"] == "เรียน ปลัดกรุงเทพมหานคร"
     assert body["document"]["signatory_position"] == "ผู้อำนวยการสำนักวัฒนธรรม กีฬา และการท่องเที่ยว"
+
+
+CONSIDERATION = """สำนักวัฒนธรรม กีฬา และการท่องเที่ยวพิจารณาแล้ว เห็นควร ดังนี้
+๑. เห็นชอบ อนุญาต และอนุมัติ ดังนี้
+	๑.๑ เห็นชอบให้กรุงเทพมหานครเป็นเจ้าภาพร่วม
+	๑.๒ อนุญาตให้ใช้ตราสัญลักษณ์กรุงเทพมหานคร
+	๑.๓ อนุมัติยกเว้นค่าธรรมเนียมให้กับสมาคม
+๒. มอบหมายหน่วยงานที่เกี่ยวข้องพิจารณาให้การสนับสนุน ดังนี้
+	๒.๑ สำนักการโยธา ดำเนินการตามข้อเท็จจริง ๖
+	๒.๒ สำนักการแพทย์ ดำเนินการตามข้อเท็จจริง ๗"""
+
+
+def test_proposal_items_prefer_sub_items_with_their_own_verb():
+    assert proposal_items(CONSIDERATION) == [
+        ("๑.๑", "approve", "ให้ความเห็นชอบ"), ("๑.๒", "approve", "อนุญาต"),
+        ("๑.๓", "approve", "อนุมัติ"), ("๒", "command", "สั่งการ"),
+    ]
+
+
+def test_auto_top_request_lists_items_and_leaves_authority_blank():
+    top = default_issuing_units()[-1]
+    text = auto_top_request(CONSIDERATION, top)
+    assert text == (
+        "จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดนำเรียนผู้ว่าราชการกรุงเทพมหานคร "
+        "เพื่อโปรดพิจารณาให้ความเห็นชอบตามข้อ ๑.๑ อนุญาตตามข้อ ๑.๒ และอนุมัติตามข้อ ๑.๓ "
+        "อำนาจในการเห็นชอบ อนุญาต และอนุมัติเป็นของผู้ว่าราชการกรุงเทพมหานคร "
+        f"ตาม{AUTHORITY_PLACEHOLDER} และปลัดกรุงเทพมหานครได้โปรดสั่งการตามข้อ ๒"
+    )
+    two = auto_top_request("พิจารณาแล้ว เห็นควร\n๑. อนุญาตให้ใช้ตรา\n๒. อนุญาตให้ใช้สถานที่", top)
+    assert "อนุญาตตามข้อ ๑ และ ๒ อำนาจในการอนุญาตเป็นของ" in two and "สั่งการ" not in two
+    assert auto_top_request("พิจารณาแล้ว เห็นควรแจ้งสมาคมทราบ", top) is None
+    # หน่วยที่ไม่ได้ "นำเรียน<ผู้มีอำนาจ>" ไม่สร้าง
+    assert auto_top_request(CONSIDERATION, default_issuing_units()[0]) is None
+
+
+def test_auto_top_request_only_at_last_unit_and_replaced_when_going_down():
+    units = default_issuing_units()
+    doc = PRESET_TEMPLATES["bma_cohost_request"].schema.model_copy(deep=True)
+    doc.memo_request_top = None
+    doc.memo_consideration = CONSIDERATION
+    top = apply_issuing_unit(doc, units[-1], DAY, units=units, replace_request=True)
+    assert top.memo_request.endswith("ได้โปรดสั่งการตามข้อ ๒")
+    down = apply_issuing_unit(top, units[1], DAY, units=units)
+    assert down.memo_request == units[1].request_text
 
 
 # ---------------------------------------------------------------- API โหมด Supabase
