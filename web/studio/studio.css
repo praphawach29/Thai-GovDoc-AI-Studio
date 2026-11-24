@@ -45,6 +45,10 @@
 .a4-sheet .lines { tab-size: 0; -moz-tab-size: 0; }
 .a4-sheet .lines > .ln { min-height: 1em; }
 .a4-sheet .memo-head:empty::before { font-weight: 400; text-decoration: none; }
+/* หัวข้อนำหน้าบรรทัดแรกเมื่อเนื้อความเป็นความเรียง (เนื้อความเป็นข้อ ๆ = หัวข้อบรรทัดเดี่ยว) — core/memo_layout */
+.a4-sheet .memo-sec { display: flow-root; }
+.a4-sheet .memo-sec.run-in > .memo-head-row { float: left; text-indent: 0; margin-left: 2.5cm; margin-right: .5em; }
+.a4-sheet .memo-sec.run-in .lines > .ln:first-child { text-indent: 0 !important; }
 .a4-sheet .justify-thai { text-align: justify; text-justify: inter-character; }
 .a4-sheet .garuda-ext { height: 3cm; width: auto; }
 .a4-sheet .garuda-int { height: 1.5cm; width: auto; }
@@ -63,8 +67,9 @@
 }
 
 /* Placeholder [✏️ ระบุ...] */
+/* inline-block: ย่อหน้ากระจายแบบไทย (inter-character) ไม่ยืดช่องไฟตัวอักษรในจุด — จุดยาวเคยถูกยืดเต็มบรรทัด */
 .ph-chip {
-  display: inline; padding: 0 .3em; border-radius: 4px; border: 1px dashed #fcd34d;
+  display: inline-block; line-height: 1.25; text-indent: 0; /* inline-block รับย่อหน้าบรรทัดแรกของย่อหน้ามา → กล่องกว้างเกิน */ padding: 0 .3em; border-radius: 4px; border: 1px dashed #fcd34d;
   background: #fffbeb; color: #92400e; font-family: 'Prompt', sans-serif; font-size: 10pt;
   white-space: nowrap;
 }
@@ -129,3 +134,23 @@
   #sheet { position: absolute; left: 0; top: 0; box-shadow: none !important; border: 0 !important; }
   .no-print { display: none !important; }
 }
+
+/* แบบเสนอโครงการ กทม.: ตาราง 14 pt เส้นทึบ — ตรงกับ templates/typst/project.typ และ Word */
+.a4-sheet .pj-head { display: grid; grid-template-columns: 2.7cm 1fr; align-items: baseline; }
+.a4-sheet .pj-rule { border-bottom: 1px dashed #0f172a; margin: 4pt 0 0; }
+.a4-sheet .pj-heading { margin-top: 6pt; font-weight: 700; }
+.a4-sheet .pj-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14pt; line-height: 1.15; margin-top: 4pt; }
+.a4-sheet .pj-table th, .a4-sheet .pj-table td { border: 0.5pt solid #1e293b; padding: 1pt 3pt; vertical-align: top; position: relative; }
+.a4-sheet .pj-table th { font-weight: 700; text-align: center; vertical-align: middle; }
+.a4-sheet .pj-table .pj-mo { font-size: 12pt; padding: 1pt 0; }
+.a4-sheet .pj-month { cursor: pointer; }
+.a4-sheet .pj-month:hover { background: #e2e8f0; }
+.a4-sheet .pj-month.pj-on { background: #bfbfbf; }
+.a4-sheet .pj-total td { font-weight: 700; }
+.a4-sheet .pj-del { position: absolute; right: -1.1cm; top: 2pt; width: 1.4rem; height: 1.4rem; border-radius: 9999px; border: 1px solid #fecaca;
+  background: #fff; color: #e11d48; font: 11px 'Prompt', sans-serif; opacity: 0; transition: opacity .15s; }
+.a4-sheet tr:hover .pj-del, .a4-sheet .pj-del:focus { opacity: 1; }
+.a4-sheet .pj-add { margin-top: 3pt; display: inline-flex; gap: .4em; align-items: center; padding: 1px 8px; border-radius: 9999px;
+  border: 1px dashed #6ee7b7; color: #047857; background: #fff; font: 11px 'Prompt', sans-serif; }
+.a4-sheet .pj-add:hover { background: #ecfdf5; }
+@media print { .pj-month:hover { background: inherit; } }

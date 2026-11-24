@@ -131,6 +131,12 @@ def try_extract_ocr_multi_engine(
     return "", None
 
 
+def broken_text_layer(text: str) -> bool:
+    """ข้อความจากชั้นข้อความ PDF ที่ตัวอักษรไม่มีรหัส Unicode ("(cid:12)") มากจนอ่านไม่ได้"""
+    cids = text.count("(cid:")
+    return cids >= 5 and cids * 200 >= len(text)
+
+
 def extract_text_from_pdf(
     pdf_path: str, api_key: Optional[str] = None, allow_cloud: bool = True, ocr_fn=None
 ) -> Tuple[str, bool, int, Optional[str], bool, Optional[str], Optional[str]]:
@@ -179,7 +185,9 @@ def extract_text_from_pdf(
             pass
 
     digital_text = "\n\n".join(text_chunks).strip()
-    is_scanned = len(digital_text) < 50
+    # ชั้นข้อความเสีย (เช่น PDF ที่ระบบนี้ส่งออกด้วย TH SarabunIT๙ — สระ/วรรณยุกต์ไม่มีรหัส Unicode ออกมาเป็น "(cid:12)")
+    # ใช้อ่านไม่ได้ ให้อ่านจากภาพเหมือนไฟล์สแกน
+    is_scanned = len(digital_text) < 50 or broken_text_layer(digital_text)
 
     # 3. สร้างรูปภาพสำหรับพรีวิวและเตรียม OCR
     images = []
@@ -238,34 +246,63 @@ def extract_text_from_pdf(
 
 def extract_text_from_docx(docx_path: str) -> str:
     """
-    สกัดข้อความจากไฟล์ Word (.docx) อย่างสมบูรณ์
-    ครอบคลุมทั้งย่อหน้าปกติ (Paragraphs) และตารางส่วนหัว (Tables)
+    สกัดข้อความจากไฟล์ Word (.docx) ตามลำดับในเอกสาร (ย่อหน้าและตารางสลับกันตามจริง)
+
+    ตาราง: ทีละแถว ช่องคั่นด้วย " | " — แถวที่ช่องมีหลายย่อหน้า (เช่น ตารางงบประมาณที่พิมพ์รายการ/จำนวนเงิน
+    เป็นย่อหน้าซ้อนในเซลล์เดียว แล้วเว้นย่อหน้าว่างให้ตรงกัน) แยกเป็นบรรทัดย่อยตามลำดับย่อหน้า
+    ให้รายการกับจำนวนเงินอยู่บรรทัดเดียวกัน; ค่าที่ซ้ำ (เช่น 12,000.- หลายรายการ) ต้องคงไว้ทุกตัว
     """
     try:
         from docx import Document
-        doc = Document(docx_path)
-        chunks = []
-        
-        # 1. อ่านตารางก่อน (มักเป็นที่ตั้งของ ที่, วันที่, ส่วนราชการ)
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for p in cell.paragraphs:
-                        text = p.text.strip()
-                        if text and text not in chunks:
-                            chunks.append(text)
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
 
-        # 2. อ่านย่อหน้าในเนื้อความ
-        for p in doc.paragraphs:
-            text = p.text.strip()
-            if text and text not in chunks:
-                chunks.append(text)
+        doc = Document(docx_path)
+        chunks: List[str] = []
+        for element in doc.element.body.iterchildren():
+            tag = element.tag.rsplit("}", 1)[-1]
+            if tag == "p":
+                text = Paragraph(element, doc).text.strip()
+                if text:
+                    chunks.append(text)
+            elif tag == "tbl":
+                rows = _docx_table_lines(Table(element, doc))
+                if rows:
+                    chunks.append("[ตาราง]\n" + "\n".join(rows) + "\n[/ตาราง]")
 
         raw = "\n\n".join(chunks)
         # ล้างอักขระ ZWSP เพื่อให้การค้นหา Regex ทำงานได้อย่างแม่นยำ
         return raw.replace("\u200b", "")
     except Exception as e:
         return f"Error extracting DOCX: {str(e)}"
+
+
+def _docx_table_lines(table) -> List[str]:
+    """แถวของตาราง Word เป็นข้อความ "ช่อง | ช่อง" (ช่องที่รวมแนวนอนนับครั้งเดียว ตารางซ้อนอ่านต่อในช่องนั้น)"""
+    out: List[str] = []
+    for row in table.rows:
+        cells, seen = [], set()
+        for cell in row.cells:
+            if id(cell._tc) in seen:
+                continue
+            seen.add(id(cell._tc))
+            # \u0e02\u0e36\u0e49\u0e19\u0e1a\u0e23\u0e23\u0e17\u0e31\u0e14\u0e43\u0e2b\u0e21\u0e48\u0e43\u0e19\u0e22\u0e48\u0e2d\u0e2b\u0e19\u0e49\u0e32 (Shift+Enter) \u0e19\u0e31\u0e1a\u0e40\u0e1b\u0e47\u0e19\u0e1a\u0e23\u0e23\u0e17\u0e31\u0e14\u0e41\u0e22\u0e01 \u2014 \u0e0a\u0e48\u0e2d\u0e07\u0e02\u0e49\u0e32\u0e07\u0e40\u0e04\u0e35\u0e22\u0e07\u0e21\u0e31\u0e01\u0e40\u0e27\u0e49\u0e19\u0e22\u0e48\u0e2d\u0e2b\u0e19\u0e49\u0e32\u0e27\u0e48\u0e32\u0e07\u0e43\u0e2b\u0e49\u0e15\u0e23\u0e07\u0e1a\u0e23\u0e23\u0e17\u0e31\u0e14\u0e19\u0e35\u0e49
+            paras = [line.replace("\u200b", "").strip() for para in cell.paragraphs for line in para.text.split("\n")]
+            for inner in cell.tables:
+                paras += _docx_table_lines(inner)
+            cells.append(paras)
+        if not any(any(x for x in c) for c in cells):
+            continue
+        stacked = sum(1 for c in cells if len([x for x in c if x]) > 1)
+        if stacked >= 2:
+            # ย่อหน้าที่ i ของทุกช่องอยู่บรรทัดเดียวกันบนกระดาษ (ผู้พิมพ์เว้นย่อหน้าว่างให้ตรงกัน)
+            for i in range(max(len(c) for c in cells)):
+                parts = [c[i] if i < len(c) else "" for c in cells]
+                if any(parts):
+                    out.append(" | ".join(parts).rstrip(" |"))
+        else:
+            out.append(" | ".join(" ".join(x for x in c if x) for c in cells).rstrip(" |"))
+    return out
 
 
 def extract_text_from_image_file(

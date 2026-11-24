@@ -35,6 +35,8 @@
       $('btn-signout').hidden = false;
       $('btn-signout').addEventListener('click', () => auth.signOut());
       const me = await api.me();
+      // เมนู "ผู้ใช้ในหน่วย" เฉพาะผู้ดูแล (API ตรวจสิทธิ์ซ้ำ)
+      document.querySelector('[data-open="users"]').hidden = me.role !== 'admin';
       const person = personName(me.full_name);
       const email = me.email || '';
       const local = email.split('@')[0];
@@ -72,7 +74,7 @@
   // ลบ = ย้ายไปถังขยะ (status archived) — หายจากงานล่าสุด/งานค้าง กู้คืนได้จาก "ถังขยะ"
   // ไม่ลบถาวร: ระบบเก็บประวัติเวอร์ชันของเอกสารทุกฉบับ (audit trail)
   const DOT = { normal: 'bg-sky-500', urgent: 'bg-amber-500', very_urgent: 'bg-rose-500', most_urgent: 'bg-rose-700' };
-  const TYPE_SHORT = { internal: 'บันทึก', external: 'ภายนอก', stamp_letter: 'ประทับตรา', order: 'คำสั่ง', announcement: 'ประกาศ', regulation: 'ระเบียบ', bylaw: 'ข้อบังคับ' };
+  const TYPE_SHORT = { internal: 'บันทึก', external: 'ภายนอก', stamp_letter: 'ประทับตรา', order: 'คำสั่ง', announcement: 'ประกาศ', regulation: 'ระเบียบ', bylaw: 'ข้อบังคับ', project: 'โครงการ' };
   const unitLabels = {};
   let recent = [], showArchived = false;
   async function loadRecent() {
@@ -219,20 +221,58 @@
     if (f && f.size > 50 * 1024 * 1024) { toast('ไฟล์ใหญ่เกิน 50 MB', 'error'); return; }
     if (f && !/\.(pdf|docx|txt|png|jpe?g|tiff?)$/i.test(f.name)) { toast('รองรับ PDF, DOCX, TXT และรูปภาพ', 'error'); return; }
     state.file = f || null;
+    renderFileBar();
+  }
+  // ต้นแบบ (≤ ๓ ไฟล์ PDF/Word/ภาพ): คู่มือการเขียน แบบฟอร์ม หรือหนังสือ/โครงการฉบับก่อนที่ได้รับอนุมัติ
+  //  guide = AI อ่านเทียบต้นแบบแล้วร่างในระบบ (หน้าแก้ไข) ตามรูปแบบนั้น ด้วยเนื้อหาจากต้นเรื่อง
+  //  fill  = มีต้นแบบเป็น Word: ใส่ข้อมูลจากต้นเรื่องลงไฟล์ Word นั้น ได้ไฟล์รูปแบบเดิม (ต้นแบบอื่นใช้เป็นแนวทาง)
+  const MAX_REFS = 3, REF_RE = /\.(pdf|docx|txt|png|jpe?g|tiff?)$/i;
+  state.refs = [];
+  const refDocx = () => state.refs.find(f => /\.docx$/i.test(f.name)) || null;
+  const refsSize = () => state.refs.reduce((n, f) => n + f.size, 0);
+  function addRefs(files) {
+    for (const f of files) {
+      if (!REF_RE.test(f.name)) { toast(`ต้นแบบรองรับ PDF, Word, TXT และรูปภาพ (${f.name})`, 'error'); continue; }
+      if (state.refs.length >= MAX_REFS) { toast(`แนบต้นแบบได้ไม่เกิน ${toThai(MAX_REFS)} ไฟล์`, 'warn'); break; }
+      if (refsSize() + f.size > 4 * 1024 * 1024) { toast('ต้นแบบรวมกันใหญ่เกิน 4 MB — ใช้ไฟล์ที่เล็กลง', 'error'); break; }
+      if (!state.refs.some(r => r.name === f.name && r.size === f.size)) state.refs.push(f);
+    }
+    state.templateMode = refDocx() && state.refs.length === 1 ? 'fill' : 'guide';
+    renderFileBar();
+  }
+  function renderFileBar() {
     const bar = $('file-bar');
-    bar.hidden = !state.file;
-    bar.innerHTML = state.file ? `
-      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200/80 text-xs text-slate-700 shadow-xs animate-fadeIn">
-        <i class="fa-regular ${fileIcon(state.file.name)} text-emerald-600 text-sm"></i>
-        <span class="font-medium text-slate-800 max-w-[16rem] truncate">${esc(state.file.name)}</span>
-        <span class="text-[10px] text-slate-400">(${fmtSize(state.file.size)})</span>
-        <button type="button" id="btn-remove-file" class="text-slate-400 hover:text-rose-500 ml-1 p-0.5" aria-label="ลบไฟล์แนบ"><i class="fa-solid fa-xmark text-xs"></i></button>
-      </div>` : '';
+    bar.hidden = !state.file && !state.refs.length;
+    const chip = (cls, icon, label, f, removeAttr) => `
+      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg ${cls} text-xs text-slate-700 shadow-xs animate-fadeIn">
+        <i class="fa-regular ${icon} text-sm"></i>${label}
+        <span class="font-medium text-slate-800 max-w-[14rem] truncate">${esc(f.name)}</span>
+        <span class="text-[10px] text-slate-400">(${fmtSize(f.size)})</span>
+        <button type="button" ${removeAttr} class="text-slate-400 hover:text-rose-500 ml-1 p-0.5" aria-label="ลบไฟล์แนบ ${esc(f.name)}"><i class="fa-solid fa-xmark text-xs"></i></button>
+      </div>`;
+    const docx = refDocx();
+    bar.innerHTML = (state.file ? chip('bg-emerald-50 border border-emerald-200/80', fileIcon(state.file.name) + ' text-emerald-600', '<span class="text-[10px] text-emerald-700">ต้นเรื่อง</span>', state.file, 'id="btn-remove-file"') : '')
+      + state.refs.map((f, i) => chip('bg-blue-50 border border-blue-200/80', fileIcon(f.name) + ' text-blue-600', '<span class="text-[10px] text-blue-700">ต้นแบบ</span>', f, `data-remove-ref="${i}"`)).join('')
+      + (!state.refs.length ? '' : docx
+        ? `<label class="inline-flex items-center gap-1.5 text-xs text-slate-600">ผลลัพธ์
+            <select id="template-mode" class="rounded-lg border-slate-300 text-xs py-1 pr-7">
+              <option value="guide" ${state.templateMode !== 'fill' ? 'selected' : ''}>ร่างในระบบ ตามรูปแบบต้นแบบ</option>
+              <option value="fill" ${state.templateMode === 'fill' ? 'selected' : ''}>ไฟล์ Word ตาม ${esc(docx.name.slice(0, 30))} (คงรูปแบบเดิม)</option>
+            </select></label>`
+        : '<span class="text-[11px] text-slate-500">AI อ่านเทียบต้นแบบก่อน แล้วร่างในระบบตามรูปแบบนั้น</span>');
     if (state.file) $('btn-remove-file').addEventListener('click', () => { $('file-input').value = ''; setFile(null); });
+    bar.querySelectorAll('[data-remove-ref]').forEach(btn => btn.addEventListener('click', () => {
+      state.refs.splice(+btn.dataset.removeRef, 1);
+      state.templateMode = refDocx() && state.refs.length === 1 ? 'fill' : 'guide';
+      renderFileBar();
+    }));
+    $('template-mode')?.addEventListener('change', (e) => { state.templateMode = e.target.value; });
     syncExamples();
   }
   $('btn-attach').addEventListener('click', () => $('file-input').click());
   $('file-input').addEventListener('change', (e) => setFile(e.target.files[0]));
+  $('btn-attach-template').addEventListener('click', () => $('template-input').click());
+  $('template-input').addEventListener('change', (e) => { addRefs([...e.target.files]); e.target.value = ''; });
 
   const form = $('prompt-form');
   let dragDepth = 0;
@@ -373,8 +413,8 @@
     state.busy = on;
     $('prompt-form').setAttribute('aria-busy', String(on));
     $('prompt').readOnly = on;
-    ['btn-submit', 'btn-attach', 'doc-type', 'unit', 'btn-classify'].forEach((id) => { $(id).disabled = on; });
-    $('prompt-form').querySelectorAll('[data-example], #btn-remove-file').forEach((b) => { b.disabled = on; });
+    ['btn-submit', 'btn-attach', 'btn-attach-template', 'doc-type', 'unit', 'btn-classify'].forEach((id) => { $(id).disabled = on; });
+    $('prompt-form').querySelectorAll('[data-example], #btn-remove-file, [data-remove-ref], #template-mode').forEach((b) => { b.disabled = on; });
     $('prompt-form').classList.toggle('opacity-70', on);
   }
 
@@ -389,6 +429,16 @@
     if (state.busy) return;
     const prompt = $('prompt').value.trim();
     if (!prompt && !state.file) { $('prompt').focus(); toast('พิมพ์คำสั่งหรือแนบไฟล์ต้นเรื่องก่อน', 'warn'); return; }
+    // แม่แบบ + "ไฟล์ Word ตามแม่แบบ": AI อ่านต้นเรื่องแล้วเสนอข้อความใหม่ลงแม่แบบ → ตรวจในหน้าต่างแม่แบบ
+    if (refDocx() && state.templateMode === 'fill') {
+      if ((state.file?.size || 0) + refsSize() > 4 * 1024 * 1024) {
+        toast('ไฟล์ต้นเรื่องรวมต้นแบบใหญ่เกิน 4 MB — เลือก "ร่างในระบบ" หรือใช้ไฟล์ที่เล็กลง', 'error'); return;
+      }
+      const template = refDocx();
+      window.GovDocWordTemplate.run({ template, source: state.file, prompt, secret: state.secret,
+        references: state.refs.filter(f => f !== template) });
+      return;
+    }
     setBusy(true);
     $('error-box').hidden = true;
     const upload = !!state.file && (await auth.serverMode());
@@ -409,6 +459,7 @@
       } else if (state.file) {
         fd.append('file', state.file);
       }
+      state.refs.forEach(f => fd.append('references', f));
       const res = await api.draft(fd);
       finishProgress(res.steps);
       if (!res.document) {
@@ -436,7 +487,7 @@
   $('prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); } });
 
   $('btn-new').addEventListener('click', () => {
-    $('prompt').value = ''; $('file-input').value = ''; setFile(null);
+    $('prompt').value = ''; $('file-input').value = ''; state.refs = []; setFile(null);
     if (state.busy) return;
     $('progress').hidden = true; $('error-box').hidden = true; setSidebar(false); syncExamples(); $('prompt').focus();
   });
@@ -1019,7 +1070,118 @@
     }
   }
 
-  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงาน' };
+  // ---------- ผู้ใช้ในหน่วย (เฉพาะผู้ดูแล): เชิญด้วยอีเมล → ผู้ถูกเชิญลงทะเบียนเองที่หน้าเข้าสู่ระบบ ----------
+  const ROLE_LABEL = { admin: 'ผู้ดูแล', clerk: 'ธุรการ', drafter: 'ผู้ร่าง', approver: 'ผู้อนุมัติ', disabled: 'ระงับการใช้งาน' };
+  const INVITE_STATE = { open: ['รอลงทะเบียน', 'bg-amber-50 text-amber-800'], used: ['ลงทะเบียนแล้ว', 'bg-emerald-50 text-emerald-800'],
+    expired: ['หมดอายุ', 'bg-slate-100 text-slate-500'], revoked: ['ยกเลิกแล้ว', 'bg-slate-100 text-slate-500'] };
+  const roleOptions = (current, withDisabled) => Object.entries(ROLE_LABEL)
+    .filter(([k]) => withDisabled || k !== 'disabled')
+    .map(([k, v]) => `<option value="${k}" ${k === current ? 'selected' : ''}>${v}</option>`).join('');
+  const thaiDate = (iso) => iso ? new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '';
+  let usData = { me: '', users: [], invites: [] };
+
+  async function renderUsers() {
+    const list = $('us-list'), invites = $('us-invites');
+    if (!list) return;
+    try { usData = await api.users.list(); }
+    catch (err) { list.innerHTML = `<p class="text-xs text-rose-700">${esc(err.message)}</p>`; invites.innerHTML = ''; return; }
+    list.innerHTML = usData.users.map((u) => {
+      const self = u.user_id === usData.me;
+      return `<div class="flex items-center gap-2 px-3 py-2.5 border rounded-xl bg-white text-xs ${u.role === 'disabled' ? 'border-slate-200 opacity-60' : 'border-slate-200'}">
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-slate-800 font-body text-sm truncate">${esc(u.full_name || u.email || '—')}${self ? ' <span class="text-[10px] font-normal text-slate-400">(คุณ)</span>' : ''}</div>
+          <div class="text-slate-500 truncate">${esc([u.full_name ? u.email : '', u.position, u.role === 'disabled' ? 'ระงับการใช้งาน' : ''].filter(Boolean).join(' · '))}</div>
+        </div>
+        <select data-us-role="${esc(u.user_id)}" ${self ? 'disabled title="เปลี่ยนบทบาทของตัวเองไม่ได้"' : ''} aria-label="บทบาทของ ${esc(u.full_name || u.email)}"
+          class="shrink-0 border border-slate-200 rounded-md bg-white py-1 pl-2 pr-7 text-xs focus:ring-0">${roleOptions(u.role, true)}</select>
+      </div>`;
+    }).join('') || '<p class="text-xs text-slate-400">ยังไม่มีผู้ใช้</p>';
+    const rows = usData.invites.filter(i => i.state !== 'used');
+    invites.innerHTML = rows.length ? rows.map((i) => {
+      const [label, cls] = INVITE_STATE[i.state] || [i.state, ''];
+      return `<div class="flex items-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded-xl text-xs">
+        <div class="flex-1 min-w-0">
+          <div class="text-slate-800 truncate">${esc(i.email)} <span class="text-slate-500">· ${esc(ROLE_LABEL[i.role] || i.role)}</span></div>
+          <div class="text-slate-500 truncate">${esc(i.full_name || '')}${i.state === 'open' ? ' · หมดอายุ ' + thaiDate(i.expires_at) : ''}</div>
+        </div>
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded ${cls}">${label}</span>
+        ${i.state === 'open' ? `<button type="button" data-us-revoke="${esc(i.id)}" class="shrink-0 px-2 h-7 rounded-md text-slate-500 hover:text-rose-600 hover:bg-rose-50">ยกเลิก</button>` : ''}
+      </div>`;
+    }).join('') : '<p class="text-xs text-slate-400">ไม่มีคำเชิญค้าง</p>';
+  }
+
+  async function onInvite(e) {
+    e.preventDefault();
+    const err = $('us-error');
+    const fields = { email: $('us-email').value.trim(), full_name: $('us-name').value.trim(), position: $('us-position').value.trim(), role: $('us-role').value };
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(fields.email)) { err.textContent = 'ใส่อีเมลให้ถูกต้อง'; err.hidden = false; $('us-email').focus(); return; }
+    err.hidden = true;
+    $('us-send').disabled = true;
+    try {
+      await api.users.invite(fields);
+      $('us-form').reset();
+      const link = new URL('login.html?mode=signup', location.href).href;
+      $('us-done').innerHTML = `เชิญ <b>${esc(fields.email)}</b> แล้ว — ส่งลิงก์นี้ให้ลงทะเบียนด้วยอีเมลนี้ (ใช้ได้ ๑๔ วัน):
+        <span class="block mt-1 font-mono break-all select-all">${esc(link)}</span>`;
+      $('us-done').hidden = false;
+      await renderUsers();
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    finally { $('us-send').disabled = false; }
+  }
+
+  async function onUsersChange(e) {
+    const sel = e.target.closest('[data-us-role]');
+    if (!sel) return;
+    const user = usData.users.find(u => u.user_id === sel.dataset.usRole);
+    const role = sel.value;
+    if (role === 'disabled' && !confirm(`ระงับการใช้งานของ ${user?.full_name || user?.email}? (เข้าระบบได้แต่ไม่เห็นข้อมูลใด เปิดใช้คืนได้ภายหลัง)`)) { sel.value = user.role; return; }
+    try { await api.users.setRole(sel.dataset.usRole, role); toast('เปลี่ยนเป็น ' + ROLE_LABEL[role] + ' แล้ว'); }
+    catch (ex) { toast(ex.message, 'error'); }
+    await renderUsers();
+  }
+
+  async function onUsersClick(e) {
+    const b = e.target.closest('[data-us-revoke]');
+    if (!b) return;
+    if (!confirm('ยกเลิกคำเชิญนี้? (อีเมลนี้จะลงทะเบียนเข้าหน่วยงานไม่ได้จนกว่าจะเชิญใหม่)')) return;
+    try { await api.users.revoke(b.dataset.usRevoke); toast('ยกเลิกคำเชิญแล้ว'); }
+    catch (ex) { toast(ex.message, 'error'); }
+    await renderUsers();
+  }
+
+  panels.users = async (body) => {
+    body.innerHTML = `
+      <p class="text-xs text-slate-500 mb-3">เชิญด้วยอีเมล แล้วให้ผู้ถูกเชิญเปิดหน้าเข้าสู่ระบบ กด <b>ลงทะเบียนด้วยคำเชิญ</b> ตั้งรหัสผ่านเอง —
+        ระบบผูกเข้าหน่วยงานพร้อมชื่อ ตำแหน่ง และบทบาทที่กำหนดให้อัตโนมัติ · ทุกคนในหน่วยงานเห็นร่างของกันและกัน</p>
+      <form id="us-form" class="mb-3 p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 text-xs space-y-2.5" novalidate>
+        <div class="font-semibold text-slate-800"><i class="fa-solid fa-user-plus text-emerald-700 mr-1"></i>เชิญผู้ใช้</div>
+        <label class="block"><span class="text-slate-600">อีเมล</span>
+          <input id="us-email" type="email" maxlength="254" autocomplete="off" placeholder="name@bangkok.go.th" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>
+        <div class="grid sm:grid-cols-2 gap-2.5">
+          <label class="block"><span class="text-slate-600">ชื่อ-นามสกุล</span>
+            <input id="us-name" type="text" maxlength="200" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-body focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>
+          <label class="block"><span class="text-slate-600">ตำแหน่ง</span>
+            <input id="us-position" type="text" maxlength="300" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-body focus:outline-none focus:ring-1 focus:ring-emerald-500"></label>
+        </div>
+        <div class="flex flex-wrap items-end gap-2.5">
+          <label class="block"><span class="text-slate-600">บทบาท</span>
+            <select id="us-role" class="mt-1 block border border-slate-300 rounded-lg bg-white py-1.5 pl-2.5 pr-8 text-sm focus:ring-0">${roleOptions('drafter', false)}</select></label>
+          <button type="submit" id="us-send" class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium"><i class="fa-solid fa-paper-plane"></i><span>เชิญ</span></button>
+        </div>
+        <p id="us-error" class="text-rose-700" hidden></p>
+        <p id="us-done" class="text-emerald-800 leading-relaxed" hidden></p>
+      </form>
+      <div class="text-xs font-semibold text-slate-500 mb-1.5">ผู้ใช้ในหน่วยงาน</div>
+      <div id="us-list" class="space-y-2 mb-4"><p class="text-xs text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังโหลด...</p></div>
+      <div class="text-xs font-semibold text-slate-500 mb-1.5">คำเชิญ</div>
+      <div id="us-invites" class="space-y-2"></div>`;
+    await renderUsers();
+    $('us-form').addEventListener('submit', onInvite);
+    $('us-list').addEventListener('change', onUsersChange);
+    $('us-invites').addEventListener('click', onUsersClick);
+  };
+
+  const PANEL_TITLE = { templates: 'คลังแม่แบบหนังสือราชการ', legal: 'คลังข้อกฎหมาย / ระเบียบ', examples: 'ตัวอย่างของหน่วย (หนังสือฉบับจริง)', signers: 'ผู้ลงนามของหน่วย', profile: 'ข้อมูลหน่วยงาน', users: 'ผู้ใช้ในหน่วย' };
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', async () => {
     const key = b.dataset.open;
     setSidebar(false);

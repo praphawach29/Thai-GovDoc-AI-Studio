@@ -43,6 +43,12 @@
     check: (doc) => postJSON('/studio/check', doc).then(r => r.json()),
     refine: (text, command) => postJSON('/copilot/refine', { text, command }).then(r => r.json()),
     exportDocx: (doc) => postJSON('/export/docx', doc).then(r => r.blob()),
+    // ไฟล์ Word เป็นแม่แบบ: AI เสนอข้อความใหม่รายย่อหน้า → ผู้ใช้ตรวจ → สร้างไฟล์ที่คงรูปแบบเดิม
+    wordTemplate: {
+      propose: (fd) => request('/studio/word-template/propose', { method: 'POST', body: fd }).then(r => r.json()),
+      build: (fd) => request('/studio/word-template/build', { method: 'POST', body: fd })
+        .then(async (r) => { const blob = await r.blob(); blob.changed = Number(r.headers.get('X-GovDoc-Changed') || 0); return blob; }),
+    },
     // PDF: เซิร์ฟเวอร์บอกจำนวนหน้าข้อกฎหมายที่แนบท้ายใน header (แจ้งผู้ใช้ได้)
     exportPdf: (doc) => postJSON('/export/pdf', doc).then(async (r) => {
       const blob = await r.blob();
@@ -101,6 +107,13 @@
       create: (fields) => postJSON('/signers', fields).then(r => r.json()),
       update: (id, fields) => sendJSON('PATCH', '/signers/' + encodeURIComponent(id), fields).then(r => r.json()),
       remove: (id) => request('/signers/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json()),
+    },
+    // ผู้ใช้ของหน่วยงาน (เฉพาะผู้ดูแล): เชิญด้วยอีเมล / ยกเลิกคำเชิญ / เปลี่ยนบทบาท-ระงับ
+    users: {
+      list: () => request('/users').then(r => r.json()),
+      invite: (fields) => postJSON('/users/invites', fields).then(r => r.json()),
+      revoke: (id) => request('/users/invites/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json()),
+      setRole: (userId, role) => sendJSON('PATCH', '/users/' + encodeURIComponent(userId), { role }).then(r => r.json()),
     },
     health: () => fetch(API + '/health').then(r => r.ok),
     me: () => request('/me').then(r => r.json()),
@@ -257,7 +270,7 @@
   }
 
   // ประเภทหนังสือ: คีย์เดียวกับ core.models.FORM_KEYS (doc_type ของ API) — ชนิดอื่นแยกด้วย doc.kind
-  const DOC_TYPE_LABEL = { internal: 'บันทึกข้อความ', external: 'หนังสือภายนอก', stamp_letter: 'หนังสือประทับตรา', order: 'คำสั่ง', announcement: 'ประกาศ', regulation: 'ระเบียบ', bylaw: 'ข้อบังคับ' };
+  const DOC_TYPE_LABEL = { internal: 'บันทึกข้อความ', external: 'หนังสือภายนอก', stamp_letter: 'หนังสือประทับตรา', order: 'คำสั่ง', announcement: 'ประกาศ', regulation: 'ระเบียบ', bylaw: 'ข้อบังคับ', project: 'โครงการ' };
   const formKey = (doc) => (doc && DOC_TYPE_LABEL[doc.kind] ? doc.kind : (doc?.doc_type === 'internal' ? 'internal' : 'external'));
   const URGENCY = {
     normal: { label: 'ปกติ', cls: 'bg-slate-100 text-slate-600 border-slate-200' },

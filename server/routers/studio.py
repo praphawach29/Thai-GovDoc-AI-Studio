@@ -9,10 +9,15 @@ from pydantic import BaseModel
 from core.issuing_units import apply_issuing_unit, pick_unit
 from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, Signer, UrgencyLevel, parse_form_key
 from core.profile_manager import get_user_profile
+import time
+
 from core.fact_check import check_facts
 from core.signers import OrgSigner, fill_document_signers
 from core.studio import (
+    MAX_REFERENCES,
     StudioCheck,
+    StudioStep,
+    read_source_text,
     StudioDraftResult,
     check_document,
     create_blank_document,
@@ -147,6 +152,8 @@ async def studio_draft(
     source_path: Optional[str] = Form(None),     # โหมด Supabase: ไฟล์ที่อัปโหลดตรงเข้า Storage แล้ว
     source_name: Optional[str] = Form(None),
     unit_key: Optional[str] = Form(None),        # หน่วยออกหนังสือ (ไม่ระบุ = หน่วยตั้งต้น)
+    template: Optional[UploadFile] = File(None),  # (เดิม) ต้นแบบไฟล์เดียว — ใช้ references แทน
+    references: List[UploadFile] = File(default=[]),  # ต้นแบบ: คู่มือ PDF / แบบฟอร์ม / ฉบับก่อนที่อนุมัติ (PDF/Word/ภาพ ≤ 3 ไฟล์)
     settings: Settings = Depends(get_settings),
     user: Optional[CurrentUser] = Depends(get_current_user),
 ):
@@ -181,6 +188,18 @@ async def studio_draft(
             client.upload(settings.source_bucket, path, data, source_store.MIME_BY_SUFFIX[saved_path.suffix])
             stored = (path, file.filename, data)
 
+    started = time.monotonic()
+    ref_files = [f for f in [template, *references] if f is not None and f.filename]
+    if len(ref_files) > MAX_REFERENCES:
+        raise HTTPException(status_code=400, detail=f"แนบต้นแบบได้ไม่เกิน {MAX_REFERENCES} ไฟล์")
+    ref_texts, ref_steps = [], []
+    for f in ref_files:
+        name, text, error = await read_reference(f, settings, secret)
+        if text:
+            ref_texts.append((name, text))
+        else:
+            ref_steps.append(StudioStep(key="reference", label="อ่านไฟล์ต้นแบบไม่สำเร็จ", ok=False, detail=f"{name}: {error}"))
+
     # ผู้รับและชื่อผู้พิจารณาของหน่วยที่เลือก ช่วยให้ AI เขียนข้อพิจารณาได้ตรงขั้นการเสนอ
     unit = pick_unit(load_units(user, settings), unit_key)
     try:
@@ -196,7 +215,10 @@ async def studio_draft(
             # สำนวนจากหนังสือฉบับจริงของหน่วยงาน (คลังตัวอย่าง) — โหมด Supabase เท่านั้น
             find_examples=example_finder(client) if user is not None else None,
             profile=load_org_profile(user, settings),
+            references=ref_texts,
+            budget_used_s=time.monotonic() - started,
         )
+        result.steps[:0] = ref_steps
     finally:
         if user is not None and saved_path is not None:
             saved_path.unlink(missing_ok=True)
@@ -216,6 +238,18 @@ async def studio_draft(
             ctx=response.context, secret=secret,
         )
     return response
+
+
+async def read_reference(upload: UploadFile, settings: Settings, secret: SecretLevel) -> tuple:
+    """ข้อความของไฟล์ต้นแบบ (PDF/Word/ภาพ — สแกนให้ AI อ่าน) ไม่เก็บไฟล์: คืน (ชื่อ, ข้อความ, สาเหตุที่อ่านไม่ได้)
+    ชนิดไฟล์ไม่รองรับ = 400 (ผู้ใช้ต้องรู้ทันที) / อ่านไม่ออก = ข้ามไฟล์นั้นแล้วร่างต่อ"""
+    name = Path(upload.filename or "").name
+    path = await save_upload(upload, settings)
+    try:
+        text, error = read_source_text(str(path), llm_config(settings), secret)
+    finally:
+        path.unlink(missing_ok=True)
+    return name, text, error
 
 
 @router.post("/api/v1/studio/blank", response_model=GovDocumentSchema)

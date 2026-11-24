@@ -13,8 +13,9 @@ memo_layout.py — ตัวจัดโครงสร้างเนื้อ�
 - "numbered" — แบบหัวข้อมีเลขกำกับตัวหนา: ๑. ต้นเรื่อง ๒. ข้อเท็จจริง ๓. ข้อกฎหมาย ๔. ข้อพิจารณาและเสนอแนะ
 
 การย่อหน้า (first-line indent, บรรทัดถัดไปชิดขอบซ้าย ตามแบบหนังสือราชการ)
-- หัวข้อ ต้นเรื่อง / ข้อกฎหมาย / ข้อเท็จจริง / ข้อพิจารณาและเสนอแนะ → บรรทัดเดี่ยว 2.5 ซม.
-  (เริ่มตรงกับเนื้อความ ตามแบบบันทึกข้อความของหน่วยงาน) ระยะก่อนหัวข้อ 6 pt ทุกหัวข้อ
+- หัวข้อ ต้นเรื่อง / ข้อกฎหมาย / ข้อเท็จจริง / ข้อพิจารณาและเสนอแนะ เริ่มที่ 2.5 ซม. ระยะก่อนหัวข้อ 6 pt ทุกหัวข้อ
+  - เนื้อความเริ่มด้วยข้อ (๑. / ๑.๑ / มาตรา / ข้อ / บรรทัดที่มีแท็บนำหน้า) → หัวข้อบรรทัดเดี่ยว แล้วไล่ข้อบรรทัดล่าง
+  - เนื้อความเริ่มด้วยความเรียง → หัวข้อนำหน้าข้อความในบรรทัดเดียวกัน (starts_with_item)
 - ย่อหน้าปกติ / ข้อระดับ ๑ (๑. ...)           → 2.5 ซม.
 - ข้อระดับ ๒ (๑.๑ ...) / มาตรา / ข้อ ของกฎหมาย → 3.5 ซม.
 - ข้อระดับ ๓ (๑.๑.๑ ...)                       → 4.5 ซม.
@@ -88,6 +89,34 @@ def line_indent_cm(line: str) -> float:
     return BASE_INDENT_CM + (line_level(line) - 1) * LEVEL_STEP_CM
 
 
+def starts_with_item(body: str) -> bool:
+    """เนื้อความหัวข้อนี้เริ่มด้วยข้อ (๑. / ๑.๑ / มาตรา / ข้อ หรือแท็บนำหน้า) → หัวข้ออยู่บรรทัดเดี่ยว
+    เริ่มด้วยความเรียง → หัวข้อนำหน้าข้อความบรรทัดแรก"""
+    first = next((ln for ln in (body or "").splitlines() if ln.strip()), "")
+    if not first:
+        return False
+    if first.startswith("\t"):
+        return True
+    s = first.strip()
+    return bool(_RE_LEVEL1.match(s) or _RE_LEVEL2.match(s) or _RE_CLAUSE.match(s))
+
+
+def drop_lone_number(body: str) -> str:
+    """ข้อเดียวไม่ต้องมีเลขข้อ: "๑. ..." ที่เป็นข้อเลขเดียวในหัวข้อ (ไม่มี ๒. หรือ ๑.๑) → ความเรียง
+    ให้หัวข้อนำหน้าข้อความบรรทัดเดียวกันได้"""
+    lines = (body or "").splitlines()
+    numbered = [i for i, ln in enumerate(lines)
+                if _RE_LEVEL1.match(ln.strip()) or _RE_LEVEL2.match(ln.strip())]
+    first = next((i for i, ln in enumerate(lines) if ln.strip()), None)
+    if numbered != [first] or first is None or lines[first].startswith("\t"):
+        return body
+    m = re.match(rf"^[1๑]\.(?!{_DIGIT})\s*", lines[first].strip())   # ข้อ ๒. เดี่ยว ๆ = AI ตั้งใจอ้างเลขข้อ คงไว้
+    if not m:
+        return body
+    lines[first] = lines[first].strip()[m.end():]
+    return "\n".join(lines)
+
+
 def split_consideration_and_request(consideration: str, request: Optional[str]) -> Tuple[str, str]:
     """
     แยก "ข้อพิจารณาและเสนอแนะ" ออกจาก "ภาคความประสงค์" (จึงเรียนมาเพื่อ...)
@@ -155,12 +184,22 @@ def build_memo_blocks(sections: List[Tuple[str, str, str]], request: str,
 
     for key, title, body in sections:
         lines = [ln.rstrip() for ln in body.splitlines() if ln.strip()]
-        # ทุกหัวข้อ (รวมต้นเรื่อง) เว้น 6 pt จากบรรทัดบน หัวข้อเป็นบรรทัดเดี่ยวเริ่มตรงกับเนื้อความ (2.5 ซม.)
+        # ทุกหัวข้อ (รวมต้นเรื่อง) เว้น 6 pt จากบรรทัดบน เริ่มตรงกับเนื้อความ (2.5 ซม.)
+        # เนื้อความเป็นข้อ ๆ → หัวข้อบรรทัดเดี่ยว; เป็นความเรียง → หัวข้อนำหน้าบรรทัดแรก
+        if title and lines and not starts_with_item(body):
+            blocks.append(MemoBlock(text=lines[0].strip(), indent_cm=BASE_INDENT_CM, lead=title,
+                                    lead_style=lead_style, space_before_pt=SECTION_GAP_PT, section_key=key))
+            lines = lines[1:]
+            title = ""
+            first_gap = 0.0
+        else:
+            first_gap = SECTION_GAP_PT
         if title:
             blocks.append(MemoBlock(text="", indent_cm=BASE_INDENT_CM, lead=title, lead_style=lead_style,
                                     space_before_pt=SECTION_GAP_PT, kind="heading", section_key=key))
+            first_gap = 0.0
         for i, ln in enumerate(lines):
-            gap = SECTION_GAP_PT if (i == 0 and not title) else 0.0
+            gap = first_gap if i == 0 else 0.0
             blocks.append(MemoBlock(text=ln.strip(), indent_cm=line_indent_cm(ln), space_before_pt=gap,
                                     section_key=key))
 

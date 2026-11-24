@@ -46,6 +46,8 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
     """
     ตรวจสอบความถูกต้องของหนังสือราชการตามกฎระเบียบงานสารบรรณ
     """
+    if doc.is_project:
+        return lint_project(doc)
     issues: List[LintIssue] = []
 
     # 1. ตรวจสอบวันที่ (Rule: RULE_NO_PREFIX_DATE)
@@ -374,3 +376,49 @@ def lint_gov_document(doc: GovDocumentSchema) -> LintResult:
     has_errors = any(i.severity == "error" for i in issues)
     return LintResult(is_valid=not has_errors, issues=issues)
 
+
+
+def lint_project(doc: GovDocumentSchema) -> LintResult:
+    """แบบเสนอโครงการ กทม. — ตรวจตามคู่มือการเขียนโครงการ (ช่อง field = data-field ของหน้าแก้ไข "pj:...")"""
+    from core.project import ProjectData, budget_mismatches, format_amount, item_level
+
+    p = doc.project or ProjectData()
+    issues: List[LintIssue] = []
+
+    def warn(rule: str, field: str, message: str, suggestion: str, severity: str = "warning"):
+        issues.append(LintIssue(rule_id=rule, severity=severity, field=field, message=message, suggestion=suggestion))
+
+    name = (doc.subject or "").strip()
+    if name and not name.startswith("โครงการ"):
+        warn("RULE_PROJECT_NAME", "subject", "ชื่อโครงการควรขึ้นต้นด้วยคำว่า \"โครงการ\"",
+             f"เช่น \"โครงการ{name}\"")
+    objectives = [ln for ln in (p.objectives or "").splitlines() if ln.strip()]
+    if len(objectives) > 3:
+        warn("RULE_PROJECT_OBJECTIVES", "pj:objectives", f"วัตถุประสงค์มี {len(objectives)} ข้อ — คู่มือแนะนำไม่เกิน ๓ ข้อ",
+             "รวมข้อที่ใกล้กันและเรียงตามความสำคัญ")
+    for index, written, subtotal in budget_mismatches(p.budget):
+        row = p.budget[index]
+        warn("RULE_PROJECT_BUDGET_SUM", f"pj:budget.{index}.amount",
+             f"ยอด \"{row.item.strip()[:40]}\" = {format_amount(written)} แต่รายการย่อยรวมได้ {format_amount(subtotal)}",
+             "ตรวจจำนวนเงินของรายการย่อยหรือยอดรวมของหมวดนี้")
+    if p.budget and all(r.amount is None for r in p.budget):
+        warn("RULE_PROJECT_BUDGET_EMPTY", "pj:budget.0.amount", "ตารางงบประมาณยังไม่มีจำนวนเงิน",
+             "ใส่จำนวนเงินของรายการค่าใช้จ่าย ระบบรวมยอดและเขียนเป็นตัวอักษรให้")
+    for i, r in enumerate(p.risks):
+        if r.risk.strip() and not (r.likelihood and r.impact):
+            warn("RULE_PROJECT_RISK_SCORE", f"pj:risks.{i}.likelihood",
+                 f"ความเสี่ยงข้อ {i + 1} ยังไม่ได้ประเมินโอกาสที่จะเกิด/ผลกระทบ (๑–๕)",
+                 "ใส่คะแนน ๑–๕ ระบบคำนวณระดับความเสี่ยงตามตารางวิเคราะห์ของ กทม.")
+    kinds = {k.kind.strip() for k in p.kpis}
+    missing = [k for k in ("ผลผลิต", "ผลลัพธ์", "ผลกระทบ") if k not in kinds]
+    if p.kpis and missing:
+        warn("RULE_PROJECT_KPI_KINDS", "pj:kpis.0.kind", "ตัวชี้วัดยังไม่ครบระดับ: ขาด " + " ".join(missing),
+             "คู่มือให้มีตัวชี้วัดระดับผลผลิต (เป้าหมาย) ผลลัพธ์ (วัตถุประสงค์) และผลกระทบ (ประโยชน์ที่คาดว่าจะได้รับ)")
+    months = [m for s in p.plan for m in s.months]
+    if p.plan and not months:
+        warn("RULE_PROJECT_PLAN_MONTHS", "pj:plan.0.step", "แผนปฏิบัติการยังไม่ได้ระบุเดือนที่ดำเนินการ",
+             "คลิกช่องเดือนในตารางแผนปฏิบัติการเพื่อแรเงาเดือนที่ทำขั้นตอนนั้น")
+    for i, r in enumerate(p.budget):
+        if item_level(r.item) == 1 and r.amount is None and not r.item.strip():
+            warn("RULE_PROJECT_BUDGET_ROW", f"pj:budget.{i}.item", f"ตารางงบประมาณแถว {i + 1} ว่าง", "ลบแถวที่ไม่ใช้")
+    return LintResult(is_valid=not any(i.severity == "error" for i in issues), issues=issues)

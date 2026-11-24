@@ -25,7 +25,7 @@
   </div>
 
   <form id="login-form" class="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-6 space-y-4" novalidate>
-    <h1 class="text-base font-semibold text-slate-900">เข้าสู่ระบบ</h1>
+    <h1 id="form-title" class="text-base font-semibold text-slate-900">เข้าสู่ระบบ</h1>
     <div>
       <label for="email" class="block text-xs font-medium text-slate-600 mb-1.5">อีเมล</label>
       <input id="email" name="email" type="email" autocomplete="username" required
@@ -43,12 +43,22 @@
       </div>
       <p id="password-hint" class="mt-1.5 text-[11px] text-amber-700" hidden></p>
     </div>
+    <div id="confirm-wrap" hidden>
+      <label for="password2" class="block text-xs font-medium text-slate-600 mb-1.5">ยืนยันรหัสผ่าน</label>
+      <input id="password2" name="password2" type="password" autocomplete="new-password"
+             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+      <p class="mt-1.5 text-[11px] text-slate-500">อย่างน้อย ๘ ตัวอักษร</p>
+    </div>
+    <p id="signup-done" class="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 leading-relaxed" role="status" hidden></p>
     <p id="login-error" class="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2" role="alert" hidden></p>
     <button id="login-submit" type="submit"
             class="w-full flex items-center justify-center gap-2 rounded-lg bg-brand-900 hover:bg-brand-800 text-white text-sm font-medium py-2.5 disabled:opacity-60">
-      <span>เข้าสู่ระบบ</span>
+      <span id="submit-label">เข้าสู่ระบบ</span>
     </button>
-    <p class="text-[11px] text-slate-400 leading-relaxed">บัญชีสร้างโดยผู้ดูแลระบบเท่านั้น ระบบไม่เปิดให้สมัครเอง</p>
+    <p class="text-[11px] text-slate-500 leading-relaxed">
+      <span id="mode-hint">ได้รับคำเชิญจากผู้ดูแลของหน่วยงาน?</span>
+      <button id="mode-toggle" type="button" class="text-emerald-700 hover:text-emerald-900 underline font-medium">ลงทะเบียนด้วยคำเชิญ</button>
+    </p>
   </form>
 </main>
 
@@ -90,15 +100,40 @@
     if (await GovDocAuth.token()) { location.replace(next); return; }
   } catch (err) { showError(err.message); }
 
+  // สองโหมด: เข้าสู่ระบบ / ลงทะเบียนด้วยคำเชิญ (อีเมลที่ผู้ดูแลเชิญไว้ — ไม่มีคำเชิญ = มีบัญชีแต่ไม่เห็นข้อมูลใด)
+  let signup = new URLSearchParams(location.search).get('mode') === 'signup';
+  const setMode = (on) => {
+    signup = on;
+    $('form-title').textContent = on ? 'ลงทะเบียนด้วยคำเชิญ' : 'เข้าสู่ระบบ';
+    $('submit-label').textContent = on ? 'ลงทะเบียน' : 'เข้าสู่ระบบ';
+    $('mode-hint').textContent = on ? 'มีบัญชีอยู่แล้ว?' : 'ได้รับคำเชิญจากผู้ดูแลของหน่วยงาน?';
+    $('mode-toggle').textContent = on ? 'เข้าสู่ระบบ' : 'ลงทะเบียนด้วยคำเชิญ';
+    $('confirm-wrap').hidden = !on;
+    $('password').autocomplete = on ? 'new-password' : 'current-password';
+    $('signup-done').hidden = true;
+    showError('');
+  };
+  $('mode-toggle').addEventListener('click', () => { setMode(!signup); $('email').focus(); });
+  setMode(signup);
+
   $('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = $('email').value.trim(), password = $('password').value;
     if (!email || !password) { showError('กรอกอีเมลและรหัสผ่าน'); return; }
+    if (signup && password.length < 8) { showError('รหัสผ่านอย่างน้อย ๘ ตัวอักษร'); $('password').focus(); return; }
+    if (signup && password !== $('password2').value) { showError('ยืนยันรหัสผ่านไม่ตรงกัน'); $('password2').focus(); return; }
     showError('');
     $('login-submit').disabled = true;
     try {
-      await GovDocAuth.signIn(email, password);
-      location.replace(next);
+      if (!signup) {
+        await GovDocAuth.signIn(email, password);
+        location.replace(next);
+        return;
+      }
+      if (await GovDocAuth.signUp(email, password)) { location.replace(next); return; }
+      $('signup-done').innerHTML = `ส่งอีเมลยืนยันไปที่ <b>${email.replace(/[<>&"]/g, '')}</b> แล้ว — เปิดลิงก์ในอีเมล แล้วกลับมาเข้าสู่ระบบ`;
+      $('signup-done').hidden = false;
+      $('login-submit').disabled = false;
     } catch (err) {
       showError(err.message);
       $('login-submit').disabled = false;

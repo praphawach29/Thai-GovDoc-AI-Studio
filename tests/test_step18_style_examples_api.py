@@ -180,7 +180,7 @@ def test_draft_uses_closest_examples_as_few_shot(fake, client, monkeypatch):
 
     def fake_gemini(prompt, config, timeout):
         prompts.append(prompt)
-        return llm_drafter.DraftContent(
+        return llm_drafter.DraftContent(analysis="", memo_law="",
             subject="ขอใช้สนามกีฬา", memo_intro="๑. สมาคมวอลเลย์บอล ได้มีหนังสือ ลงวันที่ [วันที่]",
             memo_facts="๑. ผู้ประสาน [ชื่อบุคคล]", memo_consideration="พิจารณาแล้ว เห็นควรอนุญาต",
             paragraph_reason="", paragraph_details="", paragraph_purpose="", reference="", source_summary="")

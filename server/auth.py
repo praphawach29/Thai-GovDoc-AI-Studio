@@ -142,21 +142,36 @@ def get_supabase(
     return sb.SupabaseClient(settings.supabase_url, settings.supabase_publishable_key, user.token)
 
 
+def _claim_invite(client: sb.SupabaseClient) -> bool:
+    """ใช้คำเชิญที่ค้างของอีเมลผู้ใช้ (migration 15) — ฟังก์ชันยังไม่มี/ฐานข้อมูลขัดข้อง = ไม่มีคำเชิญ"""
+    try:
+        return bool(client.rpc("claim_my_invite", {}))
+    except sb.SupabaseError:
+        return False
+
+
 def get_profile(
     user: CurrentUser = Depends(require_supabase_user),
     client: sb.SupabaseClient = Depends(get_supabase),
 ) -> Profile:
     """โปรไฟล์ + หน่วยงานของผู้ใช้ (อ่านผ่าน RLS)"""
-    rows = client.select(
-        "profiles",
-        {
-            "select": "user_id,org_id,role,full_name,position,"
-                      "organizations(id,name,doc_prefix,address,use_thai_numerals)",
-            "user_id": f"eq.{user.id}",
-        },
-    )
+    def load():
+        return client.select(
+            "profiles",
+            {
+                "select": "user_id,org_id,role,full_name,position,"
+                          "organizations(id,name,doc_prefix,address,use_thai_numerals)",
+                "user_id": f"eq.{user.id}",
+            },
+        )
+
+    rows = load()
+    if not rows and _claim_invite(client):        # สมัครไว้ก่อนแล้วค่อยได้รับเชิญ → ใช้คำเชิญตอนนี้
+        rows = load()
+    if rows and rows[0].get("role") == "disabled":
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน — ติดต่อผู้ดูแลของหน่วยงาน")
     if not rows:
-        raise HTTPException(status_code=403, detail="บัญชีนี้ยังไม่ได้ผูกกับหน่วยงาน — ติดต่อผู้ดูแลระบบ")
+        raise HTTPException(status_code=403, detail="บัญชีนี้ยังไม่ได้ผูกกับหน่วยงาน — ขอคำเชิญจากผู้ดูแลของหน่วยงาน")
     row = rows[0]
     return Profile(
         user_id=row["user_id"], org_id=row["org_id"], role=row["role"],

@@ -20,9 +20,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from core.models import DocType, DocumentKind, GovDocumentSchema, SecretLevel
+from core.pii_mask import PiiVault
 from core.security import cloud_ai_allowed
 
 logger = logging.getLogger("govdoc.ai")
@@ -33,10 +34,24 @@ _FALLBACK_MODELS = {"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "cl
 
 class DraftContent(BaseModel):
     """เนื้อความที่ AI เขียน — ช่องที่ไม่ใช้กับชนิดหนังสือนั้นให้เป็นข้อความว่าง"""
+    # ช่องแรก: ให้ AI วิเคราะห์เรื่องใหม่เทียบต้นแบบก่อนเขียน (ไม่พิมพ์ลงหนังสือ แสดงในขั้นตอน)
+    analysis: str = Field(
+        description="วิเคราะห์ก่อนร่าง (ไม่พิมพ์ลงหนังสือ) สั้น ๆ เป็นข้อ: คำขอแต่ละข้อของเรื่องใหม่ · "
+                    "ตรงกับข้อใดในต้นแบบ (ถ้ามี) · ต้องอาศัยข้อกฎหมาย/ระเบียบใดและใครมีอำนาจ (เห็นชอบ/อนุญาต/อนุมัติ) · "
+                    "ข้อเสนอที่ต้องมีในข้อพิจารณา ว่างได้ถ้าเรื่องง่าย",
+    )
     subject: str = Field(description="เรื่อง: สั้น กะทัดรัด ไม่ขึ้นต้นด้วยคำว่า 'เรื่อง'")
     memo_intro: str = Field(description="บันทึกข้อความ - ต้นเรื่อง")
+    memo_law: str = Field(
+        description="บันทึกข้อความ - ข้อกฎหมาย: คัดเฉพาะที่มีใน <source> หรือต้นแบบ <reference> ตรงตัว "
+                    "และเกี่ยวกับคำขอของเรื่องใหม่ ไม่มี = \"\"",
+    )
     memo_facts: str = Field(description="บันทึกข้อความ - ข้อเท็จจริง")
     memo_consideration: str = Field(description="บันทึกข้อความ - ข้อพิจารณาและเสนอแนะ")
+    memo_request_top: str = Field(
+        description="บันทึกข้อความ - ภาคความประสงค์ของขั้นสูงสุด (เสนอปลัดฯ นำเรียนผู้ว่าฯ) ตามต้นแบบ "
+                    "พร้อมข้อที่ขอให้เห็นชอบ/อนุญาต/อนุมัติ/สั่งการ และอำนาจตามกฎหมาย ไม่มีต้นแบบ = \"\"",
+    )
     paragraph_reason: str = Field(description="หนังสือภายนอก - ภาคเหตุ")
     paragraph_details: str = Field(description="หนังสือภายนอก - ภาคข้อเท็จจริง (ว่างได้)")
     paragraph_purpose: str = Field(description="หนังสือภายนอก - ภาคความประสงค์")
@@ -50,11 +65,30 @@ class DraftContent(BaseModel):
                     "ใช้เฉพาะข้อเท็จจริงในต้นเรื่อง ว่างได้ถ้าไม่มีต้นเรื่อง",
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _optional_new_fields(cls, data):
+        """คำตอบที่ไม่มีช่องวิเคราะห์/ข้อกฎหมาย (โมเดลเก่า/ตัดคำตอบ) ยังใช้ได้ — schema ยังบังคับครบเพราะ Gemini ไม่รับ default"""
+        if isinstance(data, dict):
+            data = {"analysis": "", "memo_law": "", "memo_request_top": "", **data}
+        return data
 
-def _strict_schema() -> dict:
-    schema = DraftContent.model_json_schema()
-    schema["additionalProperties"] = False
-    schema["required"] = list(DraftContent.model_fields)
+
+def _strict_schema(model=None) -> dict:
+    """JSON schema โหมดเข้มงวดของ Claude: ปิด additionalProperties และบังคับทุกช่องทุกระดับ (รวม $defs ของตาราง)"""
+    schema = (model or DraftContent).model_json_schema()
+
+    def close(node):
+        if isinstance(node, dict):
+            if node.get("type") == "object" or "properties" in node:
+                node["additionalProperties"] = False
+                node["required"] = list(node.get("properties", {}))
+            for v in node.values():
+                close(v)
+        elif isinstance(node, list):
+            for v in node:
+                close(v)
+    close(schema)
     return schema
 
 
@@ -74,6 +108,8 @@ class LLMConfig:
     # ลำดับผู้ให้บริการ ใช้ทั้งอ่านไฟล์สแกนและร่าง: ตัวแรกทำทั้งงานถ้าทำได้ ตัวถัดไปเป็นตัวสำรอง
     # ค่าเริ่มต้น Gemini ก่อน (ถูกกว่า) แล้ว Claude
     provider_order: Tuple[str, ...] = ("gemini", "claude")
+    # ปิดชื่อ เลขบัตร โทรศัพท์ อีเมล เลขบัญชี บ้านเลขที่ ก่อนส่งข้อความให้ AI แล้วใส่ค่าจริงกลับ (core/pii_mask.py)
+    mask_pii: bool = True
 
     @property
     def any_provider(self) -> bool:
@@ -108,6 +144,13 @@ class LLMDraftResult:
     attempts: List[LLMAttempt] = field(default_factory=list)
     truncated: bool = False
     skipped_reason: str = ""                 # ไม่ได้เรียก AI เพราะอะไร (ไม่มีคีย์ / ชั้นความลับ)
+    masked: str = ""                         # ข้อมูลส่วนบุคคลที่ปิดก่อนส่ง เช่น "ชื่อ 2 · โทรศัพท์ 1"
+    law_dropped: int = 0                     # บรรทัดข้อกฎหมายที่ตัดทิ้งเพราะไม่พบในต้นเรื่อง/ต้นแบบ
+    top_request_ok: bool = True              # False = ตัดการอ้างอำนาจในภาคความประสงค์ขั้นสูงสุดเพราะไม่พบในแหล่ง
+    review_issues: List[str] = field(default_factory=list)   # ปัญหาที่ตรวจพบในร่างรอบแรก (core/draft_review)
+    review_left: List[str] = field(default_factory=list)     # ปัญหาที่ยังเหลือหลังรอบแก้
+    repaired: bool = False                   # AI แก้ตามผลตรวจแล้วหนึ่งรอบ
+    review_skipped: str = ""                 # พบปัญหาแต่ไม่ได้แก้ เพราะอะไร
 
 
 # ---------------------------------------------------------------- prompt
@@ -117,7 +160,11 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
 กฎที่ต้องปฏิบัติ:
 1. ใช้เฉพาะข้อเท็จจริงที่มีในต้นเรื่องหรือคำสั่งของผู้ใช้ ห้ามแต่งชื่อบุคคล หน่วยงาน เลขที่หนังสือ วันที่ จำนวนเงิน หรือตัวเลขใดที่ไม่มีในต้นเรื่อง
 2. ข้อมูลที่จำเป็นแต่ไม่มีในต้นเรื่อง ให้เว้นเป็น [✏️ ระบุ...] เช่น [✏️ ระบุวันที่จัดงาน] เพื่อให้ผู้ใช้กรอกเอง
-3. ห้ามเขียนข้อกฎหมาย มาตรา หรือระเบียบที่ไม่ได้ยกมาในต้นเรื่อง (ผู้ใช้จะเลือกจากคลังกฎหมายที่ยืนยันแล้ว)
+3. ห้ามเขียนข้อกฎหมาย มาตรา ระเบียบ หรือหนังสือสั่งการที่ไม่ได้ยกมาใน <source> หรือในต้นแบบ <reference> ที่ผู้ใช้แนบ
+   (ต้นแบบคือหนังสือฉบับจริงที่ผ่านการอนุมัติแล้ว) — คัดชื่อกฎหมาย เลขมาตรา/ข้อ และข้อความตรงตัว ห้ามแต่งหรือสรุปใหม่
+   (แก้ได้เฉพาะคำที่สะกดเพี้ยนจากการอ่านไฟล์ เช่น สระ/วรรณยุกต์สลับที่ "อตั รา" → "อัตรา")
+   เลือกเฉพาะข้อที่เกี่ยวกับคำขอของเรื่องใหม่ (เช่น ขอใช้ตราสัญลักษณ์ → กฎหมายเครื่องหมายราชการ, ขอยกเว้นค่าใช้สถานที่ → ระเบียบเงินบำรุง)
+   ไม่มีทั้งสองแหล่ง = เว้นว่าง (ผู้ใช้จะเลือกจากคลังกฎหมายที่ยืนยันแล้ว)
 4. เขียนเฉพาะเนื้อความ ไม่ต้องเขียนส่วนราชการ ที่ วันที่ คำขึ้นต้น ชื่อหรือตำแหน่งผู้ลงนาม
 5. แยกข้อด้วยการขึ้นบรรทัดใหม่ ใช้เลขข้อแบบ "๑." และข้อย่อย "๑.๑" ไม่ใช้สัญลักษณ์ markdown (เช่น ** หรือ -)
 6. ตอบเป็น JSON ตาม schema เท่านั้น ช่องที่ไม่ใช้กับชนิดหนังสือนี้ให้เป็นข้อความว่าง ""
@@ -132,6 +179,17 @@ SYSTEM_PROMPT = """คุณเป็นเจ้าหน้าที่ธุ�
    - ไม่มีหนังสือต้นเรื่อง (มีเพียงคำสั่งของผู้ใช้) ให้เป็น ""
 9. ถ้ามี <example> (หนังสือฉบับจริงของหน่วยงาน) ให้เลียนแบบสำนวน ลำดับความ และประโยคขึ้นต้น-ลงท้ายของแต่ละภาค
    แต่ห้ามนำข้อเท็จจริงในตัวอย่างมาใช้ ข้อเท็จจริงทุกอย่างมาจาก <source>/<instruction> ของเรื่องใหม่เท่านั้น
+10. รหัสในวงเล็บเหลี่ยม เช่น [ชื่อ_1] [เลขบัตร_1] [โทร_1] [อีเมล_1] [บัญชี_1] [ที่อยู่_1] คือข้อมูลส่วนบุคคลที่ระบบปิดไว้
+   รหัสเดียวกันคือคนหรือค่าเดียวกัน เมื่อต้องเขียนถึงให้คัดลอกรหัสตรงตัว (ไม่ต้องเติมคำนำหน้าชื่อ ไม่แปลงเลขในรหัสเป็นเลขไทย)
+   ห้ามเดาค่าจริง ระบบจะใส่ค่าจริงกลับเอง
+11. ถ้ามีต้นแบบ <reference> ให้เขียนช่อง analysis ก่อน: เทียบคำขอแต่ละข้อของเรื่องใหม่กับต้นแบบ ว่าตรงกับข้อใด
+   ต้องอาศัยข้อกฎหมายใด ใครมีอำนาจ แล้วร่างทุกหัวข้อให้ "ครบและเรียงเหมือนต้นแบบ" (รวมหัวข้อข้อกฎหมาย
+   ข้อเสนอแยกเห็นชอบ/อนุญาต/อนุมัติ/มอบหมาย การอ้างข้อเท็จจริงเป็นเลขข้อ และสำนวนขึ้นต้น-ลงท้ายของแต่ละหัวข้อ)
+   ต้นแบบนำเสนอผู้มีอำนาจคนใด ให้เสนอผู้มีอำนาจคนเดียวกันเมื่อคำขอเป็นแบบเดียวกัน
+   คำขอที่ต้นแบบไม่มี ให้ร่างตามแนวเดียวกัน; คำขอในต้นแบบที่เรื่องใหม่ไม่มี ให้ตัดออก
+   ห้ามมอบหมายหน่วยงานที่ต้นเรื่องไม่ได้ขอความอนุเคราะห์ (เช่น ต้นแบบมีสำนักการแพทย์ แต่เรื่องใหม่ไม่ได้ขอ = ไม่ใส่)
+12. ตัวเลขใน <source> ที่ตามด้วย [ลายมือ] คือเลขที่อ่านจากลายมือ/ตรายาง (อาจคลาด) — เมื่อนำไปใช้ให้คัดลอกพร้อมป้าย
+   ตรงตัว เช่น "ที่ กท ๐๒๐๐/๕๗๕๙[ลายมือ]" ระบบจะเปลี่ยนเป็นจุดให้ผู้ใช้ตรวจเอง
 """
 
 
@@ -267,10 +325,31 @@ def build_user_prompt(
         kind = f"""ชนิดหนังสือ: บันทึกข้อความ (หนังสือภายใน) เสนอ{(' ' + recipient) if recipient else 'ผู้บังคับบัญชา'}
 เขียนช่องต่อไปนี้ (ช่อง paragraph_* ให้เป็น ""):
 - subject: เรื่อง
-- memo_intro (ต้นเรื่อง): ที่มาของเรื่อง เช่น "๑. [หน่วยงาน] ได้มีหนังสือ ที่ ... ลงวันที่ ... เรียน ... เรื่อง ... ขอ ..." แยกข้อถ้ามีหลายฉบับ
-- memo_facts (ข้อเท็จจริง): รายละเอียดคำขอ วัน เวลา สถานที่ ผลการตรวจสอบหรือประสานงาน แยกเป็นข้อ
+การวางหัวข้อ (ระบบจัดให้ตามบรรทัดแรกของแต่ละช่อง memo_*):
+  * เนื้อหามีหลายข้อ → บรรทัดแรกขึ้นต้นด้วย "๑." เลย แล้วข้อละบรรทัด — หัวข้ออยู่บรรทัดเดี่ยว ข้อไล่ลงมาบรรทัดล่าง
+  * เนื้อหามีเรื่องเดียว → เขียนเป็นความเรียงย่อหน้าเดียว ไม่ใส่เลข "๑." — หัวข้อนำหน้าข้อความในบรรทัดเดียวกัน
+  * มีย่อหน้านำแล้วตามด้วยรายการ (เช่น "...พิจารณาแล้ว เห็นว่า ... ดังนี้" แล้ว "๑. ..." "๒. ...") → บรรทัดแรกเป็นความเรียง
+  ห้ามใส่ "๑." เมื่อมีเพียงข้อเดียว
+- memo_intro (ต้นเรื่อง): ที่มาของเรื่อง เช่น "[หน่วยงาน] ได้มีหนังสือ ที่ ... ลงวันที่ ... เรียน ... เรื่อง ... ขอ ..."
+  หนึ่งข้อต่อหนังสือที่รับเข้าหนึ่งครั้ง (รับเข้าครั้งเดียว = ความเรียงไม่มีเลขข้อ; ตั้งแต่ ๒ ครั้ง = "๑." "๒." ข้อละบรรทัด) (ชุดหนังสือ + บันทึกเกษียนของชุดนั้น) — ห้ามรวมเป็นข้อเดียวแม้เลขที่/วันที่ของหนังสือซ้ำกัน
+  (เช่น ส่งฉบับแก้ไขวันจัดงานมาใหม่ ให้เป็นข้อ ๒ และระบุว่าเปลี่ยนแปลงอะไรจากข้อ ๑)
+  ในแต่ละข้อ ไล่การสั่งการตามเกษียนทีละขั้นตามลำดับจริง: ใครเสนอใคร (เลขที่/วันที่บันทึก) → ใครมอบหมายหน่วยใด
+  ให้ทำอะไร (พิจารณาดำเนินการ / ทราบ / สำเนาส่งเพื่อทราบ) → ต่อลงมาจนถึงหน่วยผู้ร่าง ห้ามข้ามหรือสลับหน่วยที่ได้รับมอบหมาย
+  จบที่การมอบหมายมายังผู้รับบันทึกนี้หรือหน่วยผู้ร่าง — ไม่ต้องเขียนต่อว่าผู้รับบันทึกมอบเจ้าหน้าที่คนใด (ห้ามใส่ชื่อเจ้าหน้าที่)
+  ไม่ต้องใส่วันที่ที่ลงนามสั่งการในเกษียนแต่ละขั้น (เว้นแต่ต้นแบบใส่) — ใส่เฉพาะเลขที่/วันที่ของหนังสือและบันทึก
+  คำย่อในเกษียนเขียนเป็นคำเต็ม: "ลว. ๒๘ ก.ย. ๖๙" → "ลงวันที่ ๒๘ กันยายน ๒๕๖๙", ผว.กทม. → ผู้ว่าราชการกรุงเทพมหานคร,
+  ป.กทม. → ปลัดกรุงเทพมหานคร, ลผว.กทม. → เลขานุการผู้ว่าราชการกรุงเทพมหานคร, ผอ.สนศ. → ผู้อำนวยการสำนักการศึกษา,
+  สวท. → สำนักวัฒนธรรม กีฬา และการท่องเที่ยว, กกฬ. → กองการกีฬา, ศยช. → ศูนย์เยาวชนกรุงเทพมหานคร (ไทย-ญี่ปุ่น)
+  (คำย่ออื่นที่ไม่แน่ใจ ให้คงไว้ตามต้นเรื่อง ห้ามเดา)
+- memo_law (ข้อกฎหมาย): ตามกฎข้อ ๓ — "๑. <ชื่อกฎหมาย> (เอกสาร ๑)" แล้วบรรทัดถัดไป "มาตรา/ข้อ <เลข> <ข้อความ>" ไม่มี = ""
+- memo_facts (ข้อเท็จจริง): รายละเอียดคำขอ วัน เวลา สถานที่ ผลการตรวจสอบหรือประสานงาน แยกเป็นข้อเมื่อมีหลายประเด็น
 - memo_consideration (ข้อพิจารณาและเสนอแนะ): ขึ้นต้นด้วย "{party}พิจารณาแล้ว เห็นว่า ..." แล้ว "จึงเห็นควร ..." แยกข้อเสนอเป็นข้อ ๑. ๑.๑ ได้
-  ไม่ต้องเขียนประโยคปิดท้าย "จึงเรียนมาเพื่อ..." (ระบบเติมตามขั้นการเสนอ)"""
+  ไม่ต้องเขียนประโยคปิดท้าย "จึงเรียนมาเพื่อ..." (ระบบเติมตามขั้นการเสนอ)
+- memo_request_top (ภาคความประสงค์ขั้นสูงสุด เสนอปลัดฯ): เขียนเฉพาะเมื่อต้นแบบ <reference> มีฉบับที่เสนอปลัดฯ/ผู้มีอำนาจ
+  ให้ใช้โครงประโยคเดียวกับต้นแบบ เช่น "จึงเรียนมาเพื่อโปรดพิจารณา หากเห็นชอบโปรดนำเรียน<ผู้มีอำนาจ> เพื่อโปรดพิจารณา
+  ให้ความเห็นชอบตามข้อ ๑.๑ อนุญาตตามข้อ ๑.๒ ... อำนาจในการ...เป็นของ<ผู้มีอำนาจ> ตาม<กฎหมาย มาตรา/ข้อ> ... และ<ผู้รับ>ได้โปรดสั่งการตามข้อ ๒"
+  เลขข้อต้องตรงกับ memo_consideration ของเรื่องใหม่; อ้างอำนาจได้เฉพาะกฎหมายและมาตรา/ข้อที่ต้นแบบอ้างไว้ (คัดตรงตัว)
+  และเฉพาะที่เกี่ยวกับข้อเสนอของเรื่องใหม่; ไม่มีต้นแบบ = \"\""""
     else:
         kind = f"""ชนิดหนังสือ: หนังสือภายนอก{(' ถึง ' + recipient) if recipient else ''}
 เขียนช่องต่อไปนี้ (ช่อง memo_* ให้เป็น ""):
@@ -326,7 +405,8 @@ def _claude_create(client, kwargs: dict):
         raise
 
 
-def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftContent:
+def _call_claude(prompt: str, config: LLMConfig, timeout_s: float, schema=None) -> DraftContent:
+    schema = schema or DraftContent
     client = _anthropic_client(config, timeout_s)
     kwargs = dict(
         model=config.claude_model,
@@ -334,7 +414,7 @@ def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
         output_config={"effort": config.claude_effort,
-                       "format": {"type": "json_schema", "schema": _strict_schema()}},
+                       "format": {"type": "json_schema", "schema": _strict_schema(schema)}},
     )
     if config.claude_model in _FALLBACK_MODELS:
         # ถ้าโมเดลปฏิเสธด้วยเหตุผลด้านความปลอดภัย ให้ Anthropic สลับไปโมเดลสำรองในคำขอเดียวกัน
@@ -345,7 +425,7 @@ def _call_claude(prompt: str, config: LLMConfig, timeout_s: float) -> DraftConte
     if response.stop_reason == "max_tokens":
         raise RuntimeError("คำตอบยาวเกินกำหนด")
     text = next((b.text for b in response.content if b.type == "text"), "")
-    return DraftContent.model_validate_json(text)
+    return schema.model_validate_json(text)
 
 
 def _gemini_generate(client, model: str, contents, **config_kwargs):
@@ -368,61 +448,88 @@ def _gemini_generate(client, model: str, contents, **config_kwargs):
         raise
 
 
-def _call_gemini(prompt: str, config: LLMConfig, timeout_s: float) -> DraftContent:
+def _call_gemini(prompt: str, config: LLMConfig, timeout_s: float, schema=None) -> DraftContent:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=config.gemini_api_key,
                           http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
+    schema = schema or DraftContent
     response = _gemini_generate(client, config.gemini_model, prompt, system_instruction=SYSTEM_PROMPT,
-                                response_mime_type="application/json", response_schema=DraftContent)
-    if isinstance(getattr(response, "parsed", None), DraftContent):
+                                response_mime_type="application/json", response_schema=schema)
+    if isinstance(getattr(response, "parsed", None), schema):
         return response.parsed
-    return DraftContent.model_validate_json(response.text or "")
+    return schema.model_validate_json(response.text or "")
 
 
-def structured_call(system: str, prompt: str, schema, config: "LLMConfig", timeout_s: float = 25.0):
+def structured_call(system: str, prompt: str, schema, config: "LLMConfig", timeout_s: float = 25.0,
+                    max_tokens: int = 2000):
     """คำขอเล็ก ๆ ที่ตอบเป็น JSON ตาม schema (pydantic) — ลองตามลำดับผู้ให้บริการ (Gemini → Claude)
     คืนวัตถุตาม schema หรือ raise ถ้าทุกตัวล้มเหลว / ไม่มีคีย์"""
+    vault = PiiVault() if config.mask_pii else None
+    if vault is not None:
+        prompt = vault.mask(prompt)
     errors = []
     for name in config.provider_order:
-        try:
-            if name == "gemini" and config.gemini_api_key:
-                from google import genai
-                from google.genai import types
-
-                client = genai.Client(api_key=config.gemini_api_key,
-                                      http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
-                response = _gemini_generate(client, config.gemini_model, prompt, system_instruction=system,
-                                            response_mime_type="application/json", response_schema=schema)
-                if isinstance(getattr(response, "parsed", None), schema):
-                    return response.parsed
-                return schema.model_validate_json(response.text or "")
-            if name == "claude" and config.anthropic_api_key:
-                sch = schema.model_json_schema()
-
-                def closed(node):          # โหมด JSON เข้มงวดต้องปิด additionalProperties ทุกระดับ
-                    if isinstance(node, dict):
-                        if node.get("type") == "object" or "properties" in node:
-                            node["additionalProperties"] = False
-                        for v in node.values():
-                            closed(v)
-                    elif isinstance(node, list):
-                        for v in node:
-                            closed(v)
-                closed(sch)
-                client = _anthropic_client(config, timeout_s)
-                response = _claude_create(client, dict(
-                    model=config.claude_model, max_tokens=2000, system=system,
-                    messages=[{"role": "user", "content": prompt}],
-                    output_config={"effort": "low", "format": {"type": "json_schema", "schema": sch}},
-                ))
-                text = next((b.text for b in response.content if b.type == "text"), "")
-                return schema.model_validate_json(text)
-        except Exception as exc:
-            _log_failure("structured", name, config.gemini_model if name == "gemini" else config.claude_model, exc)
-            errors.append(f"{name}: {_short_error(exc)}")
+        extra = (max_tokens,) if max_tokens != 2000 else ()      # ค่าเริ่มต้นเรียกแบบเดิม
+        result = _structured_once(name, system, prompt, schema, config, timeout_s, errors, *extra)
+        if result is not None:
+            return _unmask_model(result, vault) if vault is not None and vault.total else result
     raise RuntimeError("; ".join(errors) or "ไม่ได้ตั้งค่า AI")
+
+
+def _unmask_model(obj, vault: PiiVault):
+    """ใส่ค่าจริงกลับทุกช่องข้อความของคำตอบ (รวมช่องในรายการ/วัตถุย่อย)"""
+    def walk(value):
+        if isinstance(value, str):
+            return vault.unmask(value)
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        return value
+    return type(obj).model_validate(walk(obj.model_dump()))
+
+
+def _structured_once(name, system, prompt, schema, config, timeout_s, errors, max_tokens=2000):
+    """เรียกผู้ให้บริการหนึ่งตัว; ไม่มีคีย์หรือไม่สำเร็จคืน None (สาเหตุต่อท้าย errors)"""
+    try:
+        if name == "gemini" and config.gemini_api_key:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=config.gemini_api_key,
+                                  http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
+            response = _gemini_generate(client, config.gemini_model, prompt, system_instruction=system,
+                                        response_mime_type="application/json", response_schema=schema)
+            if isinstance(getattr(response, "parsed", None), schema):
+                return response.parsed
+            return schema.model_validate_json(response.text or "")
+        if name == "claude" and config.anthropic_api_key:
+            sch = schema.model_json_schema()
+
+            def closed(node):          # โหมด JSON เข้มงวดต้องปิด additionalProperties ทุกระดับ
+                if isinstance(node, dict):
+                    if node.get("type") == "object" or "properties" in node:
+                        node["additionalProperties"] = False
+                    for v in node.values():
+                        closed(v)
+                elif isinstance(node, list):
+                    for v in node:
+                        closed(v)
+            closed(sch)
+            client = _anthropic_client(config, timeout_s)
+            response = _claude_create(client, dict(
+                model=config.claude_model, max_tokens=max_tokens, system=system,
+                messages=[{"role": "user", "content": prompt}],
+                output_config={"effort": "low", "format": {"type": "json_schema", "schema": sch}},
+            ))
+            text = next((b.text for b in response.content if b.type == "text"), "")
+            return schema.model_validate_json(text)
+    except Exception as exc:
+        _log_failure("structured", name, config.gemini_model if name == "gemini" else config.claude_model, exc)
+        errors.append(f"{name}: {_short_error(exc)}")
+    return None
 
 
 def _status_and_message(exc: Exception) -> Tuple[Optional[int], str]:
@@ -491,6 +598,10 @@ def _clean(content: DraftContent) -> DraftContent:
         data[key] = unmask_leftovers(text)
     if data["subject"].startswith("เรื่อง"):
         data["subject"] = data["subject"][len("เรื่อง"):].strip()
+    # ข้อเดียวไม่ใส่เลขข้อ → หัวข้อบันทึกข้อความนำหน้าข้อความบรรทัดเดียวกัน (ข้อกฎหมายคงเลขข้อไว้ตามกฎข้อ ๓)
+    from core.memo_layout import drop_lone_number
+    for key in ("memo_intro", "memo_facts", "memo_consideration"):
+        data[key] = drop_lone_number(data[key])
     return DraftContent(**data)
 
 
@@ -511,18 +622,32 @@ def draft_content_with_llm(
     examples: str = "",
     kind: Optional[DocumentKind] = None,
     title: str = "",
+    law_sources: Optional[str] = None,
 ) -> LLMDraftResult:
-    """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)"""
+    """ลองผู้ให้บริการตามลำดับจนสำเร็จ; ไม่สำเร็จทั้งหมดคืน content=None (ผู้เรียกใช้ร่างตามกฎ)
+    kind = PROJECT → ตอบเป็น ProjectContent (แบบเสนอโครงการ มีตาราง) แทน DraftContent; title = หน่วยงานของผู้ใช้
+    law_sources = ข้อความที่ข้อกฎหมายต้องมีอยู่จริง (ต้นเรื่อง + ต้นแบบ) — ไม่ส่ง = ต้นเรื่องอย่างเดียว"""
+    from core.draft_review import remaining_ok, repair_prompt, review_memo, should_review
+    from core.law_grounding import ground_citations, ground_law
+    from functools import partial
+
+    from core.project_ai import ProjectContent, build_project_prompt, clean_project
+
+    project = kind == DocumentKind.PROJECT
+    schema = ProjectContent if project else DraftContent
     result = LLMDraftResult()
     if not cloud_ai_allowed(secret):
         result.skipped_reason = "เอกสารชั้นความลับ ไม่ส่งให้ AI ภายนอก"
         return result
     if providers is None:
         available = {}
+        # หนังสือทั่วไปเรียกฟังก์ชันเดิมตรง ๆ; โครงการผูก schema ของโครงการ (ตอบเป็นตาราง)
+        claude_call = partial(_call_claude, schema=schema) if project else _call_claude
+        gemini_call = partial(_call_gemini, schema=schema) if project else _call_gemini
         if config.anthropic_api_key:
-            available["claude"] = ("claude", config.claude_model, _call_claude)
+            available["claude"] = ("claude", config.claude_model, claude_call)
         if config.gemini_api_key:
-            available["gemini"] = ("gemini", config.gemini_model, _call_gemini)
+            available["gemini"] = ("gemini", config.gemini_model, gemini_call)
         # เวลาเหลือน้อย (เช่น อ่านไฟล์สแกนไปนานแล้ว) และไม่มีตัวที่ควรใช้ต่อ ให้ Gemini ซึ่งเร็วกว่าลองก่อน
         budget = config.total_timeout_s if budget_s is None else budget_s
         if prefer is None and budget < 35 and "gemini" in available and "gemini" not in avoid:
@@ -538,9 +663,35 @@ def draft_content_with_llm(
     source = source_text or ""
     if len(source) > MAX_SOURCE_CHARS:
         source, result.truncated = source[:MAX_SOURCE_CHARS], True
-    prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
-                               recipient=recipient, review_party=review_party, examples=examples, kind=kind, title=title)
+    # ปิดข้อมูลส่วนบุคคลก่อนส่ง (ตัวอย่างสำนวนปิดด้วย mask_facts มาแล้ว)
+    unmasked_instruction, unmasked_recipient = instruction, recipient
+    vault = PiiVault() if config.mask_pii else None
+    if vault is not None:
+        instruction, source = vault.mask(instruction), vault.mask(source)
+        recipient, review_party, title = vault.mask(recipient), vault.mask(review_party), vault.mask(title)
+        result.masked = vault.summary()
+    if project:
+        prompt = build_project_prompt(instruction=instruction, source_text=source, agency=title, assemble=_assemble,
+                                      examples=examples)
+    else:
+        prompt = build_user_prompt(doc_type=doc_type, instruction=instruction, source_text=source,
+                                   recipient=recipient, review_party=review_party, examples=examples, kind=kind,
+                                   title=title)
 
+    def finish(raw):
+        """คำตอบดิบของ AI → ทำความสะอาด ใส่ข้อมูลส่วนบุคคลกลับ ตรวจข้อกฎหมาย/การอ้างอำนาจกับแหล่ง"""
+        content = clean_project(raw) if isinstance(raw, ProjectContent) else _clean(raw)
+        if vault is not None and vault.total:
+            content = _unmask_model(content, vault)
+        if isinstance(content, DraftContent):
+            grounding = "\n".join(x for x in (law_sources or source_text, unmasked_instruction) if x)
+            law, result.law_dropped = ground_law(content.memo_law, grounding)
+            top, result.top_request_ok = ground_citations(content.memo_request_top, grounding)
+            content = content.model_copy(update={"memo_law": law, "memo_request_top": top})
+        return content
+
+    review_source = "\n".join(x for x in (source_text, unmasked_instruction) if x)
+    memo = doc_type == DocType.INTERNAL and kind in (None, DocumentKind.INTERNAL_MEMO)
     deadline = clock() + (config.total_timeout_s if budget_s is None else budget_s)
     for index, (name, model, call) in enumerate(providers):
         remaining = deadline - clock()
@@ -552,19 +703,44 @@ def draft_content_with_llm(
         budget = remaining if is_last else min(config.claude_timeout_s, remaining - 10)
         started = clock()
         try:
-            content = _clean(call(prompt, config, budget))
+            raw = call(prompt, config, budget)
+            content = finish(raw)
         except Exception as exc:  # สลับไปตัวถัดไปเสมอ — เหตุผลบันทึกไว้แสดงในขั้นตอน
             _log_failure("draft", name, model, exc)
             result.attempts.append(LLMAttempt(name, model, False, _short_error(exc), round(clock() - started, 1)))
             continue
-        result.attempts.append(LLMAttempt(name, model, True, seconds=round(clock() - started, 1)))
+        first_s = clock() - started
+        result.attempts.append(LLMAttempt(name, model, True, seconds=round(first_s, 1)))
         result.content, result.provider, result.model = content, name, model
+        # ตรวจร่างแล้วให้ AI ตัวเดิมแก้หนึ่งรอบถ้าเวลาเหลือพอ — แก้ไม่สำเร็จ/หมดเวลา = ใช้ร่างรอบแรก
+        if isinstance(content, DraftContent) and should_review(content, memo):
+            result.review_issues = review_memo(content, review_source, recipient=unmasked_recipient)
+            remaining = deadline - clock()
+            if result.review_issues and remaining_ok(remaining, first_s):
+                # รายการปัญหาอาจมีข้อมูลจากต้นเรื่อง — ปิดด้วยรหัสเดียวกับคำขอแรก; ร่างรอบแรกส่งแบบที่ยังปิดอยู่ (raw)
+                issues = [vault.mask(x) for x in result.review_issues] if vault is not None else result.review_issues
+                started = clock()
+                try:
+                    fixed = finish(call(repair_prompt(prompt, raw.model_dump_json(), issues), config, remaining - 2))
+                    result.content, result.repaired = fixed, True
+                    result.review_left = review_memo(fixed, review_source, recipient=unmasked_recipient)
+                    result.attempts.append(LLMAttempt(name, model, True, "แก้ตามผลตรวจ", round(clock() - started, 1)))
+                except Exception as exc:
+                    _log_failure("repair", name, model, exc)
+                    result.attempts.append(LLMAttempt(name, model, False, "แก้ตามผลตรวจไม่สำเร็จ: " + _short_error(exc),
+                                                      round(clock() - started, 1)))
+            elif result.review_issues:
+                result.review_skipped = "เวลาไม่พอสำหรับรอบแก้"
         return result
     return result
 
 
 def apply_draft_content(doc: GovDocumentSchema, content: DraftContent) -> GovDocumentSchema:
     """ใส่เนื้อความจาก AI ลงในร่างตามกฎ (โครง หัวหนังสือ และช่องที่ AI เว้นว่างคงเดิม)"""
+    from core.project_ai import ProjectContent, apply_project_content
+
+    if isinstance(content, ProjectContent):
+        return apply_project_content(doc, content)
     updated = doc.model_copy(deep=True)
     if content.subject:
         updated.subject = content.subject
@@ -573,11 +749,19 @@ def apply_draft_content(doc: GovDocumentSchema, content: DraftContent) -> GovDoc
     if ref and updated.references is not None:
         updated.references = [ref if ref.startswith("หนังสือ") else f"หนังสือ{ref}"]
     if updated.doc_type == DocType.INTERNAL:
+        from core.memo_layout import split_consideration_and_request
+
         for key in ("memo_intro", "memo_facts", "memo_consideration"):
             value = getattr(content, key)
+            if key == "memo_consideration" and value:
+                # AI เขียน "จึงเรียนมาเพื่อ..." ท้ายข้อพิจารณาเองได้ — ภาคความประสงค์มาจากขั้นการเสนอ (memo_request)
+                # ตัดทิ้ง ไม่งั้นหนังสือพิมพ์ประโยคปิดท้ายสองครั้ง
+                value, _ = split_consideration_and_request(value, None)
             if value:
                 setattr(updated, key, value)
-        updated.memo_law = None
+        # ข้อกฎหมายผ่านการตรวจกับต้นเรื่อง/ต้นแบบใน draft_content_with_llm แล้ว (ground_law)
+        updated.memo_law = (content.memo_law or "").strip() or None
+        updated.memo_request_top = (content.memo_request_top or "").strip() or None
         updated.paragraph_reason = updated.memo_intro or updated.paragraph_reason
         updated.paragraph_details = updated.memo_facts or updated.paragraph_details
         updated.paragraph_purpose = "\n\n".join(
@@ -599,6 +783,12 @@ OCR_PROMPT = (
     "คำที่อ่านไม่ออกให้เขียนว่า [อ่านไม่ออก] ห้ามเดาหรือเติมข้อความที่ไม่มีในภาพ "
     "ขึ้นต้นแต่ละหน้าด้วยบรรทัด '--- หน้าที่ N ---' ตอบเป็นข้อความล้วน ไม่ต้องอธิบายเพิ่ม"
 )
+# ต้นเรื่องที่จะร่างหนังสือ: ตัวเลขลายมือ/ตรายางอ่านคลาดบ่อย (แต่ละรอบได้เลขต่างกัน) — ติดป้ายไว้ให้ระบบเว้นเป็นจุดตรวจ
+# ป้ายนี้แปลงเป็น [✏️ ...] ในร่างโดย core/handwriting.py
+OCR_HANDWRITING = (
+    " ตัวเลขที่เขียนด้วยลายมือหรือประทับด้วยตรายาง (เช่น เลขที่หนังสือในเกษียน เลขรับ) "
+    "ให้ต่อท้ายตัวเลขนั้นทันทีด้วย [ลายมือ] เช่น 'ที่ กท ๐๒๐๐/๕๗๕๙[ลายมือ]' ตัวเลขที่พิมพ์ไม่ต้องใส่"
+)
 OcrProvider = Callable[[list, LLMConfig, float], str]
 
 
@@ -611,11 +801,11 @@ def _jpeg_b64(image) -> str:
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
 
 
-def _ocr_claude(images: list, config: LLMConfig, timeout_s: float) -> str:
+def _ocr_claude(images: list, config: LLMConfig, timeout_s: float, prompt: str = OCR_PROMPT) -> str:
     client = _anthropic_client(config, timeout_s)
     content = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": _jpeg_b64(img)}}
                for img in images]
-    content.append({"type": "text", "text": OCR_PROMPT})
+    content.append({"type": "text", "text": prompt})
     kwargs = dict(model=config.claude_model, max_tokens=16000,
                   messages=[{"role": "user", "content": content}],
                   output_config={"effort": "low"})          # ถอดข้อความไม่ต้องคิดลึก เร็วกว่า
@@ -627,7 +817,7 @@ def _ocr_claude(images: list, config: LLMConfig, timeout_s: float) -> str:
     return "".join(b.text for b in response.content if b.type == "text").strip()
 
 
-def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float) -> str:
+def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float, prompt: str = OCR_PROMPT) -> str:
     from google import genai
     from google.genai import types
 
@@ -637,7 +827,7 @@ def _ocr_gemini(images: list, config: LLMConfig, timeout_s: float) -> str:
 
     parts = [types.Part.from_bytes(data=base64.standard_b64decode(_jpeg_b64(img)), mime_type="image/jpeg")
              for img in images]
-    response = _gemini_generate(client, config.gemini_model, [*parts, OCR_PROMPT])
+    response = _gemini_generate(client, config.gemini_model, [*parts, prompt])
     return (response.text or "").strip()
 
 
@@ -655,16 +845,26 @@ def ocr_images_with_llm(
     budget_s: float = 25.0,
     providers: Optional[List[Tuple[str, str, OcrProvider]]] = None,
     clock: Callable[[], float] = time.monotonic,
+    mark_handwriting: bool = False,
 ) -> LLMOcrResult:
     """ถอดข้อความจากภาพทุกหน้าในคำขอเดียว ตามลำดับ provider_order (ค่าเริ่มต้น Gemini แล้ว Claude)
-    ผู้เรียกต้องตรวจชั้นความลับก่อนเรียก (เอกสารลับห้ามส่งออก)"""
+    ผู้เรียกต้องตรวจชั้นความลับก่อนเรียก (เอกสารลับห้ามส่งออก)
+    mark_handwriting = ติดป้าย [ลายมือ] หลังตัวเลขลายมือ/ตรายาง (ต้นเรื่องที่จะร่างหนังสือ)"""
+    from functools import partial
+
     result = LLMOcrResult()
     if providers is None:
+        def with_prompt(fn):
+            import inspect
+
+            takes_prompt = "prompt" in inspect.signature(fn).parameters   # ตัวแทนในชุดทดสอบรับ ๓ อาร์กิวเมนต์
+            return partial(fn, prompt=OCR_PROMPT + OCR_HANDWRITING) if mark_handwriting and takes_prompt else fn
+
         available = {}
         if config.gemini_api_key:
-            available["gemini"] = ("gemini", config.gemini_model, _ocr_gemini)
+            available["gemini"] = ("gemini", config.gemini_model, with_prompt(_ocr_gemini))
         if config.anthropic_api_key:
-            available["claude"] = ("claude", config.claude_model, _ocr_claude)
+            available["claude"] = ("claude", config.claude_model, with_prompt(_ocr_claude))
         providers = _ordered(config, available)
     if not images or not providers:
         return result

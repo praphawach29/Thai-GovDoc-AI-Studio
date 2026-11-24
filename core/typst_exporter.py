@@ -142,6 +142,34 @@ def _formal_content(data: GovDocumentSchema, garuda_rel_path: str, font: str) ->
 """
 
 
+def _project_content(data: GovDocumentSchema, font: str) -> str:
+    """แบบเสนอโครงการ กทม. — ส่งมุมมองพร้อมพิมพ์ (core.project.project_view) เป็น JSON ให้ templates/typst/project.typ"""
+    from core.project import (BUDGET_COLS_CM, HEAD_LABEL_CM, KPI_COLS_CM, PLAN_FILL, PLAN_STEP_CM, RISK_COLS_CM,
+                              SIGN_LEFT_CM, TABLE_PT, ProjectData, project_view)
+
+    view = project_view(data.subject, data.project or ProjectData(), data.use_thai_numerals)
+    cols = lambda xs: "(" + ", ".join(f"{x:g}cm" for x in xs) + ",)"
+    return f"""// สร้างอัตโนมัติโดย Thai GovDoc AI Studio — แบบเสนอโครงการ
+#import "templates/typst/project.typ": govdoc_project
+
+#govdoc_project(
+  view: json(bytes({_escape_typst_string(json.dumps(view, ensure_ascii=False))})),
+  label_width: {HEAD_LABEL_CM:g}cm,
+  sign_left: {SIGN_LEFT_CM:g}cm,
+  table_size: {TABLE_PT}pt,
+  plan_step: {PLAN_STEP_CM:g}cm,
+  plan_fill: rgb("#{PLAN_FILL}"),
+  budget_cols: {cols(BUDGET_COLS_CM)},
+  risk_cols: {cols(RISK_COLS_CM)},
+  kpi_cols: {cols(KPI_COLS_CM)},
+  urgency: "{data.urgency.value}",
+  secret: "{data.secret.value}",
+  thai_page_numbers: {"true" if data.use_thai_numerals else "false"},
+  font: "{font}",
+)
+"""
+
+
 def generate_typst_content(
     data: GovDocumentSchema,
     garuda_rel_path: str = "assets/garuda_krut.png",
@@ -157,6 +185,8 @@ def generate_typst_content(
         return _stamp_content(data, garuda_rel_path, TYPST_FAMILY[data.font_family or profile.font_key])
     if data.is_formal:
         return _formal_content(data, garuda_rel_path, TYPST_FAMILY[data.font_family or profile.font_key])
+    if data.is_project:
+        return _project_content(data, TYPST_FAMILY[data.font_family or profile.font_key])
     fmt_date = to_thai_numerals(data.doc_date) if data.use_thai_numerals else data.doc_date
     fmt_number = to_thai_numerals(data.doc_number) if data.use_thai_numerals else data.doc_number
     fmt_reason = to_thai_numerals(data.paragraph_reason) if data.use_thai_numerals else data.paragraph_reason

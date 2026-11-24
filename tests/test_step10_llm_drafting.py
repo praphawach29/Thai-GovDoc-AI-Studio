@@ -16,6 +16,7 @@ from core.models import DocType, SecretLevel
 from core.templates_library import PRESET_TEMPLATES
 
 CONTENT = DraftContent(
+    analysis="", memo_law="",
     subject="ขอความอนุเคราะห์ใช้อาคารกีฬา",
     memo_intro="๑. สมาคมกีฬา ได้มีหนังสือ ที่ [✏️ ระบุเลขที่] ขอใช้อาคาร",
     memo_facts="๑. ขอใช้อาคารวันที่ [✏️ ระบุวันที่]",
@@ -131,7 +132,7 @@ def test_apply_keeps_header_and_law_from_rules():
     base = PRESET_TEMPLATES["bma_cohost_request"].schema.model_copy(deep=True)
     out = apply_draft_content(base, llm_drafter._clean(CONTENT.model_copy(update={"subject": "เรื่อง **ขอใช้อาคาร**"})))
     assert out.subject == "ขอใช้อาคาร"
-    assert out.memo_intro.startswith("๑. สมาคมกีฬา") and out.memo_law is None
+    assert out.memo_intro.startswith("สมาคมกีฬา")   # ข้อเดียวไม่ใส่เลขข้อ (drop_lone_number) and out.memo_law is None
     assert (out.dept_name, out.doc_number, out.salutation) == (base.dept_name, base.doc_number, base.salutation)
     assert out.memo_request == base.memo_request
 
@@ -213,7 +214,7 @@ def test_studio_draft_uses_ai_and_reports_fallback(monkeypatch):
     step = next(s for s in body["steps"] if s["key"] == "ai")
     assert "Gemini หมดเวลา" in step["detail"] and "Claude" in step["detail"]
     doc = body["document"]
-    assert doc["subject"] == CONTENT.subject and doc["memo_facts"].startswith("๑. ขอใช้อาคาร")
+    assert doc["subject"] == CONTENT.subject and doc["memo_facts"].startswith("ขอใช้อาคาร")
     # หน่วยตั้งต้น (กลุ่มงาน) ยังกำหนดหัวหนังสือ ผู้รับ และภาคความประสงค์
     assert doc["salutation"] == "เรียน หัวหน้ากลุ่มงานส่งเสริมกีฬา"
     assert doc["memo_request"].startswith("จึงเรียนมาเพื่อโปรดพิจารณานำเรียนผู้อำนวยการกองการกีฬา")
