@@ -45,6 +45,10 @@
 .a4-sheet .lines { tab-size: 0; -moz-tab-size: 0; }
 .a4-sheet .lines > .ln { min-height: 1em; }
 .a4-sheet .memo-head:empty::before { font-weight: 400; text-decoration: none; }
+/* หัวข้อนำหน้าบรรทัดแรกเมื่อเนื้อความเป็นความเรียง (เนื้อความเป็นข้อ ๆ = หัวข้อบรรทัดเดี่ยว) — core/memo_layout */
+.a4-sheet .memo-sec { display: flow-root; }
+.a4-sheet .memo-sec.run-in > .memo-head-row { float: left; text-indent: 0; margin-left: 2.5cm; margin-right: .5em; }
+.a4-sheet .memo-sec.run-in .lines > .ln:first-child { text-indent: 0 !important; }
 .a4-sheet .justify-thai { text-align: justify; text-justify: inter-character; }
 .a4-sheet .garuda-ext { height: 3cm; width: auto; }
 .a4-sheet .garuda-int { height: 1.5cm; width: auto; }

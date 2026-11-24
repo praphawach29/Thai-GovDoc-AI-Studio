@@ -111,8 +111,8 @@ def test_draft_prompt_has_no_personal_data_and_answer_is_restored():
         assert secret not in sent[0], secret
     assert "[ชื่อ_1]" in sent[0]
     c = result.content
-    assert c.memo_intro == "๑. นายสมชาย ใจดี ได้มีหนังสือ ขอรับเงินเข้าบัญชีเลขที่ 123-4-56789-0"
-    assert c.memo_facts == "๑. ติดต่อ นายสมชาย ใจดี โทร 081-234-5678"
+    assert c.memo_intro == "นายสมชาย ใจดี ได้มีหนังสือ ขอรับเงินเข้าบัญชีเลขที่ 123-4-56789-0"
+    assert c.memo_facts == "ติดต่อ นายสมชาย ใจดี โทร 081-234-5678"
     assert c.source_summary == "นายสมชาย ใจดี ขอรับเงิน"
     assert "ชื่อ 1" in result.masked
 

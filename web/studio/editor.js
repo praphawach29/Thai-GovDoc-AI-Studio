@@ -222,6 +222,16 @@
     String(text ?? '').split('\n').map(ln => lineDiv(ln, raw ? esc(ln) : displayHTML(ln))).join('');
   function restyleLines(el) {
     el.querySelectorAll(':scope > div').forEach((div) => { div.style.textIndent = indentOf(div.textContent); });
+    markRunIn(el.closest('.memo-sec'));
+  }
+  // บันทึกข้อความ: เนื้อความเริ่มด้วยข้อ (๑. / ๑.๑ / มาตรา / ข้อ / แท็บ) → หัวข้อบรรทัดเดี่ยว ไม่งั้นหัวข้อนำหน้าบรรทัดแรก
+  const RE_ITEM = /^([0-9๐-๙]+\.|(มาตรา|ข้อ)\s*[0-9๐-๙]+)/;
+  function markRunIn(secEl) {
+    if (!secEl) return;
+    const head = secEl.querySelector('.memo-head'), lines = secEl.querySelector('.lines');
+    const first = [...(lines?.children || [])].map(d => d.textContent).find(t => t.trim()) || '';
+    const item = first.startsWith('\t') || RE_ITEM.test(first.trim());
+    secEl.classList.toggle('run-in', !!(head?.textContent.trim() && first && !item));
   }
   function caretLine(el) {
     const sel = getSelection();
@@ -491,10 +501,11 @@
     const refs = d.references != null, atts = d.attachments != null;
     if (isMemo()) {
       const law = d.memo_law != null;
-      // หัวข้อ: บรรทัดเดี่ยว เริ่มตรงกับเนื้อความ (2.5 ซม.) เว้น 6 pt ทุกหัวข้อรวมต้นเรื่อง — แก้ชื่อได้
+      // หัวข้อ: เริ่มตรงกับเนื้อความ (2.5 ซม.) เว้น 6 pt ทุกหัวข้อรวมต้นเรื่อง — แก้ชื่อได้
+      // เนื้อความเป็นข้อ ๆ → หัวข้อบรรทัดเดี่ยว; ความเรียง → หัวข้อนำหน้าบรรทัดแรก (markRunIn, core/memo_layout.starts_with_item)
       const sec = (key) => `
-        <div class="gap-6pt">
-          <div class="indent-25">${field('head_' + key.replace('memo_', ''), 'doc-bold underline underline-offset-4 memo-head')}</div>
+        <div class="gap-6pt memo-sec">
+          <div class="indent-25 memo-head-row">${field('head_' + key.replace('memo_', ''), 'doc-bold underline underline-offset-4 memo-head')}</div>
           ${block(key, 'indent-25 justify-thai')}
         </div>`;
       return `${stamps()}
@@ -553,6 +564,7 @@
       el.setAttribute('aria-label', labelOf(el.dataset.field) || el.dataset.field);
       if (el.classList.contains('block')) el.setAttribute('aria-multiline', 'true');
     });
+    $('sheet').querySelectorAll('.memo-sec').forEach(markRunIn);
     fitOneLine();
   }
 
@@ -624,6 +636,7 @@
   sheet.addEventListener('input', (e) => {
     const el = e.target.closest('.lines');
     if (el) restyleLines(el);
+    else markRunIn(e.target.closest('.memo-sec'));   // แก้ชื่อหัวข้อ (ลบจนว่าง = หัวข้อไม่แสดง)
   });
   for (const [id, delta] of [['btn-indent', 1], ['btn-outdent', -1]]) {
     $(id).addEventListener('mousedown', (e) => e.preventDefault());   // คงเคอร์เซอร์ไว้ในย่อหน้า

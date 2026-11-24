@@ -130,11 +130,16 @@ def test_split_request_from_consideration():
 
 def test_bma_blocks_heading_and_run_in(bma_cohost_doc):
     blocks = bma_cohost_doc.get_memo_blocks()
-    headings = [b for b in blocks if b.kind == "heading"]
-    # หัวข้อเป็นบรรทัดเดี่ยว เริ่มตรงกับเนื้อความ (2.5 ซม.) ตามแบบบันทึกข้อความของหน่วยงาน
-    assert [b.lead for b in headings] == ["ต้นเรื่อง", "ข้อกฎหมาย", "ข้อเท็จจริง", "ข้อพิจารณาและเสนอแนะ"]
-    assert all(b.indent_cm == 2.5 and not b.text for b in headings)
-    assert not [b for b in blocks if b.kind == "body" and b.lead]
+    leads = [b for b in blocks if b.lead]
+    # หัวข้อเริ่มตรงกับเนื้อความ (2.5 ซม.) ตามแบบบันทึกข้อความของหน่วยงาน
+    assert [b.lead for b in leads] == ["ต้นเรื่อง", "ข้อกฎหมาย", "ข้อเท็จจริง", "ข้อพิจารณาและเสนอแนะ"]
+    assert all(b.indent_cm == 2.5 and b.space_before_pt == 6.0 for b in leads)
+    # เนื้อความเป็นข้อ ๆ → หัวข้อบรรทัดเดี่ยว; ความเรียง → หัวข้อนำหน้าบรรทัดแรก
+    from core.memo_layout import starts_with_item
+    bodies = dict(zip(["ต้นเรื่อง", "ข้อกฎหมาย", "ข้อเท็จจริง", "ข้อพิจารณาและเสนอแนะ"],
+                      [b for _, b in bma_cohost_doc.get_memo_sections()]))
+    for b in leads:
+        assert (b.kind == "heading" and not b.text) == starts_with_item(bodies[b.lead]), b.lead
     assert all(b.lead_style == "underline" for b in blocks if b.lead)
     assert blocks[-1].kind == "request"
     # Step 0: ข้อกฎหมายเป็น placeholder จนกว่าจะเลือกจากคลังที่ยืนยันแหล่ง
@@ -342,3 +347,25 @@ def test_word_export_kickboxing_memo(tmp_path):
     assert "ข้อพิจารณาและเสนอแนะ" in full_text
     assert "พระราชบัญญัติเครื่องหมายราชการ" in full_text
     assert "ผู้ว่าราชการกรุงเทพมหานคร" in full_text
+
+
+def test_heading_run_in_unless_body_is_a_list():
+    from core.memo_layout import build_memo_blocks, build_memo_sections, drop_lone_number
+    sections = build_memo_sections(
+        intro="สมาคมฯ มีหนังสือ ที่ ๑/๒๕๖๙ ขอใช้สถานที่",
+        facts="๑. สมาคมฯ กำหนดจัดการแข่งขัน\n๑.๑ ขอเชิญเป็นเจ้าภาพ\n๒. สำนักฯ ประสานแล้ว",
+        law="",
+        consideration="สำนักฯ พิจารณาแล้วเห็นว่า ... ดังนี้\n๑. เห็นชอบ\n๒. อนุญาต",
+    )
+    blocks = build_memo_blocks(sections, "จึงเรียนมาเพื่อโปรดพิจารณา")
+    intro, facts_head, facts1 = blocks[0], blocks[1], blocks[2]
+    assert intro.lead == "ต้นเรื่อง" and intro.text.startswith("สมาคมฯ") and intro.kind == "body"
+    assert facts_head.kind == "heading" and not facts_head.text and facts_head.space_before_pt == 6.0
+    assert facts1.text.startswith("๑.") and facts1.space_before_pt == 0.0
+    cons = next(b for b in blocks if b.lead == "ข้อพิจารณาและเสนอแนะ")
+    assert cons.text.startswith("สำนักฯ พิจารณา") and cons.kind == "body"
+    # ข้อเดียวไม่ต้องมีเลขข้อ; ๒ ข้อขึ้นไป / มีข้อย่อย / ข้อ ๒. เดี่ยว คงไว้
+    assert drop_lone_number("๑. สมาคมฯ มีหนังสือ") == "สมาคมฯ มีหนังสือ"
+    assert drop_lone_number("๑. ก\n๒. ข") == "๑. ก\n๒. ข"
+    assert drop_lone_number("๑. ก\n๑.๑ ข") == "๑. ก\n๑.๑ ข"
+    assert drop_lone_number("๒. ก") == "๒. ก"
