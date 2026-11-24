@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from core.issuing_units import apply_issuing_unit, pick_unit
+from core.issuing_units import apply_issuing_unit, pick_unit, unit_named_in_prompt
 from core.models import DocType, GovDocumentSchema, IssuingUnit, SecretLevel, Signer, UrgencyLevel, parse_form_key
 from core.profile_manager import get_user_profile
 import time
@@ -40,6 +40,8 @@ router = APIRouter(tags=["studio"])
 class StudioDraftResponse(StudioDraftResult):
     # โหมด Supabase: แถวใน source_files ของไฟล์ต้นเรื่อง (ผูกกับเอกสารภายหลังได้)
     source_file_id: Optional[str] = None
+    # หน่วยออกหนังสือที่ใช้จริง (คำสั่ง "เสนอ <ผู้รับ>" เลือกหน่วยให้ได้) — บันทึกข้อความเท่านั้น
+    unit_key: Optional[str] = None
 
 
 class BlankRequest(BaseModel):
@@ -201,7 +203,12 @@ async def studio_draft(
             ref_steps.append(StudioStep(key="reference", label="อ่านไฟล์ต้นแบบไม่สำเร็จ", ok=False, detail=f"{name}: {error}"))
 
     # ผู้รับและชื่อผู้พิจารณาของหน่วยที่เลือก ช่วยให้ AI เขียนข้อพิจารณาได้ตรงขั้นการเสนอ
-    unit = pick_unit(load_units(user, settings), unit_key)
+    units = load_units(user, settings)
+    # คำสั่งที่ระบุ "เสนอ <ผู้รับ>" ชัดเจนชนะหน่วยในช่องเลือก (ช่องเลือกตั้งต้นเป็นหน่วยตั้งต้นเสมอ)
+    named = unit_named_in_prompt(units, prompt) if form is None or internal else None
+    if named is not None:
+        unit_key = named.key
+    unit = pick_unit(units, unit_key)
     try:
         result = start_draft(
             prompt=prompt,
@@ -227,6 +234,7 @@ async def studio_draft(
     if response.document is not None and response.document.doc_type == DocType.INTERNAL:
         # บันทึกข้อความ: ส่วนราชการ/เลขที่/วันที่ ตามหน่วยออกหนังสือที่เลือก
         response.document = _apply_unit(response.document, unit_key, user, settings, fresh=True)
+        response.unit_key = unit.key if unit else unit_key
     elif response.document is not None:
         response.document = _fill_signers(response.document, user, settings, fresh=True)
     display_name = Path(file.filename).name if has_file else (Path(stored[1]).name if stored else None)
